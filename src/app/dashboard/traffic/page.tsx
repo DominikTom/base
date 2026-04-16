@@ -38,6 +38,12 @@ interface TrafficData {
     conversionRate: number;
   }>;
   hostnames: string[];
+  dataInfo: {
+    totalRowsInDb: number;
+    detailRowsInDb: number;
+    oldestDate: string | null;
+    newestDate: string | null;
+  };
 }
 
 export default function TrafficPage() {
@@ -152,6 +158,14 @@ export default function TrafficPage() {
         <div className={`rounded-lg p-3 flex items-center gap-2 text-sm ${syncResult.ok ? 'bg-emerald-900/20 border border-emerald-800 text-emerald-400' : 'bg-red-900/20 border border-red-800 text-red-400'}`}>
           {syncResult.ok ? <CheckCircle size={16} /> : <XCircle size={16} />}
           {syncResult.message}
+        </div>
+      )}
+
+      {/* Data range info */}
+      {data.dataInfo?.oldestDate && (
+        <div className="text-xs text-zinc-500 flex items-center gap-4">
+          <span>Dane GA4 w bazie: <span className="text-zinc-300">{data.dataInfo.oldestDate}</span> — <span className="text-zinc-300">{data.dataInfo.newestDate}</span></span>
+          <span>({data.dataInfo.totalRowsInDb} dni, {data.dataInfo.detailRowsInDb} wierszy detail)</span>
         </div>
       )}
 

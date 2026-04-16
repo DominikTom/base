@@ -4,16 +4,12 @@ import { fetchGA4Report, fetchGA4DailyTotals, getPropertyIds, getHostname } from
 
 export const maxDuration = 60;
 
-/**
- * GA4 sync endpoint — fetches traffic data from all GA4 properties.
- * Triggered by Vercel Cron daily at 6:30 UTC, or manually.
- */
-// POST — manual trigger from dashboard UI (90 days history)
+// POST — manual trigger: totals-only for 90 days (fast, fits in 10s)
 export async function POST() {
-  return syncGA4(90);
+  return syncGA4({ daysBack: 90, totalsOnly: true });
 }
 
-// GET — Vercel Cron trigger (last 7 days only)
+// GET — Vercel Cron: totals + detail for last 7 days
 export async function GET(request: NextRequest) {
   const authHeader = request.headers.get('authorization');
   const cronSecret = process.env.ETL_CRON_SECRET;
@@ -21,12 +17,11 @@ export async function GET(request: NextRequest) {
   if (!isVercelCron && cronSecret && authHeader !== `Bearer ${cronSecret}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
-  return syncGA4(7);
+  return syncGA4({ daysBack: 7, totalsOnly: false });
 }
 
-async function syncGA4(daysBack: number = 7) {
+async function syncGA4({ daysBack, totalsOnly }: { daysBack: number; totalsOnly: boolean }) {
   try {
-
     const db = getSupabaseAdmin();
     const propertyIds = getPropertyIds();
 
@@ -34,7 +29,6 @@ async function syncGA4(daysBack: number = 7) {
       return NextResponse.json({ error: 'GA4_PROPERTY_IDS not configured' }, { status: 500 });
     }
 
-    // Create ETL log
     const { data: etlLog } = await db
       .from('etl_log')
       .insert({ source: 'ga4', started_at: new Date().toISOString(), status: 'running' })
@@ -43,7 +37,6 @@ async function syncGA4(daysBack: number = 7) {
     const etlLogId = etlLog?.id;
 
     try {
-      // Date range: T-1 to T-daysBack
       const today = new Date();
       const dateTo = new Date(today);
       dateTo.setDate(dateTo.getDate() - 1);
@@ -54,42 +47,30 @@ async function syncGA4(daysBack: number = 7) {
       const dateFromStr = fmt(dateFrom);
       const dateToStr = fmt(dateTo);
 
-      let totalRows = 0;
-      const results: Record<string, number> = {};
-
-      // Delete only the date range being synced (preserve older data)
+      // Delete __total__ rows in range (always refresh totals)
       await db.from('fact_daily_traffic').delete()
+        .eq('source', '__total__')
         .gte('date', dateFromStr)
         .lte('date', dateToStr);
 
-      for (const propertyId of propertyIds) {
-        const hostname = getHostname(propertyId);
+      // If fetching detail too, delete detail rows in range
+      if (!totalsOnly) {
+        await db.from('fact_daily_traffic').delete()
+          .neq('source', '__total__')
+          .gte('date', dateFromStr)
+          .lte('date', dateToStr);
+      }
 
-        // Fetch detailed (by source/medium) + daily totals (accurate KPIs) in parallel
-        const [detailRows, totalRows_] = await Promise.all([
-          fetchGA4Report(propertyId, dateFromStr, dateToStr),
-          fetchGA4DailyTotals(propertyId, dateFromStr, dateToStr),
-        ]);
+      let totalRows = 0;
+      const results: Record<string, number> = {};
 
-        // Insert detail rows (source/medium breakdown)
-        const dbDetailRows = detailRows.map(r => ({
-          date: r.date, source: r.source, medium: r.medium,
-          campaign: r.campaign || '', hostname: r.hostname,
-          sessions: r.sessions, users: r.users, new_users: r.newUsers,
-          pageviews: r.pageviews, bounce_rate: r.bounceRate,
-          avg_session_duration: r.avgSessionDuration,
-          transactions: r.transactions, ga_revenue: r.gaRevenue,
-          ad_cost: r.adCost, ad_clicks: r.adClicks, ad_impressions: r.adImpressions,
-        }));
+      // Fetch ALL properties in parallel for speed
+      const promises = propertyIds.map(async (propertyId) => {
+        let propRows = 0;
 
-        for (let i = 0; i < dbDetailRows.length; i += 500) {
-          await db.from('fact_daily_traffic').upsert(dbDetailRows.slice(i, i + 500), {
-            onConflict: 'date,source,medium,hostname,campaign',
-          });
-        }
-
-        // Insert daily totals (source='__total__' for accurate KPIs matching GA4 native)
-        const dbTotalRows = totalRows_.map(r => ({
+        // Always fetch daily totals (fast: ~90 rows per property for 90 days)
+        const dailyTotals = await fetchGA4DailyTotals(propertyId, dateFromStr, dateToStr);
+        const dbTotalRows = dailyTotals.map(r => ({
           date: r.date, source: '__total__', medium: '__total__',
           campaign: '', hostname: r.hostname,
           sessions: r.sessions, users: r.users, new_users: r.newUsers,
@@ -103,12 +84,38 @@ async function syncGA4(daysBack: number = 7) {
             onConflict: 'date,source,medium,hostname,campaign',
           });
         }
+        propRows += dailyTotals.length;
 
-        totalRows += detailRows.length + totalRows_.length;
-        results[hostname] = detailRows.length;
+        // Optionally fetch detail (source/medium breakdown) — only for short ranges
+        if (!totalsOnly) {
+          const detailRows = await fetchGA4Report(propertyId, dateFromStr, dateToStr);
+          const dbDetailRows = detailRows.map(r => ({
+            date: r.date, source: r.source, medium: r.medium,
+            campaign: r.campaign || '', hostname: r.hostname,
+            sessions: r.sessions, users: r.users, new_users: r.newUsers,
+            pageviews: r.pageviews, bounce_rate: r.bounceRate,
+            avg_session_duration: r.avgSessionDuration,
+            transactions: r.transactions, ga_revenue: r.gaRevenue,
+            ad_cost: r.adCost, ad_clicks: r.adClicks, ad_impressions: r.adImpressions,
+          }));
+
+          for (let i = 0; i < dbDetailRows.length; i += 500) {
+            await db.from('fact_daily_traffic').upsert(dbDetailRows.slice(i, i + 500), {
+              onConflict: 'date,source,medium,hostname,campaign',
+            });
+          }
+          propRows += detailRows.length;
+        }
+
+        return { hostname: getHostname(propertyId), rows: propRows };
+      });
+
+      const propResults = await Promise.all(promises);
+      for (const r of propResults) {
+        results[r.hostname] = r.rows;
+        totalRows += r.rows;
       }
 
-      // Update ETL log
       if (etlLogId) {
         await db.from('etl_log').update({
           status: 'success',
@@ -125,12 +132,12 @@ async function syncGA4(daysBack: number = 7) {
         properties: results,
         totalRows,
         dateRange: { from: dateFromStr, to: dateToStr },
+        mode: totalsOnly ? 'totals_only_90d' : 'full_7d',
       });
     } catch (err) {
       if (etlLogId) {
         await db.from('etl_log').update({
-          status: 'error',
-          error_message: String(err),
+          status: 'error', error_message: String(err),
           finished_at: new Date().toISOString(),
         }).eq('id', etlLogId);
       }

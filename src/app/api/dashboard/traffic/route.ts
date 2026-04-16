@@ -120,6 +120,12 @@ export async function GET(request: NextRequest) {
       },
       sourceTable,
       hostnames: [...hostnames],
+      dataInfo: {
+        totalRowsInDb: totalRows.length,
+        detailRowsInDb: detailRows.length,
+        oldestDate: totalRows.length > 0 ? totalRows.reduce((min, r) => r.date < min ? r.date : min, totalRows[0].date) : null,
+        newestDate: totalRows.length > 0 ? totalRows.reduce((max, r) => r.date > max ? r.date : max, totalRows[0].date) : null,
+      },
     });
   } catch (err) {
     console.error('Traffic API error:', err);
