@@ -16,18 +16,25 @@ export const maxDuration = 60;
  */
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let body: any;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json({ error: 'Invalid JSON in request body' }, { status: 400 });
+    }
+
     const { action } = body;
 
     switch (action) {
       case 'start':
-        return handleStart(body);
+        return await handleStart(body);
       case 'batch_orders':
-        return handleBatchOrders(body);
+        return await handleBatchOrders(body);
       case 'batch_items':
-        return handleBatchItems(body);
+        return await handleBatchItems(body);
       case 'finalize':
-        return handleFinalize(body);
+        return await handleFinalize(body);
       default:
         return NextResponse.json({ error: `Unknown action: ${action}` }, { status: 400 });
     }
