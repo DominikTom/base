@@ -102,7 +102,7 @@ export async function GET(request: NextRequest) {
       productsQuery = productsQuery.eq('fact_orders.source_shop', shop);
     }
 
-    const { data: productItems } = await productsQuery.limit(10000);
+    const { data: productItems } = await productsQuery.limit(50000);
 
     // Aggregate top products by order count
     const productMap: Record<string, { count: number; quantity: number; category: string }> = {};
