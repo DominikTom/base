@@ -8,16 +8,24 @@ export const maxDuration = 60;
  * GA4 sync endpoint — fetches traffic data from all GA4 properties.
  * Triggered by Vercel Cron daily at 6:30 UTC, or manually.
  */
-export async function GET(request: NextRequest) {
-  try {
-    // Auth check
-    const authHeader = request.headers.get('authorization');
-    const cronSecret = process.env.ETL_CRON_SECRET;
-    const isVercelCron = request.headers.get('x-vercel-cron') === '1';
+// POST — manual trigger from dashboard UI
+export async function POST() {
+  return syncGA4();
+}
 
-    if (!isVercelCron && cronSecret && authHeader !== `Bearer ${cronSecret}`) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+// GET — Vercel Cron trigger
+export async function GET(request: NextRequest) {
+  const authHeader = request.headers.get('authorization');
+  const cronSecret = process.env.ETL_CRON_SECRET;
+  const isVercelCron = request.headers.get('x-vercel-cron') === '1';
+  if (!isVercelCron && cronSecret && authHeader !== `Bearer ${cronSecret}`) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+  return syncGA4();
+}
+
+async function syncGA4() {
+  try {
 
     const db = getSupabaseAdmin();
     const propertyIds = getPropertyIds();

@@ -8,7 +8,7 @@ import { SimplePieChart } from '@/components/charts/pie-chart';
 import { DataTable, type Column } from '@/components/ui/data-table';
 import { formatNumber, formatCurrency, SHOP_COLORS } from '@/lib/utils';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
-import { Users, Globe, MousePointerClick, ShoppingCart, Eye, TrendingUp } from 'lucide-react';
+import { Users, Globe, MousePointerClick, ShoppingCart, Eye, TrendingUp, RefreshCw, CheckCircle, XCircle } from 'lucide-react';
 
 interface TrafficData {
   kpis: {
@@ -38,6 +38,30 @@ export default function TrafficPage() {
   const { filters } = useDashboard();
   const [data, setData] = useState<TrafficData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState<{ ok: boolean; message: string } | null>(null);
+
+  async function handleSync() {
+    setSyncing(true);
+    setSyncResult(null);
+    try {
+      const res = await fetch('/api/etl/ga4-sync', { method: 'POST' });
+      const json = await res.json();
+      if (res.ok) {
+        setSyncResult({ ok: true, message: `Pobrano ${json.totalRows} wierszy z GA4` });
+        // Re-fetch data
+        const params = new URLSearchParams({ date_from: filters.dateFrom, date_to: filters.dateTo });
+        const dataRes = await fetch(`/api/dashboard/traffic?${params}`);
+        setData(await dataRes.json());
+      } else {
+        setSyncResult({ ok: false, message: json.error || 'Błąd synchronizacji' });
+      }
+    } catch (err) {
+      setSyncResult({ ok: false, message: String(err) });
+    } finally {
+      setSyncing(false);
+    }
+  }
 
   useEffect(() => {
     async function fetchData() {
@@ -67,10 +91,26 @@ export default function TrafficPage() {
     );
   }
 
-  if (!data) {
+  if (!data || (data.kpis.sessions === 0 && data.kpis.users === 0)) {
     return (
-      <div className="flex flex-col items-center justify-center h-96 gap-4">
-        <p className="text-zinc-500">Brak danych GA4. Dane zostaną załadowane z Google Analytics API.</p>
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <h1 className="text-xl font-semibold text-zinc-100">Ruch (GA4)</h1>
+          <button onClick={handleSync} disabled={syncing}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50">
+            {syncing ? <RefreshCw size={16} className="animate-spin" /> : <RefreshCw size={16} />}
+            {syncing ? 'Synchronizacja...' : 'Sync GA4'}
+          </button>
+        </div>
+        {syncResult && (
+          <div className={`rounded-lg p-3 flex items-center gap-2 text-sm ${syncResult.ok ? 'bg-emerald-900/20 border border-emerald-800 text-emerald-400' : 'bg-red-900/20 border border-red-800 text-red-400'}`}>
+            {syncResult.ok ? <CheckCircle size={16} /> : <XCircle size={16} />}
+            {syncResult.message}
+          </div>
+        )}
+        <div className="flex flex-col items-center justify-center h-72 gap-4 border-2 border-dashed border-zinc-800 rounded-xl">
+          <p className="text-zinc-500">Brak danych GA4. Kliknij "Sync GA4" żeby pobrać dane z Google Analytics.</p>
+        </div>
       </div>
     );
   }
@@ -85,7 +125,20 @@ export default function TrafficPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-semibold text-zinc-100">Ruch (GA4)</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl font-semibold text-zinc-100">Ruch (GA4)</h1>
+        <button onClick={handleSync} disabled={syncing}
+          className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-sm font-medium rounded-lg transition-colors disabled:opacity-50">
+          {syncing ? <RefreshCw size={16} className="animate-spin" /> : <RefreshCw size={16} />}
+          {syncing ? 'Synchronizacja...' : 'Sync GA4'}
+        </button>
+      </div>
+      {syncResult && (
+        <div className={`rounded-lg p-3 flex items-center gap-2 text-sm ${syncResult.ok ? 'bg-emerald-900/20 border border-emerald-800 text-emerald-400' : 'bg-red-900/20 border border-red-800 text-red-400'}`}>
+          {syncResult.ok ? <CheckCircle size={16} /> : <XCircle size={16} />}
+          {syncResult.message}
+        </div>
+      )}
 
       {/* KPIs */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
