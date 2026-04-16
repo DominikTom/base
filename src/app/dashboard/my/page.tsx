@@ -1,7 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
-import { GridLayout, verticalCompactor } from 'react-grid-layout';
+import { useCallback, useEffect, useState, useRef } from 'react';
+import dynamic from 'next/dynamic';
 import { WidgetRenderer } from '@/components/dashboard/widget-renderer';
 import { WidgetLibrary } from '@/components/dashboard/widget-library';
 import { getWidgetDef } from '@/lib/widget-definitions';
@@ -14,7 +14,12 @@ import {
   type DashboardLayout,
 } from '@/lib/dashboard-store';
 import { Plus, RotateCcw } from 'lucide-react';
-import { useRef } from 'react';
+
+// Dynamic import — react-grid-layout crashes on SSR (uses DOM APIs)
+const GridLayoutDynamic = dynamic(
+  () => import('react-grid-layout').then(mod => mod.GridLayout),
+  { ssr: false }
+);
 
 export default function MyDashboardPage() {
   const [layout, setLayout] = useState<DashboardLayout | null>(null);
@@ -164,13 +169,12 @@ export default function MyDashboardPage() {
           </button>
         </div>
       ) : (
-        <GridLayout
+        <GridLayoutDynamic
           className="layout"
           layout={gridItems}
           width={containerWidth}
           gridConfig={{ cols: 12, rowHeight: 60, margin: [12, 12] as [number, number] }}
           onLayoutChange={handleLayoutChange}
-          compactor={verticalCompactor}
         >
           {layout.widgets.map(w => (
             <div key={w.id} className="[&>.drag-handle]:cursor-grab">
@@ -180,7 +184,7 @@ export default function MyDashboardPage() {
               />
             </div>
           ))}
-        </GridLayout>
+        </GridLayoutDynamic>
       )}
 
       {/* Widget Library */}
