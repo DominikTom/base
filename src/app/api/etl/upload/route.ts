@@ -33,6 +33,8 @@ export async function POST(request: NextRequest) {
         return await handleBatchOrders(body);
       case 'batch_items':
         return await handleBatchItems(body);
+      case 'batch_daily_revenue':
+        return await handleBatchDailyRevenue(body);
       case 'finalize':
         return await handleFinalize(body);
       default:
@@ -141,6 +143,24 @@ async function handleBatchItems(body: { etlLogId: number; items: FactOrderItem[]
   return NextResponse.json({ inserted: items.length });
 }
 
+// ── BATCH DAILY REVENUE ──────────────────────────────────────────────────────
+
+async function handleBatchDailyRevenue(body: { etlLogId: number; rows: Record<string, unknown>[] }) {
+  const { rows } = body;
+  if (!rows?.length) return NextResponse.json({ inserted: 0 });
+
+  const { error } = await getSupabaseAdmin().from('fact_daily_revenue').upsert(rows, {
+    onConflict: 'date,source_shop',
+  });
+
+  if (error) {
+    console.error('Batch daily revenue error:', error);
+    return NextResponse.json({ error: error.message, inserted: 0 }, { status: 500 });
+  }
+
+  return NextResponse.json({ inserted: rows.length });
+}
+
 // ── FINALIZE ─────────────────────────────────────────────────────────────────
 
 async function handleFinalize(body: {
@@ -150,16 +170,8 @@ async function handleFinalize(body: {
 }) {
   const { etlLogId, stats, dateRange } = body;
 
-  // Rebuild daily revenue
-  if (dateRange?.min && dateRange?.max && dateRange.min !== '9999-12-31') {
-    await rebuildDailyRevenue(dateRange.min, dateRange.max);
-  }
-
-  // Rebuild dimension tables
-  await rebuildDimProducts();
-  await rebuildDimFabrics();
-
-  // Update ETL log
+  // Daily revenue is now sent by client in batch_daily_revenue action.
+  // No heavy rebuild needed here — just update ETL log.
   if (etlLogId) {
     await getSupabaseAdmin().from('etl_log').update({
       status: 'success',

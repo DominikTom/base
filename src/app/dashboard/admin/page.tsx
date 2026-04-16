@@ -80,7 +80,48 @@ export default function AdminPage() {
       const result = await parseErpCsv(parseResult.data);
       const { orders, items, stats } = result;
 
-      setProgress({ current: 0, total: 0, label: `Sparsowano: ${formatNumber(stats.ordersCount)} zamówień, ${formatNumber(stats.itemsCount)} pozycji` });
+      // ── Compute daily revenue aggregation in browser ──────────────────
+      const dailyRevMap: Record<string, {
+        orders_count: number; orders_paid: number; orders_cancelled: number;
+        revenue_gross_pln: number; revenue_paid_pln: number; shipping_revenue_pln: number;
+        revenue_gross_original: number; original_currency: string;
+      }> = {};
+
+      for (const o of orders) {
+        const date = o.order_date.substring(0, 10);
+        const key = `${date}|${o.source_shop}`;
+        if (!dailyRevMap[key]) {
+          dailyRevMap[key] = {
+            orders_count: 0, orders_paid: 0, orders_cancelled: 0,
+            revenue_gross_pln: 0, revenue_paid_pln: 0, shipping_revenue_pln: 0,
+            revenue_gross_original: 0, original_currency: o.currency || 'PLN',
+          };
+        }
+        const g = dailyRevMap[key];
+        g.orders_count++;
+        if (o.is_paid) g.orders_paid++;
+        if (o.status === 'anulowane') g.orders_cancelled++;
+        g.revenue_gross_pln += o.total_gross_pln || 0;
+        if (o.is_paid) g.revenue_paid_pln += o.total_gross_pln || 0;
+        g.shipping_revenue_pln += o.shipping_cost_pln || 0;
+        g.revenue_gross_original += o.total_gross || 0;
+      }
+
+      const dailyRevenueRows = Object.entries(dailyRevMap).map(([key, g]) => {
+        const [date, source_shop] = key.split('|');
+        return {
+          date, source_shop,
+          orders_count: g.orders_count, orders_paid: g.orders_paid, orders_cancelled: g.orders_cancelled,
+          revenue_gross_pln: Math.round(g.revenue_gross_pln * 100) / 100,
+          revenue_paid_pln: Math.round(g.revenue_paid_pln * 100) / 100,
+          shipping_revenue_pln: Math.round(g.shipping_revenue_pln * 100) / 100,
+          avg_order_value_pln: g.orders_count > 0 ? Math.round((g.revenue_gross_pln / g.orders_count) * 100) / 100 : 0,
+          revenue_gross_original: Math.round(g.revenue_gross_original * 100) / 100,
+          original_currency: g.original_currency,
+        };
+      });
+
+      setProgress({ current: 0, total: 0, label: `Sparsowano: ${formatNumber(stats.ordersCount)} zamówień, ${formatNumber(stats.itemsCount)} pozycji, ${formatNumber(dailyRevenueRows.length)} dni revenue` });
 
       // ── Phase 2: Start (create ETL log, delete old data) ──────────────
       setPhase('starting');
@@ -151,9 +192,28 @@ export default function AdminPage() {
         itemsInserted += (data.inserted as number) || 0;
       }
 
-      // ── Phase 5: Finalize ─────────────────────────────────────────────
+      // ── Phase 5: Upload daily revenue (pre-computed in browser) ──────
       setPhase('finalizing');
-      setProgress({ current: 0, total: 0, label: 'Budowanie agregacji i wymiarów...' });
+      const REVENUE_BATCH = 500;
+      for (let i = 0; i < dailyRevenueRows.length; i += REVENUE_BATCH) {
+        if (abortRef.current) throw new Error('Anulowano');
+        const batch = dailyRevenueRows.slice(i, i + REVENUE_BATCH);
+        setProgress({
+          current: Math.min(i + REVENUE_BATCH, dailyRevenueRows.length),
+          total: dailyRevenueRows.length,
+          label: `Wysyłanie daily revenue: ${formatNumber(Math.min(i + REVENUE_BATCH, dailyRevenueRows.length))} / ${formatNumber(dailyRevenueRows.length)}`,
+        });
+        const res = await fetch('/api/etl/upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'batch_daily_revenue', etlLogId, rows: batch }),
+        });
+        const data = await safeJson(res);
+        if (!res.ok) throw new Error(String(data.error) || 'Batch daily revenue failed');
+      }
+
+      // ── Phase 6: Finalize (just update ETL log, no heavy processing) ──
+      setProgress({ current: 0, total: 0, label: 'Finalizacja...' });
 
       const finRes = await fetch('/api/etl/upload', {
         method: 'POST',
