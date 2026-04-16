@@ -14,10 +14,12 @@ import {
   Settings,
   ChevronLeft,
   ChevronRight,
+  PanelTop,
 } from 'lucide-react';
 import { useState } from 'react';
 
 const NAV_ITEMS = [
+  { href: '/dashboard/my', label: 'Mój Dashboard', icon: PanelTop },
   { href: '/dashboard/overview', label: 'Przegląd', icon: LayoutDashboard },
   { href: '/dashboard/revenue', label: 'Revenue & Zamówienia', icon: TrendingUp },
   { href: '/dashboard/marketing', label: 'Marketing', icon: Megaphone },
