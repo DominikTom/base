@@ -175,6 +175,29 @@ async function handleFinalize(body: {
 
 // ── HELPERS ──────────────────────────────────────────────────────────────────
 
+const PAGE_SIZE = 10000;
+
+/** Fetch all rows with pagination (Supabase default limit is 1000) */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function fetchAllFrom(table: string, select: string, extraFilters?: Record<string, any>): Promise<any[]> {
+  const all: unknown[] = [];
+  let offset = 0;
+  const db = getSupabaseAdmin();
+  while (true) {
+    let query = db.from(table).select(select).range(offset, offset + PAGE_SIZE - 1);
+    if (extraFilters?.gte) query = query.gte(extraFilters.gte[0], extraFilters.gte[1]);
+    if (extraFilters?.lte) query = query.lte(extraFilters.lte[0], extraFilters.lte[1]);
+    if (extraFilters?.not) query = query.not(extraFilters.not[0], extraFilters.not[1], extraFilters.not[2]);
+    const { data, error } = await query;
+    if (error) { console.error(`fetchAll ${table} error:`, error); break; }
+    if (!data || data.length === 0) break;
+    all.push(...data);
+    if (data.length < PAGE_SIZE) break;
+    offset += PAGE_SIZE;
+  }
+  return all;
+}
+
 async function rebuildDailyRevenue(minDate: string, maxDate: string) {
   if (!minDate || minDate === '9999-12-31') return;
 
@@ -184,13 +207,14 @@ async function rebuildDailyRevenue(minDate: string, maxDate: string) {
     .gte('date', minDate)
     .lte('date', maxDate);
 
-  const { data: orders } = await getSupabaseAdmin()
-    .from('fact_orders')
-    .select('order_date, source_shop, total_gross, total_gross_pln, shipping_cost_pln, is_paid, status, currency')
-    .gte('order_date', minDate)
-    .lte('order_date', maxDate + 'T23:59:59');
+  // Paginate through ALL orders (Supabase default limit is 1000)
+  const orders = await fetchAllFrom(
+    'fact_orders',
+    'order_date, source_shop, total_gross, total_gross_pln, shipping_cost_pln, is_paid, status, currency',
+    { gte: ['order_date', minDate], lte: ['order_date', maxDate + 'T23:59:59'] }
+  );
 
-  if (!orders || orders.length === 0) return;
+  if (orders.length === 0) return;
 
   const grouped: Record<string, {
     orders_count: number; orders_paid: number; orders_cancelled: number;
@@ -238,11 +262,9 @@ async function rebuildDailyRevenue(minDate: string, maxDate: string) {
 }
 
 async function rebuildDimProducts() {
-  const { data: items } = await getSupabaseAdmin()
-    .from('fact_order_items')
-    .select('product_name, product_category, quantity, order_id');
+  const items = await fetchAllFrom('fact_order_items', 'product_name, product_category, quantity, order_id');
 
-  if (!items || items.length === 0) return;
+  if (items.length === 0) return;
 
   const map: Record<string, { category: string; orders: Set<string>; quantity: number }> = {};
   for (const item of items) {
@@ -265,12 +287,9 @@ async function rebuildDimProducts() {
 }
 
 async function rebuildDimFabrics() {
-  const { data: items } = await getSupabaseAdmin()
-    .from('fact_order_items')
-    .select('fabric, fabric_collection, order_id')
-    .not('fabric', 'is', null);
+  const items = await fetchAllFrom('fact_order_items', 'fabric, fabric_collection, order_id', { not: ['fabric', 'is', null] });
 
-  if (!items || items.length === 0) return;
+  if (items.length === 0) return;
 
   const map: Record<string, { collection: string; orders: Set<string> }> = {};
   for (const item of items) {
