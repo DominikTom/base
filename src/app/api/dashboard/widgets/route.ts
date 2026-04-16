@@ -371,6 +371,54 @@ export async function POST(request: NextRequest) {
         ]});
       }
 
+      // ── GA4 / Traffic ──
+      case 'kpi_sessions':
+      case 'kpi_users':
+      case 'kpi_conversion_rate': {
+        let q = db.from('fact_daily_traffic').select('sessions, users, transactions')
+          .gte('date', dateFrom).lte('date', dateTo);
+        const { data } = await q.limit(50000);
+        let sessions = 0, users = 0, transactions = 0;
+        for (const r of data || []) { sessions += r.sessions || 0; users += r.users || 0; transactions += r.transactions || 0; }
+        const convRate = sessions > 0 ? (transactions / sessions) * 100 : 0;
+        const valMap: Record<string, { value: number; format: string }> = {
+          kpi_sessions: { value: sessions, format: 'number' },
+          kpi_users: { value: users, format: 'number' },
+          kpi_conversion_rate: { value: convRate, format: 'percent' },
+        };
+        return NextResponse.json({ type: 'kpi', ...valMap[widget] });
+      }
+
+      case 'ranking_traffic_sources': {
+        let q = db.from('fact_daily_traffic').select('source, medium, sessions')
+          .gte('date', dateFrom).lte('date', dateTo);
+        const { data } = await q.limit(50000);
+        const map: Record<string, number> = {};
+        for (const r of data || []) {
+          const key = `${r.source} / ${r.medium}`;
+          map[key] = (map[key] || 0) + (r.sessions || 0);
+        }
+        const ranked = Object.entries(map).sort(([,a],[,b]) => b - a).slice(0, limit);
+        return NextResponse.json({ type: 'ranking', data: ranked.map(([name, value]) => ({ name, value })), total: ranked.reduce((s,[,v]) => s + v, 0) });
+      }
+
+      case 'chart_sessions_timeline': {
+        let q = db.from('fact_daily_traffic').select('date, hostname, sessions')
+          .gte('date', dateFrom).lte('date', dateTo).order('date');
+        const { data } = await q.limit(50000);
+        const hostSet = new Set<string>();
+        const byDate: Record<string, Record<string, number>> = {};
+        for (const r of data || []) {
+          if (!byDate[r.date]) byDate[r.date] = {};
+          byDate[r.date][r.hostname] = (byDate[r.date][r.hostname] || 0) + (r.sessions || 0);
+          hostSet.add(r.hostname);
+        }
+        const shops = [...hostSet];
+        const chartData = Object.entries(byDate).sort(([a],[b]) => a.localeCompare(b))
+          .map(([date, vals]) => ({ date, ...Object.fromEntries(shops.map(s => [s, vals[s] || 0])) }));
+        return NextResponse.json({ type: 'area', data: chartData, shops });
+      }
+
       default:
         return NextResponse.json({ error: `Unknown widget: ${widget}` }, { status: 400 });
     }
