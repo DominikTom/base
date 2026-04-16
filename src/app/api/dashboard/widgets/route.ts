@@ -62,6 +62,57 @@ export async function POST(request: NextRequest) {
       return q;
     }
 
+    // Check if any cross-filters are item-level (need to query orders via items)
+    const hasItemCrossFilters = crossFilters.some((cf: { field: string }) => itemCrossFields.includes(cf.field));
+
+    // Helper: get filtered order IDs when item-level cross-filters are active
+    async function getFilteredOrderIds(): Promise<string[] | null> {
+      if (!hasItemCrossFilters) return null;
+      // Query items with cross-filters to get matching order_ids
+      const { data } = await iq('order_id').limit(50000);
+      if (!data) return [];
+      return [...new Set((data as Array<{ order_id: string }>).map(r => r.order_id))];
+    }
+
+    // Helper: get KPI totals — uses fact_daily_revenue when no cross-filters,
+    // otherwise queries fact_orders directly with filtered order_ids
+    async function getKpiTotals() {
+      if (!hasItemCrossFilters && crossFilters.length === 0) {
+        // Fast path: use pre-aggregated table
+        let q = db.from('fact_daily_revenue').select('*')
+          .gte('date', dateFrom).lte('date', dateTo);
+        if (shop !== 'all') q = q.eq('source_shop', shop);
+        const { data } = await q.limit(50000);
+        const rows = data || [];
+        return rows.reduce((a: typeof init, r: Record<string, number | null>) => ({
+          revenue: a.revenue + (r.revenue_gross_pln || 0),
+          paid: a.paid + (r.revenue_paid_pln || 0),
+          orders: a.orders + (r.orders_count || 0),
+          ordersPaid: a.ordersPaid + (r.orders_paid || 0),
+          cancelled: a.cancelled + (r.orders_cancelled || 0),
+        }), init);
+      }
+
+      // Slow path: query fact_orders with cross-filters
+      const filteredIds = await getFilteredOrderIds();
+      let q = orderQuery('total_gross_pln, is_paid, status');
+      if (filteredIds !== null) {
+        if (filteredIds.length === 0) return init;
+        // Supabase .in() has a limit, chunk if needed
+        q = q.in('order_id', filteredIds.slice(0, 5000));
+      }
+      const { data } = await q.limit(50000);
+      return (data || []).reduce((a: typeof init, r: Record<string, unknown>) => ({
+        revenue: a.revenue + ((r.total_gross_pln as number) || 0),
+        paid: a.paid + (r.is_paid ? ((r.total_gross_pln as number) || 0) : 0),
+        orders: a.orders + 1,
+        ordersPaid: a.ordersPaid + (r.is_paid ? 1 : 0),
+        cancelled: a.cancelled + (r.status === 'anulowane' ? 1 : 0),
+      }), init);
+    }
+
+    const init = { revenue: 0, paid: 0, orders: 0, ordersPaid: 0, cancelled: 0 };
+
     switch (widget) {
       // ── KPI Cards ──
       case 'kpi_revenue':
@@ -72,19 +123,7 @@ export async function POST(request: NextRequest) {
       case 'kpi_orders_samples':
       case 'kpi_aov':
       case 'kpi_payment_rate': {
-        let q = db.from('fact_daily_revenue').select('*')
-          .gte('date', dateFrom).lte('date', dateTo);
-        if (shop !== 'all') q = q.eq('source_shop', shop);
-        const { data } = await q.limit(50000);
-        const rows = data || [];
-
-        const totals = rows.reduce((a, r) => ({
-          revenue: a.revenue + (r.revenue_gross_pln || 0),
-          paid: a.paid + (r.revenue_paid_pln || 0),
-          orders: a.orders + (r.orders_count || 0),
-          ordersPaid: a.ordersPaid + (r.orders_paid || 0),
-          cancelled: a.cancelled + (r.orders_cancelled || 0),
-        }), { revenue: 0, paid: 0, orders: 0, ordersPaid: 0, cancelled: 0 });
+        const totals = await getKpiTotals();
 
         const unpaid = totals.revenue - totals.paid;
         const aov = totals.orders > 0 ? totals.revenue / totals.orders : 0;
@@ -203,18 +242,54 @@ export async function POST(request: NextRequest) {
       // ── Charts ──
       case 'chart_orders_timeline':
       case 'chart_daily_orders': {
-        let q = db.from('fact_daily_revenue').select('date, orders_count')
-          .gte('date', dateFrom).lte('date', dateTo).order('date');
-        if (shop !== 'all') q = q.eq('source_shop', shop);
-        const { data } = await q.limit(50000);
-        const byDate: Record<string, number> = {};
-        for (const r of data || []) byDate[r.date] = (byDate[r.date] || 0) + (r.orders_count || 0);
-        const chartData = Object.entries(byDate).sort(([a],[b]) => a.localeCompare(b))
-          .map(([name, value]) => ({ name, value }));
+        let chartData: Array<{ name: string; value: number }>;
+        if (hasItemCrossFilters || crossFilters.length > 0) {
+          // Use fact_orders with cross-filters
+          const filteredIds = await getFilteredOrderIds();
+          let q = orderQuery('order_date');
+          if (filteredIds !== null) {
+            if (filteredIds.length === 0) return NextResponse.json({ type: widget === 'chart_daily_orders' ? 'bar' : 'line', data: [] });
+            q = q.in('order_id', filteredIds.slice(0, 5000));
+          }
+          const { data } = await q.limit(50000);
+          const byDate: Record<string, number> = {};
+          for (const r of data || []) { const d = (r.order_date as string).substring(0, 10); byDate[d] = (byDate[d] || 0) + 1; }
+          chartData = Object.entries(byDate).sort(([a],[b]) => a.localeCompare(b)).map(([name, value]) => ({ name, value }));
+        } else {
+          let q = db.from('fact_daily_revenue').select('date, orders_count')
+            .gte('date', dateFrom).lte('date', dateTo).order('date');
+          if (shop !== 'all') q = q.eq('source_shop', shop);
+          const { data } = await q.limit(50000);
+          const byDate: Record<string, number> = {};
+          for (const r of data || []) byDate[r.date] = (byDate[r.date] || 0) + (r.orders_count || 0);
+          chartData = Object.entries(byDate).sort(([a],[b]) => a.localeCompare(b)).map(([name, value]) => ({ name, value }));
+        }
         return NextResponse.json({ type: widget === 'chart_daily_orders' ? 'bar' : 'line', data: chartData });
       }
 
       case 'chart_revenue_timeline': {
+        if (hasItemCrossFilters || crossFilters.length > 0) {
+          const filteredIds = await getFilteredOrderIds();
+          let q = orderQuery('order_date, source_shop, total_gross_pln');
+          if (filteredIds !== null) {
+            if (filteredIds.length === 0) return NextResponse.json({ type: 'area', data: [], shops: [] });
+            q = q.in('order_id', filteredIds.slice(0, 5000));
+          }
+          const { data } = await q.limit(50000);
+          const shopSet = new Set<string>();
+          const byDate: Record<string, Record<string, number>> = {};
+          for (const r of data || []) {
+            const d = (r.order_date as string).substring(0, 10);
+            if (!byDate[d]) byDate[d] = {};
+            byDate[d][r.source_shop] = (byDate[d][r.source_shop] || 0) + (r.total_gross_pln || 0);
+            shopSet.add(r.source_shop);
+          }
+          const shops = [...shopSet];
+          const chartData = Object.entries(byDate).sort(([a],[b]) => a.localeCompare(b))
+            .map(([date, vals]) => ({ date, ...Object.fromEntries(shops.map(s => [s, Math.round(vals[s] || 0)])) }));
+          return NextResponse.json({ type: 'area', data: chartData, shops });
+        }
+        // Fast path: pre-aggregated
         let q = db.from('fact_daily_revenue').select('date, source_shop, revenue_gross_pln')
           .gte('date', dateFrom).lte('date', dateTo).order('date');
         if (shop !== 'all') q = q.eq('source_shop', shop);
@@ -233,6 +308,18 @@ export async function POST(request: NextRequest) {
       }
 
       case 'chart_payment_status': {
+        if (hasItemCrossFilters || crossFilters.length > 0) {
+          const filteredIds = await getFilteredOrderIds();
+          let q = orderQuery('total_gross_pln, is_paid');
+          if (filteredIds !== null) {
+            if (filteredIds.length === 0) return NextResponse.json({ type: 'pie', data: [{ name: 'Zapłacone', value: 0 }, { name: 'Nieopłacone', value: 0 }] });
+            q = q.in('order_id', filteredIds.slice(0, 5000));
+          }
+          const { data } = await q.limit(50000);
+          let paid = 0, total = 0;
+          for (const r of data || []) { total += (r.total_gross_pln || 0); if (r.is_paid) paid += (r.total_gross_pln || 0); }
+          return NextResponse.json({ type: 'pie', data: [{ name: 'Zapłacone', value: Math.round(paid) }, { name: 'Nieopłacone', value: Math.round(total - paid) }] });
+        }
         let q = db.from('fact_daily_revenue').select('revenue_paid_pln, revenue_gross_pln')
           .gte('date', dateFrom).lte('date', dateTo);
         if (shop !== 'all') q = q.eq('source_shop', shop);
