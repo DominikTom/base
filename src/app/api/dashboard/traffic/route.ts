@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabaseAdmin } from '@/lib/supabase';
+import { getSupabaseAdmin } from '@/lib/supabase';
 
 export async function GET(request: NextRequest) {
   try {
@@ -8,7 +8,7 @@ export async function GET(request: NextRequest) {
     const dateTo = searchParams.get('date_to') || new Date().toISOString().split('T')[0];
     const hostname = searchParams.get('hostname') || 'all';
 
-    let query = supabaseAdmin
+    let query = getSupabaseAdmin()
       .from('fact_daily_traffic')
       .select('*')
       .gte('date', dateFrom)

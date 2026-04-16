@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabaseAdmin } from '@/lib/supabase';
+import { getSupabaseAdmin } from '@/lib/supabase';
 
 export async function GET(request: NextRequest) {
   try {
@@ -9,7 +9,7 @@ export async function GET(request: NextRequest) {
     const shop = searchParams.get('shop') || 'all';
 
     // Fetch product items with order data
-    let query = supabaseAdmin
+    let query = getSupabaseAdmin()
       .from('fact_order_items')
       .select('product_name, product_category, quantity, fabric, fabric_collection, bed_size, mattress_type, headboard_height, order_id, fact_orders!inner(order_date, source_shop, total_gross_pln, status)')
       .gte('fact_orders.order_date', dateFrom)

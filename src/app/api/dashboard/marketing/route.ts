@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabaseAdmin } from '@/lib/supabase';
+import { getSupabaseAdmin } from '@/lib/supabase';
 
 export async function GET(request: NextRequest) {
   try {
@@ -9,7 +9,7 @@ export async function GET(request: NextRequest) {
     const platform = searchParams.get('platform') || 'all';
 
     // Fetch ad spend data (WARM from DB)
-    let query = supabaseAdmin
+    let query = getSupabaseAdmin()
       .from('fact_daily_adspend')
       .select('*')
       .gte('date', dateFrom)

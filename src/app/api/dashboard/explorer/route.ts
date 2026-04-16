@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabaseAdmin } from '@/lib/supabase';
+import { getSupabaseAdmin } from '@/lib/supabase';
 
 // Whitelist of allowed columns for security
 const ALLOWED_X_AXES = ['date', 'source_shop', 'product_category', 'fabric_collection', 'supplier', 'source_platform'];
@@ -49,7 +49,7 @@ async function handleRevenueExplorer(params: {
   date_from: string; date_to: string; filters: Record<string, string[]>;
   granularity: string;
 }) {
-  let query = supabaseAdmin
+  let query = getSupabaseAdmin()
     .from('fact_daily_revenue')
     .select('*')
     .gte('date', params.date_from)
@@ -143,7 +143,7 @@ async function handleOrderExplorer(params: {
   date_from: string; date_to: string; filters: Record<string, string[]>;
   granularity: string;
 }) {
-  let query = supabaseAdmin
+  let query = getSupabaseAdmin()
     .from('fact_orders')
     .select('order_id, order_date, source_shop, source_platform, supplier, total_gross_pln, status')
     .gte('order_date', params.date_from)
@@ -166,7 +166,7 @@ async function handleOrderExplorer(params: {
   let items: Array<Record<string, unknown>> = [];
   if (['product_category', 'fabric_collection'].includes(params.x_axis) ||
       ['product_category', 'fabric_collection'].includes(params.group_by || '')) {
-    const { data: itemData } = await supabaseAdmin
+    const { data: itemData } = await getSupabaseAdmin()
       .from('fact_order_items')
       .select('order_id, product_category, fabric_collection, quantity')
       .in('order_id', (orders || []).map(o => o.order_id))

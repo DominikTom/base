@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabaseAdmin } from '@/lib/supabase';
+import { getSupabaseAdmin } from '@/lib/supabase';
 
 export async function GET(request: NextRequest) {
   try {
@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Fetch daily revenue data
-    let revenueQuery = supabaseAdmin
+    let revenueQuery = getSupabaseAdmin()
       .from('fact_daily_revenue')
       .select('*')
       .gte('date', dateFrom)
@@ -91,7 +91,7 @@ export async function GET(request: NextRequest) {
     const ordersSparkline = ordersDailyTotals.slice(-30);
 
     // Top products
-    let productsQuery = supabaseAdmin
+    let productsQuery = getSupabaseAdmin()
       .from('fact_order_items')
       .select('product_name, product_category, quantity, order_id, fact_orders!inner(order_date, source_shop, total_gross_pln)')
       .gte('fact_orders.order_date', dateFrom)

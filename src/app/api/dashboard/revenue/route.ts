@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabaseAdmin } from '@/lib/supabase';
+import { getSupabaseAdmin } from '@/lib/supabase';
 
 export async function GET(request: NextRequest) {
   try {
@@ -10,7 +10,7 @@ export async function GET(request: NextRequest) {
     const granularity = searchParams.get('granularity') || 'day';
 
     // Fetch daily revenue
-    let query = supabaseAdmin
+    let query = getSupabaseAdmin()
       .from('fact_daily_revenue')
       .select('*')
       .gte('date', dateFrom)
@@ -62,7 +62,7 @@ export async function GET(request: NextRequest) {
       }));
 
     // Supplier revenue ranking
-    let supplierQuery = supabaseAdmin
+    let supplierQuery = getSupabaseAdmin()
       .from('fact_orders')
       .select('supplier, total_gross_pln')
       .gte('order_date', dateFrom)
@@ -85,7 +85,7 @@ export async function GET(request: NextRequest) {
       .map(([name, value]) => ({ name, value: Math.round(value) }));
 
     // Order status funnel
-    let statusQuery = supabaseAdmin
+    let statusQuery = getSupabaseAdmin()
       .from('fact_orders')
       .select('status, is_paid')
       .gte('order_date', dateFrom)
@@ -122,7 +122,7 @@ export async function GET(request: NextRequest) {
       }));
 
     // Coupon analysis
-    let couponQuery = supabaseAdmin
+    let couponQuery = getSupabaseAdmin()
       .from('fact_orders')
       .select('coupon_code, total_gross_pln')
       .gte('order_date', dateFrom)

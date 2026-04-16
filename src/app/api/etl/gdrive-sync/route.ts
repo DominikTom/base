@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import Papa from 'papaparse';
 import { parseErpCsv, type RawCsvRow } from '@/lib/erp-parser';
 import { listCsvFiles, downloadFileAsText } from '@/lib/google-drive';
-import { supabaseAdmin } from '@/lib/supabase';
+import { getSupabaseAdmin } from '@/lib/supabase';
 
 export const maxDuration = 300; // 5 min for large CSV processing
 
@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Create ETL log
-    const { data: etlLog } = await supabaseAdmin
+    const { data: etlLog } = await getSupabaseAdmin()
       .from('etl_log')
       .insert({
         source: 'gdrive_csv',
@@ -56,7 +56,7 @@ export async function GET(request: NextRequest) {
 
       const latestFile = files[0];
       if (etlLogId) {
-        await supabaseAdmin.from('etl_log').update({ csv_filename: latestFile.name }).eq('id', etlLogId);
+        await getSupabaseAdmin().from('etl_log').update({ csv_filename: latestFile.name }).eq('id', etlLogId);
       }
 
       // Step 2: Download
@@ -74,7 +74,7 @@ export async function GET(request: NextRequest) {
 
       // Step 4: Delete old data in range
       if (minDate && maxDate && minDate !== '9999-12-31') {
-        const { data: existing } = await supabaseAdmin
+        const { data: existing } = await getSupabaseAdmin()
           .from('fact_orders')
           .select('order_id')
           .gte('order_date', minDate)
@@ -83,10 +83,10 @@ export async function GET(request: NextRequest) {
         if (existing && existing.length > 0) {
           const ids = existing.map(o => o.order_id);
           for (let i = 0; i < ids.length; i += 500) {
-            await supabaseAdmin.from('fact_order_items').delete().in('order_id', ids.slice(i, i + 500));
+            await getSupabaseAdmin().from('fact_order_items').delete().in('order_id', ids.slice(i, i + 500));
           }
           for (let i = 0; i < ids.length; i += 500) {
-            await supabaseAdmin.from('fact_orders').delete().in('order_id', ids.slice(i, i + 500));
+            await getSupabaseAdmin().from('fact_orders').delete().in('order_id', ids.slice(i, i + 500));
           }
         }
       }
@@ -95,7 +95,7 @@ export async function GET(request: NextRequest) {
       let ordersInserted = 0;
       for (let i = 0; i < orders.length; i += 200) {
         const batch = orders.slice(i, i + 200);
-        const { error } = await supabaseAdmin.from('fact_orders').upsert(batch, { onConflict: 'order_id' });
+        const { error } = await getSupabaseAdmin().from('fact_orders').upsert(batch, { onConflict: 'order_id' });
         if (!error) ordersInserted += batch.length;
       }
 
@@ -103,7 +103,7 @@ export async function GET(request: NextRequest) {
       let itemsInserted = 0;
       for (let i = 0; i < items.length; i += 500) {
         const batch = items.slice(i, i + 500);
-        const { error } = await supabaseAdmin.from('fact_order_items').insert(batch);
+        const { error } = await getSupabaseAdmin().from('fact_order_items').insert(batch);
         if (!error) itemsInserted += batch.length;
       }
 
@@ -145,7 +145,7 @@ async function updateLog(
   extra?: Record<string, unknown>
 ) {
   if (!id) return;
-  await supabaseAdmin.from('etl_log').update({
+  await getSupabaseAdmin().from('etl_log').update({
     status,
     error_message,
     finished_at: new Date().toISOString(),
@@ -156,9 +156,9 @@ async function updateLog(
 async function rebuildDailyRevenue(minDate: string, maxDate: string) {
   if (!minDate || minDate === '9999-12-31') return;
 
-  await supabaseAdmin.from('fact_daily_revenue').delete().gte('date', minDate).lte('date', maxDate);
+  await getSupabaseAdmin().from('fact_daily_revenue').delete().gte('date', minDate).lte('date', maxDate);
 
-  const { data: orders } = await supabaseAdmin
+  const { data: orders } = await getSupabaseAdmin()
     .from('fact_orders')
     .select('order_date, source_shop, total_gross, total_gross_pln, shipping_cost_pln, is_paid, status, currency')
     .gte('order_date', minDate)
@@ -201,13 +201,13 @@ async function rebuildDailyRevenue(minDate: string, maxDate: string) {
   });
 
   for (let i = 0; i < rows.length; i += 500) {
-    await supabaseAdmin.from('fact_daily_revenue').upsert(rows.slice(i, i + 500), { onConflict: 'date,source_shop' });
+    await getSupabaseAdmin().from('fact_daily_revenue').upsert(rows.slice(i, i + 500), { onConflict: 'date,source_shop' });
   }
 }
 
 async function rebuildDimTables() {
   // Products
-  const { data: items } = await supabaseAdmin
+  const { data: items } = await getSupabaseAdmin()
     .from('fact_order_items')
     .select('product_name, product_category, quantity, order_id');
 
@@ -224,12 +224,12 @@ async function rebuildDimTables() {
       updated_at: new Date().toISOString(),
     }));
     for (let j = 0; j < rows.length; j += 500) {
-      await supabaseAdmin.from('dim_products').upsert(rows.slice(j, j + 500), { onConflict: 'product_name' });
+      await getSupabaseAdmin().from('dim_products').upsert(rows.slice(j, j + 500), { onConflict: 'product_name' });
     }
   }
 
   // Fabrics
-  const { data: fabItems } = await supabaseAdmin
+  const { data: fabItems } = await getSupabaseAdmin()
     .from('fact_order_items')
     .select('fabric, fabric_collection, order_id')
     .not('fabric', 'is', null);
@@ -246,7 +246,7 @@ async function rebuildDimTables() {
       total_orders: v.orders.size, updated_at: new Date().toISOString(),
     }));
     for (let j = 0; j < rows.length; j += 500) {
-      await supabaseAdmin.from('dim_fabrics').upsert(rows.slice(j, j + 500), { onConflict: 'fabric_name' });
+      await getSupabaseAdmin().from('dim_fabrics').upsert(rows.slice(j, j + 500), { onConflict: 'fabric_name' });
     }
   }
 }

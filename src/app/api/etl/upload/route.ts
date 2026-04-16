@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabaseAdmin } from '@/lib/supabase';
+import { getSupabaseAdmin } from '@/lib/supabase';
 import type { FactOrder, FactOrderItem } from '@/types/database';
 
 export const maxDuration = 60;
@@ -46,7 +46,7 @@ async function handleStart(body: { filename?: string; dateRange?: { min: string;
   const { filename, dateRange } = body;
 
   // Create ETL log entry
-  const { data: etlLog, error: logError } = await supabaseAdmin
+  const { data: etlLog, error: logError } = await getSupabaseAdmin()
     .from('etl_log')
     .insert({
       source: 'erp_csv',
@@ -66,7 +66,7 @@ async function handleStart(body: { filename?: string; dateRange?: { min: string;
   // Delete existing data in date range
   let deletedOrders = 0;
   if (dateRange?.min && dateRange?.max && dateRange.min !== '9999-12-31') {
-    const { data: existingOrders } = await supabaseAdmin
+    const { data: existingOrders } = await getSupabaseAdmin()
       .from('fact_orders')
       .select('order_id')
       .gte('order_date', dateRange.min)
@@ -77,11 +77,11 @@ async function handleStart(body: { filename?: string; dateRange?: { min: string;
       const BATCH = 500;
       for (let i = 0; i < ids.length; i += BATCH) {
         const batch = ids.slice(i, i + BATCH);
-        await supabaseAdmin.from('fact_order_items').delete().in('order_id', batch);
+        await getSupabaseAdmin().from('fact_order_items').delete().in('order_id', batch);
       }
       for (let i = 0; i < ids.length; i += BATCH) {
         const batch = ids.slice(i, i + BATCH);
-        await supabaseAdmin.from('fact_orders').delete().in('order_id', batch);
+        await getSupabaseAdmin().from('fact_orders').delete().in('order_id', batch);
       }
       deletedOrders = ids.length;
     }
@@ -102,7 +102,7 @@ async function handleBatchOrders(body: { etlLogId: number; orders: FactOrder[] }
     return NextResponse.json({ inserted: 0 });
   }
 
-  const { error } = await supabaseAdmin.from('fact_orders').upsert(orders, {
+  const { error } = await getSupabaseAdmin().from('fact_orders').upsert(orders, {
     onConflict: 'order_id',
   });
 
@@ -123,7 +123,7 @@ async function handleBatchItems(body: { etlLogId: number; items: FactOrderItem[]
     return NextResponse.json({ inserted: 0 });
   }
 
-  const { error } = await supabaseAdmin.from('fact_order_items').insert(items);
+  const { error } = await getSupabaseAdmin().from('fact_order_items').insert(items);
 
   if (error) {
     console.error('Batch items error:', error);
@@ -153,7 +153,7 @@ async function handleFinalize(body: {
 
   // Update ETL log
   if (etlLogId) {
-    await supabaseAdmin.from('etl_log').update({
+    await getSupabaseAdmin().from('etl_log').update({
       status: 'success',
       finished_at: new Date().toISOString(),
       rows_processed: stats?.totalRows || 0,
@@ -171,13 +171,13 @@ async function handleFinalize(body: {
 async function rebuildDailyRevenue(minDate: string, maxDate: string) {
   if (!minDate || minDate === '9999-12-31') return;
 
-  await supabaseAdmin
+  await getSupabaseAdmin()
     .from('fact_daily_revenue')
     .delete()
     .gte('date', minDate)
     .lte('date', maxDate);
 
-  const { data: orders } = await supabaseAdmin
+  const { data: orders } = await getSupabaseAdmin()
     .from('fact_orders')
     .select('order_date, source_shop, total_gross, total_gross_pln, shipping_cost_pln, is_paid, status, currency')
     .gte('order_date', minDate)
@@ -224,14 +224,14 @@ async function rebuildDailyRevenue(minDate: string, maxDate: string) {
   });
 
   for (let i = 0; i < rows.length; i += 500) {
-    await supabaseAdmin.from('fact_daily_revenue').upsert(rows.slice(i, i + 500), {
+    await getSupabaseAdmin().from('fact_daily_revenue').upsert(rows.slice(i, i + 500), {
       onConflict: 'date,source_shop',
     });
   }
 }
 
 async function rebuildDimProducts() {
-  const { data: items } = await supabaseAdmin
+  const { data: items } = await getSupabaseAdmin()
     .from('fact_order_items')
     .select('product_name, product_category, quantity, order_id');
 
@@ -253,12 +253,12 @@ async function rebuildDimProducts() {
   }));
 
   for (let i = 0; i < rows.length; i += 500) {
-    await supabaseAdmin.from('dim_products').upsert(rows.slice(i, i + 500), { onConflict: 'product_name' });
+    await getSupabaseAdmin().from('dim_products').upsert(rows.slice(i, i + 500), { onConflict: 'product_name' });
   }
 }
 
 async function rebuildDimFabrics() {
-  const { data: items } = await supabaseAdmin
+  const { data: items } = await getSupabaseAdmin()
     .from('fact_order_items')
     .select('fabric, fabric_collection, order_id')
     .not('fabric', 'is', null);
@@ -280,6 +280,6 @@ async function rebuildDimFabrics() {
   }));
 
   for (let i = 0; i < rows.length; i += 500) {
-    await supabaseAdmin.from('dim_fabrics').upsert(rows.slice(i, i + 500), { onConflict: 'fabric_name' });
+    await getSupabaseAdmin().from('dim_fabrics').upsert(rows.slice(i, i + 500), { onConflict: 'fabric_name' });
   }
 }
