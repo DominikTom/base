@@ -15,7 +15,6 @@ function getServiceKey() {
 let _supabase: SupabaseClient | null = null;
 let _supabaseAdmin: SupabaseClient | null = null;
 
-// Client-side Supabase (uses anon key) — lazy initialized
 export function getSupabase(): SupabaseClient {
   if (!_supabase) {
     const url = getUrl();
@@ -28,7 +27,6 @@ export function getSupabase(): SupabaseClient {
   return _supabase;
 }
 
-// Server-side Supabase (uses service key for full access) — lazy initialized
 export function getSupabaseAdmin(): SupabaseClient {
   if (!_supabaseAdmin) {
     const url = getUrl();
@@ -43,17 +41,22 @@ export function getSupabaseAdmin(): SupabaseClient {
   return _supabaseAdmin;
 }
 
-// Backward-compatible lazy proxies
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export const supabase: SupabaseClient = new Proxy({} as any, {
-  get(_, prop) {
-    return (getSupabase() as unknown as Record<string | symbol, unknown>)[prop];
-  },
-});
+// Lazy proxies that properly bind methods to the real client instance
+function createLazyProxy(getter: () => SupabaseClient): SupabaseClient {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return new Proxy({} as any, {
+    get(_, prop) {
+      const target = getter();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const value = (target as any)[prop];
+      // Bind functions to the real client so `this` context is correct
+      if (typeof value === 'function') {
+        return value.bind(target);
+      }
+      return value;
+    },
+  });
+}
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export const supabaseAdmin: SupabaseClient = new Proxy({} as any, {
-  get(_, prop) {
-    return (getSupabaseAdmin() as unknown as Record<string | symbol, unknown>)[prop];
-  },
-});
+export const supabase: SupabaseClient = createLazyProxy(getSupabase);
+export const supabaseAdmin: SupabaseClient = createLazyProxy(getSupabaseAdmin);

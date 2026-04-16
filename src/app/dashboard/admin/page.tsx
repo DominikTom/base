@@ -9,6 +9,16 @@ import { formatNumber } from '@/lib/utils';
 import { Upload, CheckCircle, XCircle, Clock, RefreshCw, FileText, FolderSync } from 'lucide-react';
 import type { EtlLog } from '@/types/database';
 
+async function safeJson(res: Response): Promise<Record<string, unknown>> {
+  const text = await res.text();
+  if (!text) throw new Error(`Serwer zwrócił pustą odpowiedź (HTTP ${res.status})`);
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(`Serwer zwrócił błąd (HTTP ${res.status}): ${text.substring(0, 200)}`);
+  }
+}
+
 type Phase =
   | 'idle'
   | 'parsing'
@@ -85,8 +95,8 @@ export default function AdminPage() {
           dateRange: stats.dateRange,
         }),
       });
-      const startData = await startRes.json();
-      if (!startRes.ok) throw new Error(startData.error || 'Start failed');
+      const startData = await safeJson(startRes);
+      if (!startRes.ok) throw new Error(String(startData.error) || 'Start failed');
       const etlLogId = startData.etlLogId;
 
       if (abortRef.current) throw new Error('Anulowano');
@@ -111,9 +121,9 @@ export default function AdminPage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'batch_orders', etlLogId, orders: batch }),
         });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Batch orders failed');
-        ordersInserted += data.inserted || 0;
+        const data = await safeJson(res);
+        if (!res.ok) throw new Error(String(data.error) || 'Batch orders failed');
+        ordersInserted += (data.inserted as number) || 0;
       }
 
       // ── Phase 4: Upload items in batches ──────────────────────────────
@@ -136,9 +146,9 @@ export default function AdminPage() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'batch_items', etlLogId, items: batch }),
         });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || 'Batch items failed');
-        itemsInserted += data.inserted || 0;
+        const data = await safeJson(res);
+        if (!res.ok) throw new Error(String(data.error) || 'Batch items failed');
+        itemsInserted += (data.inserted as number) || 0;
       }
 
       // ── Phase 5: Finalize ─────────────────────────────────────────────
@@ -155,8 +165,8 @@ export default function AdminPage() {
           dateRange: stats.dateRange,
         }),
       });
-      const finData = await finRes.json();
-      if (!finRes.ok) throw new Error(finData.error || 'Finalize failed');
+      const finData = await safeJson(finRes);
+      if (!finRes.ok) throw new Error(String(finData.error) || 'Finalize failed');
 
       // ── Done ──────────────────────────────────────────────────────────
       setPhase('done');
