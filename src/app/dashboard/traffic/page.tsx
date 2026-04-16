@@ -5,6 +5,7 @@ import { useDashboard } from '@/lib/dashboard-context';
 import { KpiCard } from '@/components/ui/kpi-card';
 import { ChartCard } from '@/components/charts/chart-card';
 import { SimplePieChart } from '@/components/charts/pie-chart';
+import { SimpleBarChart } from '@/components/charts/bar-chart';
 import { DataTable, type Column } from '@/components/ui/data-table';
 import { formatNumber, formatCurrency, SHOP_COLORS } from '@/lib/utils';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
@@ -26,6 +27,8 @@ interface TrafficData {
   charts: {
     sessionsTimeSeries: Array<Record<string, string | number>>;
     sourcePie: Array<{ name: string; value: number }>;
+    adCostDaily: Array<{ name: string; value: number }>;
+    revDaily: Array<{ name: string; value: number }>;
   };
   sourceTable: Array<{
     source: string;
@@ -178,6 +181,16 @@ export default function TrafficPage() {
       </div>
 
       {/* Sessions over time */}
+      {/* Google Ads charts — like agency dashboard */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <ChartCard title="Google Ads — Koszt" subtitle={`Total: ${formatCurrency(data.kpis.adCost)}`}>
+          <SimpleBarChart data={data.charts.adCostDaily} barColor="#3b82f6" valueFormatter={v => formatCurrency(v)} />
+        </ChartCard>
+        <ChartCard title="Revenue (GA4)" subtitle={`Total: ${formatCurrency(data.kpis.revenue)}`}>
+          <SimpleBarChart data={data.charts.revDaily} barColor="#10b981" valueFormatter={v => formatCurrency(v)} />
+        </ChartCard>
+      </div>
+
       <ChartCard title="Sesje w czasie" subtitle="Podział na hostname">
         <ResponsiveContainer width="100%" height={320}>
           <AreaChart data={data.charts.sessionsTimeSeries} margin={{ top: 5, right: 5, bottom: 5, left: 5 }}>

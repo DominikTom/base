@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabase';
-import { fetchGA4Report, getPropertyIds, getHostname } from '@/lib/ga4';
+import { fetchGA4Report, fetchGA4DailyTotals, getPropertyIds, getHostname } from '@/lib/ga4';
 
 export const maxDuration = 60;
 
@@ -64,37 +64,48 @@ async function syncGA4(daysBack: number = 7) {
 
       for (const propertyId of propertyIds) {
         const hostname = getHostname(propertyId);
-        const rows = await fetchGA4Report(propertyId, dateFromStr, dateToStr);
 
-        // Insert in batches
-        const dbRows = rows.map(r => ({
-          date: r.date,
-          source: r.source,
-          medium: r.medium,
-          campaign: r.campaign || '',
-          hostname: r.hostname,
-          sessions: r.sessions,
-          users: r.users,
-          new_users: r.newUsers,
-          pageviews: r.pageviews,
-          bounce_rate: r.bounceRate,
+        // Fetch detailed (by source/medium) + daily totals (accurate KPIs) in parallel
+        const [detailRows, totalRows_] = await Promise.all([
+          fetchGA4Report(propertyId, dateFromStr, dateToStr),
+          fetchGA4DailyTotals(propertyId, dateFromStr, dateToStr),
+        ]);
+
+        // Insert detail rows (source/medium breakdown)
+        const dbDetailRows = detailRows.map(r => ({
+          date: r.date, source: r.source, medium: r.medium,
+          campaign: r.campaign || '', hostname: r.hostname,
+          sessions: r.sessions, users: r.users, new_users: r.newUsers,
+          pageviews: r.pageviews, bounce_rate: r.bounceRate,
           avg_session_duration: r.avgSessionDuration,
-          transactions: r.transactions,
-          ga_revenue: r.gaRevenue,
-          ad_cost: r.adCost,
-          ad_clicks: r.adClicks,
-          ad_impressions: r.adImpressions,
+          transactions: r.transactions, ga_revenue: r.gaRevenue,
+          ad_cost: r.adCost, ad_clicks: r.adClicks, ad_impressions: r.adImpressions,
         }));
 
-        for (let i = 0; i < dbRows.length; i += 500) {
-          const batch = dbRows.slice(i, i + 500);
-          await db.from('fact_daily_traffic').upsert(batch, {
+        for (let i = 0; i < dbDetailRows.length; i += 500) {
+          await db.from('fact_daily_traffic').upsert(dbDetailRows.slice(i, i + 500), {
             onConflict: 'date,source,medium,hostname,campaign',
           });
         }
 
-        totalRows += rows.length;
-        results[hostname] = rows.length;
+        // Insert daily totals (source='__total__' for accurate KPIs matching GA4 native)
+        const dbTotalRows = totalRows_.map(r => ({
+          date: r.date, source: '__total__', medium: '__total__',
+          campaign: '', hostname: r.hostname,
+          sessions: r.sessions, users: r.users, new_users: r.newUsers,
+          pageviews: r.pageviews, bounce_rate: 0, avg_session_duration: 0,
+          transactions: r.transactions, ga_revenue: r.gaRevenue,
+          ad_cost: r.adCost, ad_clicks: r.adClicks, ad_impressions: r.adImpressions,
+        }));
+
+        for (let i = 0; i < dbTotalRows.length; i += 500) {
+          await db.from('fact_daily_traffic').upsert(dbTotalRows.slice(i, i + 500), {
+            onConflict: 'date,source,medium,hostname,campaign',
+          });
+        }
+
+        totalRows += detailRows.length + totalRows_.length;
+        results[hostname] = detailRows.length;
       }
 
       // Update ETL log

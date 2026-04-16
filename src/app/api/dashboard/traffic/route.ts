@@ -22,8 +22,12 @@ export async function GET(request: NextRequest) {
     const { data: trafficData, error } = await query.limit(50000);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-    // KPIs
-    const totals = (trafficData || []).reduce(
+    // KPIs from __total__ rows (accurate, matches GA4 native)
+    const allRows = trafficData || [];
+    const totalRows = allRows.filter(r => r.source === '__total__');
+    const detailRows = allRows.filter(r => r.source !== '__total__');
+
+    const totals = totalRows.reduce(
       (acc, row) => {
         acc.sessions += row.sessions || 0;
         acc.users += row.users || 0;
@@ -41,10 +45,10 @@ export async function GET(request: NextRequest) {
 
     const conversionRate = totals.sessions > 0 ? (totals.transactions / totals.sessions) * 100 : 0;
 
-    // Sessions over time by hostname
+    // Sessions over time by hostname (from __total__ rows for accuracy)
     const sessionsMap: Record<string, Record<string, number>> = {};
     const hostnames = new Set<string>();
-    for (const row of trafficData || []) {
+    for (const row of totalRows) {
       if (!sessionsMap[row.date]) sessionsMap[row.date] = {};
       sessionsMap[row.date][row.hostname] = (sessionsMap[row.date][row.hostname] || 0) + (row.sessions || 0);
       hostnames.add(row.hostname);
@@ -55,7 +59,7 @@ export async function GET(request: NextRequest) {
 
     // Source/Medium breakdown
     const sourceMap: Record<string, { sessions: number; transactions: number; revenue: number }> = {};
-    for (const row of trafficData || []) {
+    for (const row of detailRows) {
       const key = `${row.source} / ${row.medium}`;
       if (!sourceMap[key]) sourceMap[key] = { sessions: 0, transactions: 0, revenue: 0 };
       sourceMap[key].sessions += row.sessions || 0;
@@ -79,6 +83,22 @@ export async function GET(request: NextRequest) {
       .slice(0, 8)
       .map(([name, v]) => ({ name, value: v.sessions }));
 
+    // Daily ad cost chart (from __total__ rows)
+    const adCostDaily: Array<{ name: string; value: number }> = [];
+    const revDaily: Array<{ name: string; value: number }> = [];
+    const dailyByDate: Record<string, { cost: number; rev: number; clicks: number; impressions: number }> = {};
+    for (const row of totalRows) {
+      if (!dailyByDate[row.date]) dailyByDate[row.date] = { cost: 0, rev: 0, clicks: 0, impressions: 0 };
+      dailyByDate[row.date].cost += row.ad_cost || 0;
+      dailyByDate[row.date].rev += row.ga_revenue || 0;
+      dailyByDate[row.date].clicks += row.ad_clicks || 0;
+      dailyByDate[row.date].impressions += row.ad_impressions || 0;
+    }
+    for (const [date, v] of Object.entries(dailyByDate).sort(([a],[b]) => a.localeCompare(b))) {
+      adCostDaily.push({ name: date, value: Math.round(v.cost) });
+      revDaily.push({ name: date, value: Math.round(v.rev) });
+    }
+
     return NextResponse.json({
       kpis: {
         sessions: totals.sessions,
@@ -95,6 +115,8 @@ export async function GET(request: NextRequest) {
       charts: {
         sessionsTimeSeries,
         sourcePie,
+        adCostDaily,
+        revDaily,
       },
       sourceTable,
       hostnames: [...hostnames],
