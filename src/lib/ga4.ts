@@ -72,49 +72,24 @@ export async function fetchGA4DailyTotals(
   const property = `properties/${propertyId}`;
   const dateRanges = [{ startDate: dateFrom, endDate: dateTo }];
 
-  const [trafficRes, adsRes] = await Promise.all([
-    analytics.properties.runReport({
-      property,
-      requestBody: {
-        dateRanges,
-        dimensions: [{ name: 'date' }],
-        metrics: [
-          { name: 'sessions' },
-          { name: 'totalUsers' },
-          { name: 'newUsers' },
-          { name: 'screenPageViews' },
-          { name: 'transactions' },
-          { name: 'purchaseRevenue' },
-        ],
-      },
-    }),
-    // Ads query needs sessionCampaignName dimension (GA4 requirement for ad metrics)
-    analytics.properties.runReport({
-      property,
-      requestBody: {
-        dateRanges,
-        dimensions: [{ name: 'date' }, { name: 'sessionCampaignName' }],
-        metrics: [
-          { name: 'advertiserAdCost' },
-          { name: 'advertiserAdClicks' },
-          { name: 'advertiserAdImpressions' },
-        ],
-      },
-    }),
-  ]);
+  // Single fast query for daily totals (no ads — those come from cron's detail query)
+  const trafficRes = await analytics.properties.runReport({
+    property,
+    requestBody: {
+      dateRanges,
+      dimensions: [{ name: 'date' }],
+      metrics: [
+        { name: 'sessions' },
+        { name: 'totalUsers' },
+        { name: 'newUsers' },
+        { name: 'screenPageViews' },
+        { name: 'transactions' },
+        { name: 'purchaseRevenue' },
+      ],
+    },
+  });
 
   const hostname = getHostname(propertyId);
-  // Aggregate ads by date (sum across campaigns)
-  const adsMap: Record<string, { cost: number; clicks: number; impressions: number }> = {};
-  for (const row of adsRes.data.rows || []) {
-    const d = row.dimensionValues || [];
-    const m = row.metricValues || [];
-    const date = d[0]?.value || '';
-    if (!adsMap[date]) adsMap[date] = { cost: 0, clicks: 0, impressions: 0 };
-    adsMap[date].cost += parseFloat(m[0]?.value || '0');
-    adsMap[date].clicks += parseInt(m[1]?.value || '0');
-    adsMap[date].impressions += parseInt(m[2]?.value || '0');
-  }
 
   const rows: GA4DailyTotal[] = [];
   for (const row of trafficRes.data.rows || []) {
@@ -124,8 +99,6 @@ export async function fetchGA4DailyTotals(
     const date = rawDate.length === 8
       ? `${rawDate.slice(0, 4)}-${rawDate.slice(4, 6)}-${rawDate.slice(6, 8)}`
       : rawDate;
-    const ads = adsMap[rawDate] || { cost: 0, clicks: 0, impressions: 0 };
-
     rows.push({
       date, hostname,
       sessions: parseInt(m[0]?.value || '0'),
@@ -134,9 +107,7 @@ export async function fetchGA4DailyTotals(
       pageviews: parseInt(m[3]?.value || '0'),
       transactions: parseInt(m[4]?.value || '0'),
       gaRevenue: parseFloat(m[5]?.value || '0'),
-      adCost: ads.cost,
-      adClicks: ads.clicks,
-      adImpressions: ads.impressions,
+      adCost: 0, adClicks: 0, adImpressions: 0,
     });
   }
   return rows;

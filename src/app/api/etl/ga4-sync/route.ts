@@ -4,9 +4,9 @@ import { fetchGA4Report, fetchGA4DailyTotals, getPropertyIds, getHostname } from
 
 export const maxDuration = 60;
 
-// POST — manual trigger: totals-only for 90 days (fast, fits in 10s)
+// POST — manual trigger: 365 days of daily totals (fast, no ads)
 export async function POST() {
-  return syncGA4({ daysBack: 90, totalsOnly: true });
+  return syncGA4({ daysBack: 365, totalsOnly: true });
 }
 
 // GET — Vercel Cron: totals + detail for last 7 days
@@ -47,18 +47,14 @@ async function syncGA4({ daysBack, totalsOnly }: { daysBack: number; totalsOnly:
       const dateFromStr = fmt(dateFrom);
       const dateToStr = fmt(dateTo);
 
-      // Delete __total__ rows in range (always refresh totals)
-      await db.from('fact_daily_traffic').delete()
-        .eq('source', '__total__')
-        .gte('date', dateFromStr)
-        .lte('date', dateToStr);
-
-      // If fetching detail too, delete detail rows in range
-      if (!totalsOnly) {
+      // Clean slate for manual sync, targeted delete for cron
+      if (totalsOnly) {
+        // Manual: delete ALL data, fresh start
+        await db.from('fact_daily_traffic').delete().gte('date', '2020-01-01');
+      } else {
+        // Cron: delete only the date range
         await db.from('fact_daily_traffic').delete()
-          .neq('source', '__total__')
-          .gte('date', dateFromStr)
-          .lte('date', dateToStr);
+          .gte('date', dateFromStr).lte('date', dateToStr);
       }
 
       let totalRows = 0;
