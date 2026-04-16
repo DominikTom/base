@@ -9,7 +9,7 @@ import { SimplePieChart } from '@/components/charts/pie-chart';
 import { DataTable, type Column } from '@/components/ui/data-table';
 import { formatCurrency, formatNumber, cn } from '@/lib/utils';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
-import { DollarSign, Target, TrendingUp, MousePointerClick, Eye, Percent } from 'lucide-react';
+import { DollarSign, Target, TrendingUp, MousePointerClick, Eye, Percent, RefreshCw, CheckCircle, XCircle } from 'lucide-react';
 
 interface MarketingData {
   kpis: {
@@ -100,7 +100,10 @@ export default function MarketingPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-semibold text-zinc-100">Marketing Performance</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl font-semibold text-zinc-100">Marketing Performance</h1>
+        <SyncMetaButton />
+      </div>
 
       {/* KPI Cards */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
@@ -153,6 +156,44 @@ export default function MarketingPage() {
       <ChartCard title="Tabela kampanii">
         <DataTable data={data.campaignTable} columns={campaignColumns} pageSize={15} />
       </ChartCard>
+    </div>
+  );
+}
+
+function SyncMetaButton() {
+  const [syncing, setSyncing] = useState(false);
+  const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
+
+  async function handleSync() {
+    setSyncing(true);
+    setResult(null);
+    try {
+      const res = await fetch('/api/etl/meta-sync', { method: 'POST' });
+      const json = await res.json();
+      if (res.ok) {
+        setResult({ ok: true, message: `Meta Ads: pobrano ${json.totalRows} wierszy` });
+      } else {
+        setResult({ ok: false, message: json.error || 'Błąd synchronizacji' });
+      }
+    } catch (err) {
+      setResult({ ok: false, message: String(err) });
+    }
+    setSyncing(false);
+  }
+
+  return (
+    <div className="flex items-center gap-3">
+      {result && (
+        <span className={`text-xs flex items-center gap-1 ${result.ok ? 'text-emerald-400' : 'text-red-400'}`}>
+          {result.ok ? <CheckCircle size={14} /> : <XCircle size={14} />}
+          {result.message}
+        </span>
+      )}
+      <button onClick={handleSync} disabled={syncing}
+        className="flex items-center gap-2 px-3 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-sm rounded-lg transition-colors disabled:opacity-50">
+        {syncing ? <RefreshCw size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+        {syncing ? 'Sync...' : 'Sync Meta'}
+      </button>
     </div>
   );
 }

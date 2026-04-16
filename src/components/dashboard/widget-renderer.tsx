@@ -133,6 +133,7 @@ function WidgetContent({ type, data, onItemClick }: { type: string; data: any; o
   if (data.type === 'kpi') {
     const formatted = data.format === 'currency' ? formatCurrency(data.value)
       : data.format === 'percent' ? `${data.value.toFixed(1)}%`
+      : data.format === 'mer' ? `${data.value.toFixed(2)}x`
       : formatNumber(data.value);
     return (
       <div className="h-full flex flex-col items-center justify-center">

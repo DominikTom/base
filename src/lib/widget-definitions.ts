@@ -44,6 +44,12 @@ export const WIDGET_CATALOG: WidgetDefinition[] = [
   { type: 'ranking_traffic_sources', name: 'Źródła ruchu (GA4)', category: 'Ranking', defaultSize: { w: 6, h: 5 }, component: 'ranking' },
   { type: 'chart_sessions_timeline', name: 'Sesje w czasie (GA4)', category: 'Wykres', defaultSize: { w: 8, h: 5 }, component: 'area' },
 
+  // ── Marketing Efficiency ──
+  { type: 'kpi_mer', name: 'MER (Marketing Efficiency)', category: 'KPI', defaultSize: { w: 3, h: 2 }, component: 'kpi' },
+  { type: 'kpi_total_marketing_cost', name: 'Total Marketing Spend', category: 'KPI', defaultSize: { w: 3, h: 2 }, component: 'kpi' },
+  { type: 'kpi_meta_spend', name: 'Meta Ads Spend', category: 'KPI', defaultSize: { w: 3, h: 2 }, component: 'kpi' },
+  { type: 'kpi_google_spend', name: 'Google Ads Spend', category: 'KPI', defaultSize: { w: 3, h: 2 }, component: 'kpi' },
+
   // ── Tables ──
   { type: 'table_payment_status', name: 'Status płatności (tabela)', category: 'Tabela', defaultSize: { w: 6, h: 4 }, component: 'table' },
   { type: 'table_fabric_samples', name: 'Próbki tkanin', category: 'Tabela', defaultSize: { w: 12, h: 5 }, component: 'table' },

@@ -419,6 +419,55 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ type: 'area', data: chartData, shops });
       }
 
+      // ── Marketing Efficiency (MER) ──
+      case 'kpi_mer':
+      case 'kpi_total_marketing_cost':
+      case 'kpi_meta_spend':
+      case 'kpi_google_spend': {
+        // Revenue from ERP
+        let revQ = db.from('fact_daily_revenue').select('revenue_gross_pln')
+          .gte('date', dateFrom).lte('date', dateTo);
+        if (shop !== 'all') revQ = revQ.eq('source_shop', shop);
+        const { data: revData } = await revQ.limit(50000);
+        const totalRevenue = (revData || []).reduce((s, r) => s + (r.revenue_gross_pln || 0), 0);
+
+        // Meta spend
+        const { data: metaData } = await db.from('fact_daily_adspend').select('spend')
+          .eq('platform', 'meta').gte('date', dateFrom).lte('date', dateTo).limit(50000);
+        const metaSpend = (metaData || []).reduce((s, r) => s + (r.spend || 0), 0);
+
+        // Google Ads spend (from GA4 __total__ rows)
+        const { data: googleData } = await db.from('fact_daily_traffic').select('ad_cost')
+          .eq('source', '__total__').gte('date', dateFrom).lte('date', dateTo).limit(50000);
+        const googleSpend = (googleData || []).reduce((s, r) => s + (r.ad_cost || 0), 0);
+
+        // Agency costs (prorated: monthly costs split into the selected date range)
+        const { data: agencyData } = await db.from('fact_agency_costs').select('month, amount_pln').limit(500);
+        let agencyCost = 0;
+        const dfrom = new Date(dateFrom);
+        const dto = new Date(dateTo);
+        for (const a of agencyData || []) {
+          const m = new Date(a.month);
+          const mEnd = new Date(m.getFullYear(), m.getMonth() + 1, 0);
+          if (mEnd >= dfrom && m <= dto) agencyCost += a.amount_pln || 0;
+        }
+
+        const totalSpend = metaSpend + googleSpend + agencyCost;
+        const mer = totalSpend > 0 ? totalRevenue / totalSpend : 0;
+
+        const valMap: Record<string, { value: number; format: string }> = {
+          kpi_mer: { value: Math.round(mer * 100) / 100, format: 'number' },
+          kpi_total_marketing_cost: { value: Math.round(totalSpend), format: 'currency' },
+          kpi_meta_spend: { value: Math.round(metaSpend), format: 'currency' },
+          kpi_google_spend: { value: Math.round(googleSpend), format: 'currency' },
+        };
+        // Add 'x' suffix for MER display
+        if (widget === 'kpi_mer') {
+          return NextResponse.json({ type: 'kpi', value: valMap[widget].value, format: 'mer' });
+        }
+        return NextResponse.json({ type: 'kpi', ...valMap[widget] });
+      }
+
       default:
         return NextResponse.json({ error: `Unknown widget: ${widget}` }, { status: 400 });
     }

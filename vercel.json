@@ -7,6 +7,10 @@
     {
       "path": "/api/etl/ga4-sync",
       "schedule": "30 6 * * *"
+    },
+    {
+      "path": "/api/etl/meta-sync",
+      "schedule": "0 5 * * *"
     }
   ]
 }

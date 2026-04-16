@@ -15,6 +15,7 @@ import {
   ChevronLeft,
   ChevronRight,
   PanelTop,
+  Wallet,
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -23,6 +24,7 @@ const NAV_ITEMS = [
   { href: '/dashboard/overview', label: 'Przegląd', icon: LayoutDashboard },
   { href: '/dashboard/revenue', label: 'Revenue & Zamówienia', icon: TrendingUp },
   { href: '/dashboard/marketing', label: 'Marketing', icon: Megaphone },
+  { href: '/dashboard/costs', label: 'Koszty agencji', icon: Wallet },
   { href: '/dashboard/products', label: 'Produkty', icon: ShoppingBag },
   { href: '/dashboard/traffic', label: 'Ruch (GA4)', icon: Globe },
   { href: '/dashboard/explorer', label: 'Eksplorator', icon: Compass },
