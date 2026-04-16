@@ -72,35 +72,19 @@ async function handleStart(body: { filename?: string; dateRange?: { min: string;
     return NextResponse.json({ error: logError.message }, { status: 500 });
   }
 
-  // Delete existing data in date range
-  let deletedOrders = 0;
+  // Clear old daily revenue for date range (small table, fast — single query)
   if (dateRange?.min && dateRange?.max && dateRange.min !== '9999-12-31') {
-    const { data: existingOrders } = await getSupabaseAdmin()
-      .from('fact_orders')
-      .select('order_id')
-      .gte('order_date', dateRange.min)
-      .lte('order_date', dateRange.max + 'T23:59:59')
-      .limit(50000);
-
-    if (existingOrders && existingOrders.length > 0) {
-      const ids = existingOrders.map(o => o.order_id);
-      const BATCH = 500;
-      for (let i = 0; i < ids.length; i += BATCH) {
-        const batch = ids.slice(i, i + BATCH);
-        await getSupabaseAdmin().from('fact_order_items').delete().in('order_id', batch);
-      }
-      for (let i = 0; i < ids.length; i += BATCH) {
-        const batch = ids.slice(i, i + BATCH);
-        await getSupabaseAdmin().from('fact_orders').delete().in('order_id', batch);
-      }
-      deletedOrders = ids.length;
-    }
+    await getSupabaseAdmin()
+      .from('fact_daily_revenue')
+      .delete()
+      .gte('date', dateRange.min)
+      .lte('date', dateRange.max);
   }
 
-  return NextResponse.json({
-    etlLogId: etlLog.id,
-    deletedOrders,
-  });
+  // Orders/items are NOT deleted here — batch_orders handles cleanup
+  // per-batch using CASCADE delete (fast, no timeout risk)
+
+  return NextResponse.json({ etlLogId: etlLog.id });
 }
 
 // ── BATCH ORDERS ─────────────────────────────────────────────────────────────
@@ -112,6 +96,11 @@ async function handleBatchOrders(body: { etlLogId: number; orders: FactOrder[] }
     return NextResponse.json({ inserted: 0 });
   }
 
+  // Delete old items for these orders (CASCADE would also work but explicit is safer)
+  const orderIds = orders.map(o => o.order_id);
+  await getSupabaseAdmin().from('fact_order_items').delete().in('order_id', orderIds);
+
+  // Upsert orders (insert or update if exists)
   const { error } = await getSupabaseAdmin().from('fact_orders').upsert(orders, {
     onConflict: 'order_id',
   });
