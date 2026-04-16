@@ -1,7 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState, useRef } from 'react';
-import dynamic from 'next/dynamic';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { WidgetRenderer } from '@/components/dashboard/widget-renderer';
 import { WidgetLibrary } from '@/components/dashboard/widget-library';
 import { getWidgetDef } from '@/lib/widget-definitions';
@@ -14,12 +13,6 @@ import {
   type DashboardLayout,
 } from '@/lib/dashboard-store';
 import { Plus, RotateCcw } from 'lucide-react';
-
-// Dynamic import — react-grid-layout crashes on SSR (uses DOM APIs)
-const GridLayoutDynamic = dynamic(
-  () => import('react-grid-layout').then(mod => mod.GridLayout),
-  { ssr: false }
-);
 
 export default function MyDashboardPage() {
   const [layout, setLayout] = useState<DashboardLayout | null>(null);
@@ -40,25 +33,6 @@ export default function MyDashboardPage() {
     saveLayouts(all);
   }, []);
 
-  const handleLayoutChange = useCallback(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (gridLayout: any) => {
-      if (!layout) return;
-      const updated = {
-        ...layout,
-        widgets: layout.widgets.map(w => {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const gl = gridLayout.find((g: any) => g.i === w.id);
-          if (gl) return { ...w, x: gl.x, y: gl.y, w: gl.w, h: gl.h };
-          return w;
-        }),
-        updatedAt: new Date().toISOString(),
-      };
-      saveLayout(updated);
-    },
-    [layout, saveLayout]
-  );
-
   const handleAddWidget = useCallback(
     (type: string) => {
       if (!layout) return;
@@ -68,7 +42,7 @@ export default function MyDashboardPage() {
         id: generateWidgetId(),
         type,
         x: 0,
-        y: Infinity, // place at bottom
+        y: Infinity,
         w: def.defaultSize.w,
         h: def.defaultSize.h,
       };
@@ -109,32 +83,26 @@ export default function MyDashboardPage() {
     );
   }
 
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [containerWidth, setContainerWidth] = useState(1200);
+  // Convert grid units to CSS classes
+  function widgetSpan(w: number): string {
+    if (w >= 12) return 'col-span-12';
+    if (w >= 8) return 'col-span-12 lg:col-span-8';
+    if (w >= 6) return 'col-span-12 md:col-span-6';
+    if (w >= 4) return 'col-span-12 sm:col-span-6 lg:col-span-4';
+    if (w >= 3) return 'col-span-6 sm:col-span-6 lg:col-span-3';
+    return 'col-span-6 lg:col-span-3';
+  }
 
-  useEffect(() => {
-    if (!containerRef.current) return;
-    const observer = new ResizeObserver(entries => {
-      for (const entry of entries) {
-        setContainerWidth(entry.contentRect.width);
-      }
-    });
-    observer.observe(containerRef.current);
-    return () => observer.disconnect();
-  }, []);
-
-  const gridItems = layout.widgets.map(w => ({
-    i: w.id,
-    x: w.x,
-    y: w.y,
-    w: w.w,
-    h: w.h,
-    minW: 2,
-    minH: 2,
-  }));
+  function widgetHeight(h: number): string {
+    if (h <= 2) return 'h-[130px]';
+    if (h <= 3) return 'h-[200px]';
+    if (h <= 4) return 'h-[280px]';
+    if (h <= 5) return 'h-[360px]';
+    return 'h-[440px]';
+  }
 
   return (
-    <div className="space-y-4" ref={containerRef}>
+    <div className="space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold text-zinc-100">Mój Dashboard</h1>
@@ -169,22 +137,16 @@ export default function MyDashboardPage() {
           </button>
         </div>
       ) : (
-        <GridLayoutDynamic
-          className="layout"
-          layout={gridItems}
-          width={containerWidth}
-          gridConfig={{ cols: 12, rowHeight: 60, margin: [12, 12] as [number, number] }}
-          onLayoutChange={handleLayoutChange}
-        >
+        <div className="grid grid-cols-12 gap-3">
           {layout.widgets.map(w => (
-            <div key={w.id} className="[&>.drag-handle]:cursor-grab">
+            <div key={w.id} className={`${widgetSpan(w.w)} ${widgetHeight(w.h)}`}>
               <WidgetRenderer
                 widgetType={w.type}
                 onRemove={() => handleRemoveWidget(w.id)}
               />
             </div>
           ))}
-        </GridLayoutDynamic>
+        </div>
       )}
 
       {/* Widget Library */}
