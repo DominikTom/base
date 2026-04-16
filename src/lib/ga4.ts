@@ -39,6 +39,9 @@ export interface GA4Row {
   avgSessionDuration: number;
   transactions: number;
   gaRevenue: number;
+  adCost: number;
+  adClicks: number;
+  adImpressions: number;
 }
 
 export async function fetchGA4Report(
@@ -68,6 +71,9 @@ export async function fetchGA4Report(
         { name: 'averageSessionDuration' },
         { name: 'transactions' },
         { name: 'purchaseRevenue' },
+        { name: 'advertiserAdCost' },
+        { name: 'advertiserAdClicks' },
+        { name: 'advertiserAdImpressions' },
       ],
     },
   });
@@ -79,7 +85,6 @@ export async function fetchGA4Report(
     const dims = row.dimensionValues || [];
     const mets = row.metricValues || [];
 
-    // GA4 returns date as YYYYMMDD
     const rawDate = dims[0]?.value || '';
     const date = rawDate.length === 8
       ? `${rawDate.slice(0, 4)}-${rawDate.slice(4, 6)}-${rawDate.slice(6, 8)}`
@@ -99,6 +104,9 @@ export async function fetchGA4Report(
       avgSessionDuration: parseFloat(mets[5]?.value || '0'),
       transactions: parseInt(mets[6]?.value || '0'),
       gaRevenue: parseFloat(mets[7]?.value || '0'),
+      adCost: parseFloat(mets[8]?.value || '0'),
+      adClicks: parseInt(mets[9]?.value || '0'),
+      adImpressions: parseInt(mets[10]?.value || '0'),
     });
   }
 

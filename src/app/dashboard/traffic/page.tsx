@@ -8,7 +8,7 @@ import { SimplePieChart } from '@/components/charts/pie-chart';
 import { DataTable, type Column } from '@/components/ui/data-table';
 import { formatNumber, formatCurrency, SHOP_COLORS } from '@/lib/utils';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
-import { Users, Globe, MousePointerClick, ShoppingCart, Eye, TrendingUp, RefreshCw, CheckCircle, XCircle } from 'lucide-react';
+import { Users, Globe, MousePointerClick, ShoppingCart, Eye, TrendingUp, RefreshCw, CheckCircle, XCircle, DollarSign, MousePointer } from 'lucide-react';
 
 interface TrafficData {
   kpis: {
@@ -18,6 +18,9 @@ interface TrafficData {
     pageviews: number;
     transactions: number;
     revenue: number;
+    adCost: number;
+    adClicks: number;
+    adImpressions: number;
     conversionRate: number;
   };
   charts: {
@@ -156,15 +159,22 @@ export default function TrafficPage() {
         </div>
       )}
 
-      {/* KPIs */}
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
+      {/* KPIs — Traffic */}
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
         <KpiCard title="Sesje" value={formatNumber(data.kpis.sessions)} icon={<Globe size={18} />} />
         <KpiCard title="Użytkownicy" value={formatNumber(data.kpis.users)} icon={<Users size={18} />} />
         <KpiCard title="Nowi użytkownicy" value={formatNumber(data.kpis.newUsers)} icon={<Users size={18} />} />
         <KpiCard title="Odsłony" value={formatNumber(data.kpis.pageviews)} icon={<Eye size={18} />} />
-        <KpiCard title="Transakcje (GA4)" value={formatNumber(data.kpis.transactions)} icon={<ShoppingCart size={18} />} />
-        <KpiCard title="Revenue (GA4)" value={formatCurrency(data.kpis.revenue)} icon={<TrendingUp size={18} />} />
         <KpiCard title="Conv. Rate" value={`${data.kpis.conversionRate}%`} icon={<TrendingUp size={18} />} />
+      </div>
+
+      {/* KPIs — Revenue & Ads */}
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
+        <KpiCard title="Revenue (GA4)" value={formatCurrency(data.kpis.revenue)} icon={<DollarSign size={18} />} changeLabel="wg. Google Analytics" />
+        <KpiCard title="Transakcje (GA4)" value={formatNumber(data.kpis.transactions)} icon={<ShoppingCart size={18} />} />
+        <KpiCard title="Google Ads Spend" value={formatCurrency(data.kpis.adCost)} icon={<DollarSign size={18} />} changeLabel="wydatki na reklamy Google" />
+        <KpiCard title="Ads Clicks" value={formatNumber(data.kpis.adClicks)} icon={<MousePointer size={18} />} />
+        <KpiCard title="Ads Impressions" value={formatNumber(data.kpis.adImpressions)} icon={<Eye size={18} />} />
       </div>
 
       {/* Sessions over time */}

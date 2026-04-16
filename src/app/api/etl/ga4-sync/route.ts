@@ -57,17 +57,12 @@ async function syncGA4() {
       let totalRows = 0;
       const results: Record<string, number> = {};
 
+      // Clean slate: delete ALL traffic data first (removes stale hostnames)
+      await db.from('fact_daily_traffic').delete().gte('date', '2020-01-01');
+
       for (const propertyId of propertyIds) {
         const hostname = getHostname(propertyId);
         const rows = await fetchGA4Report(propertyId, dateFromStr, dateToStr);
-
-        // Delete existing data for this hostname + date range
-        await db
-          .from('fact_daily_traffic')
-          .delete()
-          .eq('hostname', hostname)
-          .gte('date', dateFromStr)
-          .lte('date', dateToStr);
 
         // Insert in batches
         const dbRows = rows.map(r => ({
@@ -84,6 +79,9 @@ async function syncGA4() {
           avg_session_duration: r.avgSessionDuration,
           transactions: r.transactions,
           ga_revenue: r.gaRevenue,
+          ad_cost: r.adCost,
+          ad_clicks: r.adClicks,
+          ad_impressions: r.adImpressions,
         }));
 
         for (let i = 0; i < dbRows.length; i += 500) {

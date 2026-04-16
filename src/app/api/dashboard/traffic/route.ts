@@ -31,9 +31,12 @@ export async function GET(request: NextRequest) {
         acc.pageviews += row.pageviews || 0;
         acc.transactions += row.transactions || 0;
         acc.revenue += row.ga_revenue || 0;
+        acc.adCost += row.ad_cost || 0;
+        acc.adClicks += row.ad_clicks || 0;
+        acc.adImpressions += row.ad_impressions || 0;
         return acc;
       },
-      { sessions: 0, users: 0, newUsers: 0, pageviews: 0, transactions: 0, revenue: 0 }
+      { sessions: 0, users: 0, newUsers: 0, pageviews: 0, transactions: 0, revenue: 0, adCost: 0, adClicks: 0, adImpressions: 0 }
     );
 
     const conversionRate = totals.sessions > 0 ? (totals.transactions / totals.sessions) * 100 : 0;
@@ -85,6 +88,9 @@ export async function GET(request: NextRequest) {
         transactions: totals.transactions,
         revenue: Math.round(totals.revenue),
         conversionRate: Math.round(conversionRate * 100) / 100,
+        adCost: Math.round(totals.adCost * 100) / 100,
+        adClicks: totals.adClicks,
+        adImpressions: totals.adImpressions,
       },
       charts: {
         sessionsTimeSeries,
