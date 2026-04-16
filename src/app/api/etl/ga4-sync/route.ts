@@ -8,12 +8,12 @@ export const maxDuration = 60;
  * GA4 sync endpoint — fetches traffic data from all GA4 properties.
  * Triggered by Vercel Cron daily at 6:30 UTC, or manually.
  */
-// POST — manual trigger from dashboard UI
+// POST — manual trigger from dashboard UI (90 days history)
 export async function POST() {
-  return syncGA4();
+  return syncGA4(90);
 }
 
-// GET — Vercel Cron trigger
+// GET — Vercel Cron trigger (last 7 days only)
 export async function GET(request: NextRequest) {
   const authHeader = request.headers.get('authorization');
   const cronSecret = process.env.ETL_CRON_SECRET;
@@ -21,10 +21,10 @@ export async function GET(request: NextRequest) {
   if (!isVercelCron && cronSecret && authHeader !== `Bearer ${cronSecret}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
-  return syncGA4();
+  return syncGA4(7);
 }
 
-async function syncGA4() {
+async function syncGA4(daysBack: number = 7) {
   try {
 
     const db = getSupabaseAdmin();
@@ -43,12 +43,12 @@ async function syncGA4() {
     const etlLogId = etlLog?.id;
 
     try {
-      // Fetch last 7 days for each property (T-1 to T-7)
+      // Date range: T-1 to T-daysBack
       const today = new Date();
       const dateTo = new Date(today);
-      dateTo.setDate(dateTo.getDate() - 1); // yesterday
+      dateTo.setDate(dateTo.getDate() - 1);
       const dateFrom = new Date(today);
-      dateFrom.setDate(dateFrom.getDate() - 7);
+      dateFrom.setDate(dateFrom.getDate() - daysBack);
 
       const fmt = (d: Date) => d.toISOString().split('T')[0];
       const dateFromStr = fmt(dateFrom);
@@ -57,8 +57,10 @@ async function syncGA4() {
       let totalRows = 0;
       const results: Record<string, number> = {};
 
-      // Clean slate: delete ALL traffic data first (removes stale hostnames)
-      await db.from('fact_daily_traffic').delete().gte('date', '2020-01-01');
+      // Delete only the date range being synced (preserve older data)
+      await db.from('fact_daily_traffic').delete()
+        .gte('date', dateFromStr)
+        .lte('date', dateToStr);
 
       for (const propertyId of propertyIds) {
         const hostname = getHostname(propertyId);
