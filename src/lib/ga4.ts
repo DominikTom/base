@@ -1,9 +1,9 @@
 import { google } from 'googleapis';
 
 const PROPERTY_HOSTNAME_MAP: Record<string, string> = {
-  '216462071': 'mybed.pl',
-  '345829745': 'mybed.de',
-  '342006054': 'mittohome.pl',
+  '298581907': 'mybed.pl',
+  '478191159': 'mybed.de',
+  '473912359': 'mittohome.pl',
 };
 
 function getAuth() {
