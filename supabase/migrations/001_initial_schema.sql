@@ -241,7 +241,7 @@ CREATE TABLE fact_daily_traffic (
     date DATE NOT NULL,
     source TEXT NOT NULL,
     medium TEXT NOT NULL,
-    campaign TEXT,
+    campaign TEXT NOT NULL DEFAULT '',
     hostname TEXT NOT NULL,
     sessions INTEGER DEFAULT 0,
     users INTEGER DEFAULT 0,
@@ -251,7 +251,7 @@ CREATE TABLE fact_daily_traffic (
     avg_session_duration DECIMAL(10,2),
     transactions INTEGER DEFAULT 0,
     ga_revenue DECIMAL(12,2) DEFAULT 0,
-    PRIMARY KEY (date, source, medium, hostname, COALESCE(campaign, ''))
+    PRIMARY KEY (date, source, medium, hostname, campaign)
 );
 
 -- ============ CACHE TABLES ============
