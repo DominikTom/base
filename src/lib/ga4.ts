@@ -88,11 +88,12 @@ export async function fetchGA4DailyTotals(
         ],
       },
     }),
+    // Ads query needs sessionCampaignName dimension (GA4 requirement for ad metrics)
     analytics.properties.runReport({
       property,
       requestBody: {
         dateRanges,
-        dimensions: [{ name: 'date' }],
+        dimensions: [{ name: 'date' }, { name: 'sessionCampaignName' }],
         metrics: [
           { name: 'advertiserAdCost' },
           { name: 'advertiserAdClicks' },
@@ -103,15 +104,16 @@ export async function fetchGA4DailyTotals(
   ]);
 
   const hostname = getHostname(propertyId);
+  // Aggregate ads by date (sum across campaigns)
   const adsMap: Record<string, { cost: number; clicks: number; impressions: number }> = {};
   for (const row of adsRes.data.rows || []) {
     const d = row.dimensionValues || [];
     const m = row.metricValues || [];
-    adsMap[d[0]?.value || ''] = {
-      cost: parseFloat(m[0]?.value || '0'),
-      clicks: parseInt(m[1]?.value || '0'),
-      impressions: parseInt(m[2]?.value || '0'),
-    };
+    const date = d[0]?.value || '';
+    if (!adsMap[date]) adsMap[date] = { cost: 0, clicks: 0, impressions: 0 };
+    adsMap[date].cost += parseFloat(m[0]?.value || '0');
+    adsMap[date].clicks += parseInt(m[1]?.value || '0');
+    adsMap[date].impressions += parseInt(m[2]?.value || '0');
   }
 
   const rows: GA4DailyTotal[] = [];
