@@ -1,20 +1,37 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import Papa from 'papaparse';
+import { parseErpCsv, type RawCsvRow } from '@/lib/erp-parser';
 import { ChartCard } from '@/components/charts/chart-card';
 import { KpiCard } from '@/components/ui/kpi-card';
 import { formatNumber } from '@/lib/utils';
-import { Upload, CheckCircle, XCircle, Clock, RefreshCw, FileText } from 'lucide-react';
+import { Upload, CheckCircle, XCircle, Clock, RefreshCw, FileText, FolderSync } from 'lucide-react';
 import type { EtlLog } from '@/types/database';
+
+type Phase =
+  | 'idle'
+  | 'parsing'
+  | 'starting'
+  | 'uploading_orders'
+  | 'uploading_items'
+  | 'finalizing'
+  | 'done'
+  | 'error';
+
+const ORDER_BATCH_SIZE = 200;
+const ITEM_BATCH_SIZE = 500;
 
 export default function AdminPage() {
   const [file, setFile] = useState<File | null>(null);
-  const [uploading, setUploading] = useState(false);
+  const [phase, setPhase] = useState<Phase>('idle');
+  const [progress, setProgress] = useState({ current: 0, total: 0, label: '' });
   const [uploadResult, setUploadResult] = useState<Record<string, unknown> | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [logs, setLogs] = useState<EtlLog[]>([]);
   const [freshness, setFreshness] = useState<Record<string, string>>({});
   const [dragOver, setDragOver] = useState(false);
+  const abortRef = useRef(false);
 
   const fetchLogs = useCallback(async () => {
     try {
@@ -27,38 +44,134 @@ export default function AdminPage() {
     }
   }, []);
 
-  useEffect(() => {
-    fetchLogs();
-  }, [fetchLogs]);
+  useEffect(() => { fetchLogs(); }, [fetchLogs]);
 
   async function handleUpload() {
     if (!file) return;
-    setUploading(true);
+    abortRef.current = false;
     setUploadResult(null);
     setUploadError(null);
 
     try {
-      const formData = new FormData();
-      formData.append('file', file);
+      // ── Phase 1: Parse CSV in browser ──────────────────────────────────
+      setPhase('parsing');
+      setProgress({ current: 0, total: 0, label: 'Parsowanie CSV w przeglądarce...' });
 
-      const res = await fetch('/api/etl/upload', {
-        method: 'POST',
-        body: formData,
-      });
+      const text = await file.text();
+      const parseResult = Papa.parse(text, {
+        header: true,
+        skipEmptyLines: true,
+      }) as Papa.ParseResult<RawCsvRow>;
 
-      const json = await res.json();
-
-      if (!res.ok) {
-        setUploadError(json.error || 'Upload failed');
-      } else {
-        setUploadResult(json);
-        setFile(null);
-        fetchLogs();
+      if (parseResult.errors.length > 50) {
+        throw new Error(`Za dużo błędów parsowania CSV: ${parseResult.errors.length}`);
       }
+
+      const result = await parseErpCsv(parseResult.data);
+      const { orders, items, stats } = result;
+
+      setProgress({ current: 0, total: 0, label: `Sparsowano: ${formatNumber(stats.ordersCount)} zamówień, ${formatNumber(stats.itemsCount)} pozycji` });
+
+      // ── Phase 2: Start (create ETL log, delete old data) ──────────────
+      setPhase('starting');
+      setProgress({ current: 0, total: 0, label: 'Przygotowanie bazy danych...' });
+
+      const startRes = await fetch('/api/etl/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'start',
+          filename: file.name,
+          dateRange: stats.dateRange,
+        }),
+      });
+      const startData = await startRes.json();
+      if (!startRes.ok) throw new Error(startData.error || 'Start failed');
+      const etlLogId = startData.etlLogId;
+
+      if (abortRef.current) throw new Error('Anulowano');
+
+      // ── Phase 3: Upload orders in batches ─────────────────────────────
+      setPhase('uploading_orders');
+      let ordersInserted = 0;
+      const totalOrders = orders.length;
+
+      for (let i = 0; i < totalOrders; i += ORDER_BATCH_SIZE) {
+        if (abortRef.current) throw new Error('Anulowano');
+        const batch = orders.slice(i, i + ORDER_BATCH_SIZE);
+
+        setProgress({
+          current: Math.min(i + ORDER_BATCH_SIZE, totalOrders),
+          total: totalOrders,
+          label: `Wysyłanie zamówień: ${formatNumber(Math.min(i + ORDER_BATCH_SIZE, totalOrders))} / ${formatNumber(totalOrders)}`,
+        });
+
+        const res = await fetch('/api/etl/upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'batch_orders', etlLogId, orders: batch }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Batch orders failed');
+        ordersInserted += data.inserted || 0;
+      }
+
+      // ── Phase 4: Upload items in batches ──────────────────────────────
+      setPhase('uploading_items');
+      let itemsInserted = 0;
+      const totalItems = items.length;
+
+      for (let i = 0; i < totalItems; i += ITEM_BATCH_SIZE) {
+        if (abortRef.current) throw new Error('Anulowano');
+        const batch = items.slice(i, i + ITEM_BATCH_SIZE);
+
+        setProgress({
+          current: Math.min(i + ITEM_BATCH_SIZE, totalItems),
+          total: totalItems,
+          label: `Wysyłanie pozycji: ${formatNumber(Math.min(i + ITEM_BATCH_SIZE, totalItems))} / ${formatNumber(totalItems)}`,
+        });
+
+        const res = await fetch('/api/etl/upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'batch_items', etlLogId, items: batch }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Batch items failed');
+        itemsInserted += data.inserted || 0;
+      }
+
+      // ── Phase 5: Finalize ─────────────────────────────────────────────
+      setPhase('finalizing');
+      setProgress({ current: 0, total: 0, label: 'Budowanie agregacji i wymiarów...' });
+
+      const finRes = await fetch('/api/etl/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'finalize',
+          etlLogId,
+          stats: { totalRows: stats.totalRows, ordersCount: ordersInserted, itemsCount: itemsInserted },
+          dateRange: stats.dateRange,
+        }),
+      });
+      const finData = await finRes.json();
+      if (!finRes.ok) throw new Error(finData.error || 'Finalize failed');
+
+      // ── Done ──────────────────────────────────────────────────────────
+      setPhase('done');
+      setUploadResult({
+        stats: {
+          ...stats,
+          ordersInserted,
+          itemsInserted,
+        },
+      });
+      setFile(null);
+      fetchLogs();
     } catch (err) {
-      setUploadError(String(err));
-    } finally {
-      setUploading(false);
+      setPhase('error');
+      setUploadError(String(err instanceof Error ? err.message : err));
     }
   }
 
@@ -68,10 +181,15 @@ export default function AdminPage() {
     const droppedFile = e.dataTransfer.files[0];
     if (droppedFile && droppedFile.name.endsWith('.csv')) {
       setFile(droppedFile);
+      setPhase('idle');
+      setUploadResult(null);
+      setUploadError(null);
     }
   }
 
-  const stats = uploadResult?.stats as Record<string, unknown> | undefined;
+  const isUploading = !['idle', 'done', 'error'].includes(phase);
+  const progressPct = progress.total > 0 ? Math.round((progress.current / progress.total) * 100) : 0;
+  const resultStats = uploadResult?.stats as Record<string, unknown> | undefined;
 
   return (
     <div className="space-y-6">
@@ -92,26 +210,28 @@ export default function AdminPage() {
           changeLabel="Ostatnia aktualizacja"
         />
         <KpiCard
-          title="GA4"
-          value={freshness['ga4'] ? new Date(freshness['ga4']).toLocaleDateString('pl-PL') : 'Brak danych'}
-          icon={<Clock size={18} />}
-          changeLabel="Ostatnia aktualizacja"
+          title="Google Drive Sync"
+          value={freshness['gdrive_csv'] ? new Date(freshness['gdrive_csv']).toLocaleDateString('pl-PL') : 'Nie skonfigurowano'}
+          icon={<FolderSync size={18} />}
+          changeLabel="Auto-import codziennie o 6:00"
         />
       </div>
 
       {/* Upload CSV */}
-      <ChartCard title="Import CSV z ERP" subtitle="Przeciągnij plik CSV lub kliknij, aby wybrać">
+      <ChartCard title="Import CSV z ERP" subtitle="Parsowanie odbywa się w przeglądarce — plik nie jest wysyłany na serwer w całości">
         <div className="space-y-4">
           <div
             onDragOver={e => { e.preventDefault(); setDragOver(true); }}
             onDragLeave={() => setDragOver(false)}
             onDrop={handleDrop}
-            className={`relative flex flex-col items-center justify-center border-2 border-dashed rounded-xl p-10 transition-colors cursor-pointer ${
+            className={`relative flex flex-col items-center justify-center border-2 border-dashed rounded-xl p-10 transition-colors ${
+              isUploading ? 'pointer-events-none opacity-50' : 'cursor-pointer'
+            } ${
               dragOver
                 ? 'border-blue-500 bg-blue-500/10'
                 : 'border-zinc-700 hover:border-zinc-600 bg-zinc-900/30'
             }`}
-            onClick={() => document.getElementById('csv-input')?.click()}
+            onClick={() => !isUploading && document.getElementById('csv-input')?.click()}
           >
             <Upload size={40} className="text-zinc-500 mb-3" />
             <p className="text-sm text-zinc-400">
@@ -126,33 +246,65 @@ export default function AdminPage() {
               id="csv-input"
               type="file"
               accept=".csv"
-              onChange={e => setFile(e.target.files?.[0] || null)}
+              onChange={e => {
+                setFile(e.target.files?.[0] || null);
+                setPhase('idle');
+                setUploadResult(null);
+                setUploadError(null);
+              }}
               className="hidden"
             />
           </div>
 
-          {file && (
+          {/* Progress bar */}
+          {isUploading && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-zinc-300 flex items-center gap-2">
+                  <RefreshCw size={14} className="animate-spin" />
+                  {progress.label}
+                </span>
+                {progress.total > 0 && (
+                  <span className="text-zinc-500">{progressPct}%</span>
+                )}
+              </div>
+              <div className="w-full bg-zinc-800 rounded-full h-2">
+                <div
+                  className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                  style={{ width: `${progress.total > 0 ? progressPct : 100}%` }}
+                />
+              </div>
+              {progress.total === 0 && (
+                <div className="w-full bg-zinc-800 rounded-full h-2 overflow-hidden">
+                  <div className="bg-blue-600 h-2 rounded-full animate-pulse w-full" />
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Upload button */}
+          {file && !isUploading && phase !== 'done' && (
             <button
               onClick={handleUpload}
-              disabled={uploading}
-              className="w-full px-5 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+              className="w-full px-5 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
             >
-              {uploading ? (
-                <>
-                  <RefreshCw size={18} className="animate-spin" />
-                  Przetwarzanie...
-                </>
-              ) : (
-                <>
-                  <Upload size={18} />
-                  Importuj CSV
-                </>
-              )}
+              <Upload size={18} />
+              Importuj CSV
             </button>
           )}
 
-          {/* Upload result */}
-          {uploadResult && stats && (
+          {/* Cancel button */}
+          {isUploading && (
+            <button
+              onClick={() => { abortRef.current = true; }}
+              className="w-full px-5 py-3 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-medium rounded-lg transition-colors"
+            >
+              Anuluj import
+            </button>
+          )}
+
+          {/* Success result */}
+          {phase === 'done' && resultStats && (
             <div className="rounded-lg border border-emerald-800 bg-emerald-900/20 p-4 space-y-2">
               <div className="flex items-center gap-2 text-emerald-400">
                 <CheckCircle size={18} />
@@ -161,45 +313,46 @@ export default function AdminPage() {
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
                 <div>
                   <span className="text-zinc-500">Wiersze CSV:</span>
-                  <span className="ml-2 text-zinc-200">{formatNumber(stats.totalRows as number)}</span>
+                  <span className="ml-2 text-zinc-200">{formatNumber(resultStats.totalRows as number)}</span>
                 </div>
                 <div>
                   <span className="text-zinc-500">Zamówienia:</span>
-                  <span className="ml-2 text-zinc-200">{formatNumber(stats.ordersCount as number)}</span>
+                  <span className="ml-2 text-zinc-200">{formatNumber(resultStats.ordersInserted as number)}</span>
                 </div>
                 <div>
                   <span className="text-zinc-500">Pozycje:</span>
-                  <span className="ml-2 text-zinc-200">{formatNumber(stats.itemsCount as number)}</span>
+                  <span className="ml-2 text-zinc-200">{formatNumber(resultStats.itemsInserted as number)}</span>
                 </div>
                 <div>
                   <span className="text-zinc-500">Tag-only rows:</span>
-                  <span className="ml-2 text-zinc-200">{formatNumber(stats.tagOnlyRows as number)}</span>
+                  <span className="ml-2 text-zinc-200">{formatNumber(resultStats.tagOnlyRows as number)}</span>
                 </div>
               </div>
-              {stats.byShop ? (
+              {resultStats.byShop ? (
                 <div className="text-sm">
                   <span className="text-zinc-500">Sklepy: </span>
                   <span className="text-zinc-300">
-                    {Object.entries(stats.byShop as Record<string, number>)
+                    {Object.entries(resultStats.byShop as Record<string, number>)
                       .map(([shop, count]) => `${shop}: ${formatNumber(count)}`)
                       .join(', ')}
                   </span>
                 </div>
               ) : null}
-              {stats.dateRange ? (
+              {resultStats.dateRange ? (
                 <div className="text-sm">
                   <span className="text-zinc-500">Zakres dat: </span>
                   <span className="text-zinc-300">
-                    {(stats.dateRange as Record<string, string>).min} — {(stats.dateRange as Record<string, string>).max}
+                    {(resultStats.dateRange as Record<string, string>).min} — {(resultStats.dateRange as Record<string, string>).max}
                   </span>
                 </div>
               ) : null}
             </div>
           )}
 
-          {uploadError && (
-            <div className="rounded-lg border border-red-800 bg-red-900/20 p-4 flex items-center gap-2 text-red-400">
-              <XCircle size={18} />
+          {/* Error */}
+          {phase === 'error' && uploadError && (
+            <div className="rounded-lg border border-red-800 bg-red-900/20 p-4 flex items-start gap-2 text-red-400">
+              <XCircle size={18} className="shrink-0 mt-0.5" />
               <span>{uploadError}</span>
             </div>
           )}
