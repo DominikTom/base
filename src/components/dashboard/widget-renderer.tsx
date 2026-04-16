@@ -1,22 +1,49 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useDashboard } from '@/lib/dashboard-context';
+import { useDashboard, type CrossFilter } from '@/lib/dashboard-context';
 import { getWidgetDef } from '@/lib/widget-definitions';
 import { formatCurrency, formatNumber, SHOP_COLORS } from '@/lib/utils';
-import { KpiCard } from '@/components/ui/kpi-card';
 import { SimpleBarChart } from '@/components/charts/bar-chart';
 import { SimplePieChart } from '@/components/charts/pie-chart';
 import { AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
-import { X, GripVertical, RefreshCw } from 'lucide-react';
+import { X, GripVertical, RefreshCw, ArrowUp, ArrowDown, Maximize2, Minimize2 } from 'lucide-react';
+
+// Map widget types to cross-filter fields they produce when clicked
+const WIDGET_CLICK_FIELD: Record<string, string> = {
+  ranking_models: 'product_name',
+  ranking_fabric_collections: 'fabric_collection',
+  ranking_fabrics: 'fabric',
+  ranking_cities: 'delivery_city',
+  ranking_suppliers: 'supplier',
+  ranking_coupons: 'coupon_code',
+  ranking_bed_sizes: 'bed_size',
+  ranking_headboard_heights: 'headboard_height',
+  ranking_storage_types: 'storage_type',
+};
+
+const FIELD_LABELS: Record<string, string> = {
+  product_name: 'Model',
+  fabric_collection: 'Kolekcja',
+  fabric: 'Tkanina',
+  delivery_city: 'Miasto',
+  supplier: 'Dostawca',
+  coupon_code: 'Kupon',
+  bed_size: 'Rozmiar',
+  headboard_height: 'Wezgłowie',
+  storage_type: 'Stelaż',
+};
 
 interface WidgetRendererProps {
   widgetType: string;
   onRemove: () => void;
+  onMoveUp?: () => void;
+  onMoveDown?: () => void;
+  onResize?: (delta: number) => void;
 }
 
-export function WidgetRenderer({ widgetType, onRemove }: WidgetRendererProps) {
-  const { filters } = useDashboard();
+export function WidgetRenderer({ widgetType, onRemove, onMoveUp, onMoveDown, onResize }: WidgetRendererProps) {
+  const { filters, crossFilters, addCrossFilter } = useDashboard();
   const def = getWidgetDef(widgetType);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [data, setData] = useState<any>(null);
@@ -38,6 +65,7 @@ export function WidgetRenderer({ widgetType, onRemove }: WidgetRendererProps) {
             dateTo: filters.dateTo,
             shop: filters.shop,
             limit: 20,
+            crossFilters,
           }),
         });
         if (!cancelled) {
@@ -53,25 +81,36 @@ export function WidgetRenderer({ widgetType, onRemove }: WidgetRendererProps) {
     }
     fetch_();
     return () => { cancelled = true; };
-  }, [widgetType, filters.dateFrom, filters.dateTo, filters.shop]);
+  }, [widgetType, filters.dateFrom, filters.dateTo, filters.shop, crossFilters]);
+
+  const handleItemClick = (name: string) => {
+    const field = WIDGET_CLICK_FIELD[widgetType];
+    if (!field) return;
+    addCrossFilter({
+      field,
+      value: name,
+      label: `${FIELD_LABELS[field] || field}: ${name}`,
+    });
+  };
 
   if (!def) return <div className="p-4 text-red-400">Nieznany widget: {widgetType}</div>;
 
   return (
     <div className="h-full flex flex-col rounded-xl border border-zinc-800 bg-zinc-900/50 overflow-hidden">
       {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-zinc-800/50 shrink-0 drag-handle cursor-grab">
-        <div className="flex items-center gap-2">
-          <GripVertical size={14} className="text-zinc-600" />
-          <span className="text-xs font-medium text-zinc-400 truncate">{def.name}</span>
+      <div className="flex items-center justify-between px-3 py-2 border-b border-zinc-800/50 shrink-0">
+        <span className="text-xs font-medium text-zinc-400 truncate">{def.name}</span>
+        <div className="flex items-center gap-0.5">
+          {onMoveUp && <button onClick={onMoveUp} className="p-1 text-zinc-600 hover:text-zinc-300"><ArrowUp size={12} /></button>}
+          {onMoveDown && <button onClick={onMoveDown} className="p-1 text-zinc-600 hover:text-zinc-300"><ArrowDown size={12} /></button>}
+          {onResize && <button onClick={() => onResize(3)} className="p-1 text-zinc-600 hover:text-zinc-300"><Maximize2 size={12} /></button>}
+          {onResize && <button onClick={() => onResize(-3)} className="p-1 text-zinc-600 hover:text-zinc-300"><Minimize2 size={12} /></button>}
+          <button onClick={onRemove} className="p-1 text-zinc-600 hover:text-red-400"><X size={12} /></button>
         </div>
-        <button onClick={onRemove} className="p-1 text-zinc-600 hover:text-red-400 transition-colors">
-          <X size={14} />
-        </button>
       </div>
 
       {/* Content */}
-      <div className="flex-1 min-h-0 p-3">
+      <div className="flex-1 min-h-0 p-3 overflow-auto">
         {loading ? (
           <div className="h-full flex items-center justify-center">
             <RefreshCw size={18} className="animate-spin text-zinc-600" />
@@ -79,7 +118,7 @@ export function WidgetRenderer({ widgetType, onRemove }: WidgetRendererProps) {
         ) : error ? (
           <div className="h-full flex items-center justify-center text-xs text-red-400">{error}</div>
         ) : data ? (
-          <WidgetContent type={widgetType} data={data} def={def} />
+          <WidgetContent type={widgetType} data={data} onItemClick={handleItemClick} />
         ) : null}
       </div>
     </div>
@@ -87,8 +126,8 @@ export function WidgetRenderer({ widgetType, onRemove }: WidgetRendererProps) {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function WidgetContent({ type, data, def }: { type: string; data: any; def: ReturnType<typeof getWidgetDef> }) {
-  if (!def) return null;
+function WidgetContent({ type, data, onItemClick }: { type: string; data: any; onItemClick: (name: string) => void }) {
+  const clickable = !!WIDGET_CLICK_FIELD[type];
 
   // KPI
   if (data.type === 'kpi') {
@@ -112,7 +151,11 @@ function WidgetContent({ type, data, def }: { type: string; data: any; def: Retu
         <table className="w-full text-xs">
           <tbody>
             {items.map((item, i) => (
-              <tr key={i} className="border-b border-zinc-800/30">
+              <tr
+                key={i}
+                className={`border-b border-zinc-800/30 ${clickable ? 'cursor-pointer hover:bg-zinc-800/50' : ''}`}
+                onClick={() => clickable && onItemClick(item.name)}
+              >
                 <td className="py-1.5 pr-2 text-zinc-500 w-6">{i + 1}.</td>
                 <td className="py-1.5 text-zinc-300 truncate max-w-[150px]">{item.name}</td>
                 <td className="py-1.5 px-2 text-right text-zinc-400 w-16 whitespace-nowrap">
@@ -127,7 +170,7 @@ function WidgetContent({ type, data, def }: { type: string; data: any; def: Retu
             ))}
           </tbody>
         </table>
-        {data.total && (
+        {data.total != null && (
           <div className="text-xs text-zinc-500 mt-2 text-right">
             Suma: {isCurrency ? formatCurrency(data.total) : formatNumber(data.total)}
           </div>
@@ -138,9 +181,7 @@ function WidgetContent({ type, data, def }: { type: string; data: any; def: Retu
 
   // Bar chart
   if (data.type === 'bar') {
-    return (
-      <SimpleBarChart data={data.data || []} barColor="#3b82f6" height={200} />
-    );
+    return <SimpleBarChart data={data.data || []} barColor="#3b82f6" height={200} />;
   }
 
   // Line chart
@@ -179,9 +220,7 @@ function WidgetContent({ type, data, def }: { type: string; data: any; def: Retu
 
   // Pie chart
   if (data.type === 'pie') {
-    return (
-      <SimplePieChart data={data.data || []} height={200} innerRadius={40} />
-    );
+    return <SimplePieChart data={data.data || []} height={200} innerRadius={40} />;
   }
 
   // Table

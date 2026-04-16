@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useDashboard } from '@/lib/dashboard-context';
 import { WidgetRenderer } from '@/components/dashboard/widget-renderer';
 import { WidgetLibrary } from '@/components/dashboard/widget-library';
 import { getWidgetDef } from '@/lib/widget-definitions';
@@ -12,9 +13,10 @@ import {
   type WidgetInstance,
   type DashboardLayout,
 } from '@/lib/dashboard-store';
-import { Plus, RotateCcw } from 'lucide-react';
+import { Plus, RotateCcw, X } from 'lucide-react';
 
 export default function MyDashboardPage() {
+  const { crossFilters, removeCrossFilter, clearCrossFilters } = useDashboard();
   const [layout, setLayout] = useState<DashboardLayout | null>(null);
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -75,6 +77,30 @@ export default function MyDashboardPage() {
     setLayout(getOrCreateDefaultLayout());
   }, []);
 
+  const handleMove = useCallback((id: string, direction: -1 | 1) => {
+    if (!layout) return;
+    const widgets = [...layout.widgets];
+    const idx = widgets.findIndex(w => w.id === id);
+    if (idx < 0) return;
+    const newIdx = idx + direction;
+    if (newIdx < 0 || newIdx >= widgets.length) return;
+    [widgets[idx], widgets[newIdx]] = [widgets[newIdx], widgets[idx]];
+    saveLayout({ ...layout, widgets, updatedAt: new Date().toISOString() });
+  }, [layout, saveLayout]);
+
+  const handleResize = useCallback((id: string, delta: number) => {
+    if (!layout) return;
+    saveLayout({
+      ...layout,
+      widgets: layout.widgets.map(w => {
+        if (w.id !== id) return w;
+        const newW = Math.max(3, Math.min(12, w.w + delta));
+        return { ...w, w: newW };
+      }),
+      updatedAt: new Date().toISOString(),
+    });
+  }, [layout, saveLayout]);
+
   if (!layout || !mounted) {
     return (
       <div className="flex items-center justify-center h-96">
@@ -124,6 +150,29 @@ export default function MyDashboardPage() {
         </div>
       </div>
 
+      {/* Active cross-filters */}
+      {crossFilters.length > 0 && (
+        <div className="flex items-center gap-2 flex-wrap p-3 rounded-lg bg-blue-950/30 border border-blue-800/30">
+          <span className="text-xs text-blue-400 font-medium">Filtry:</span>
+          {crossFilters.map(cf => (
+            <button
+              key={cf.field}
+              onClick={() => removeCrossFilter(cf.field)}
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-blue-600/20 text-blue-300 text-xs hover:bg-blue-600/40 transition-colors"
+            >
+              {cf.label}
+              <X size={12} />
+            </button>
+          ))}
+          <button
+            onClick={clearCrossFilters}
+            className="text-xs text-zinc-500 hover:text-zinc-300 ml-2"
+          >
+            Wyczyść wszystkie
+          </button>
+        </div>
+      )}
+
       {/* Grid */}
       {layout.widgets.length === 0 ? (
         <div className="flex flex-col items-center justify-center h-96 gap-4 border-2 border-dashed border-zinc-800 rounded-xl">
@@ -138,11 +187,14 @@ export default function MyDashboardPage() {
         </div>
       ) : (
         <div className="grid grid-cols-12 gap-3">
-          {layout.widgets.map(w => (
+          {layout.widgets.map((w, i) => (
             <div key={w.id} className={`${widgetSpan(w.w)} ${widgetHeight(w.h)}`}>
               <WidgetRenderer
                 widgetType={w.type}
                 onRemove={() => handleRemoveWidget(w.id)}
+                onMoveUp={i > 0 ? () => handleMove(w.id, -1) : undefined}
+                onMoveDown={i < layout.widgets.length - 1 ? () => handleMove(w.id, 1) : undefined}
+                onResize={(delta) => handleResize(w.id, delta)}
               />
             </div>
           ))}

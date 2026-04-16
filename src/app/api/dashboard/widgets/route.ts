@@ -3,8 +3,36 @@ import { getSupabaseAdmin } from '@/lib/supabase';
 
 export async function POST(request: NextRequest) {
   try {
-    const { widget, dateFrom, dateTo, shop = 'all', limit = 20 } = await request.json();
+    const { widget, dateFrom, dateTo, shop = 'all', limit = 20, crossFilters = [] } = await request.json();
     const db = getSupabaseAdmin();
+
+    // Cross-filter fields that apply to fact_orders
+    const orderCrossFields = ['supplier', 'delivery_city', 'coupon_code', 'source_shop'];
+    // Cross-filter fields that apply to fact_order_items
+    const itemCrossFields = ['product_name', 'product_category', 'fabric', 'fabric_collection', 'bed_size', 'mattress_type', 'headboard_height', 'storage_type'];
+
+    // Helper: apply cross-filters to a query
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    function applyCross(q: any, allowedFields: string[]): any {
+      for (const cf of crossFilters) {
+        if (allowedFields.includes(cf.field)) {
+          q = q.eq(cf.field, cf.value);
+        }
+      }
+      return q;
+    }
+
+    // Helper: get cross-filtered order IDs (for filtering items by order-level cross filters)
+    async function getCrossFilteredOrderIds(): Promise<string[] | null> {
+      const orderLevelFilters = crossFilters.filter((cf: { field: string }) => orderCrossFields.includes(cf.field));
+      if (orderLevelFilters.length === 0) return null;
+      let q = db.from('fact_orders').select('order_id')
+        .gte('order_date', dateFrom).lte('order_date', dateTo + 'T23:59:59');
+      if (shop !== 'all') q = q.eq('source_shop', shop);
+      q = applyCross(q, orderCrossFields);
+      const { data } = await q.limit(50000);
+      return data ? data.map((r: { order_id: string }) => r.order_id) : null;
+    }
 
     // Helper: build order date filter
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -12,19 +40,25 @@ export async function POST(request: NextRequest) {
       let q = db.from('fact_orders').select(select)
         .gte('order_date', dateFrom).lte('order_date', dateTo + 'T23:59:59');
       if (shop !== 'all') q = q.eq('source_shop', shop);
+      q = applyCross(q, orderCrossFields);
       return q;
     }
 
-    // Helper: build items query with join
+    // Helper: build items query with join + cross-filters
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    function itemsQuery(select: string, extraFilter?: (q: any) => any): any {
+    function iq(select: string): any {
       let q = db.from('fact_order_items')
-        .select(select + ', fact_orders!inner(order_date, source_shop)')
+        .select(select + ', order_id, fact_orders!inner(order_date, source_shop, supplier)')
         .gte('fact_orders.order_date', dateFrom)
         .lte('fact_orders.order_date', dateTo + 'T23:59:59')
         .neq('fact_orders.status', 'anulowane');
       if (shop !== 'all') q = q.eq('fact_orders.source_shop', shop);
-      if (extraFilter) q = extraFilter(q);
+      q = applyCross(q, itemCrossFields);
+      for (const cf of crossFilters) {
+        if (orderCrossFields.includes(cf.field)) {
+          q = q.eq('fact_orders.' + cf.field, cf.value);
+        }
+      }
       return q;
     }
 
@@ -59,7 +93,7 @@ export async function POST(request: NextRequest) {
         // For bed/sample counts, query items
         let bedOrders = 0, sampleOrders = 0;
         if (widget === 'kpi_orders_beds' || widget === 'kpi_orders_samples') {
-          const { data: items } = await itemsQuery('order_id, product_category').limit(50000);
+          const { data: items } = await iq('order_id, product_category').limit(50000);
           const bedSet = new Set<string>();
           const sampleSet = new Set<string>();
           for (const item of items || []) {
@@ -86,7 +120,7 @@ export async function POST(request: NextRequest) {
 
       // ── Rankings ──
       case 'ranking_models': {
-        const { data } = await itemsQuery('product_name, quantity')
+        const { data } = await iq('product_name, quantity')
           .eq('product_category', 'łóżko')
           .limit(50000);
         const map: Record<string, number> = {};
@@ -97,7 +131,7 @@ export async function POST(request: NextRequest) {
       }
 
       case 'ranking_fabric_collections': {
-        const { data } = await itemsQuery('fabric_collection, quantity')
+        const { data } = await iq('fabric_collection, quantity')
           .not('fabric_collection', 'is', null)
           .limit(50000);
         const map: Record<string, number> = {};
@@ -108,7 +142,7 @@ export async function POST(request: NextRequest) {
       }
 
       case 'ranking_fabrics': {
-        const { data } = await itemsQuery('fabric, quantity')
+        const { data } = await iq('fabric, quantity')
           .not('fabric', 'is', null)
           .limit(50000);
         const map: Record<string, number> = {};
@@ -143,7 +177,7 @@ export async function POST(request: NextRequest) {
       }
 
       case 'ranking_bed_sizes': {
-        const { data } = await itemsQuery('bed_size, quantity').not('bed_size', 'is', null).limit(50000);
+        const { data } = await iq('bed_size, quantity').not('bed_size', 'is', null).limit(50000);
         const map: Record<string, number> = {};
         for (const i of data || []) if (i.bed_size) map[i.bed_size] = (map[i.bed_size] || 0) + (i.quantity || 1);
         const ranked = Object.entries(map).sort(([,a],[,b]) => b - a).slice(0, limit);
@@ -151,7 +185,7 @@ export async function POST(request: NextRequest) {
       }
 
       case 'ranking_headboard_heights': {
-        const { data } = await itemsQuery('headboard_height, quantity').not('headboard_height', 'is', null).limit(50000);
+        const { data } = await iq('headboard_height, quantity').not('headboard_height', 'is', null).limit(50000);
         const map: Record<string, number> = {};
         for (const i of data || []) if (i.headboard_height) map[i.headboard_height] = (map[i.headboard_height] || 0) + (i.quantity || 1);
         const ranked = Object.entries(map).sort(([,a],[,b]) => b - a).slice(0, limit);
@@ -159,7 +193,7 @@ export async function POST(request: NextRequest) {
       }
 
       case 'ranking_storage_types': {
-        const { data } = await itemsQuery('storage_type, quantity').not('storage_type', 'is', null).limit(50000);
+        const { data } = await iq('storage_type, quantity').not('storage_type', 'is', null).limit(50000);
         const map: Record<string, number> = {};
         for (const i of data || []) if (i.storage_type) map[i.storage_type] = (map[i.storage_type] || 0) + (i.quantity || 1);
         const ranked = Object.entries(map).sort(([,a],[,b]) => b - a).slice(0, limit);
@@ -224,7 +258,7 @@ export async function POST(request: NextRequest) {
       }
 
       case 'chart_mattress_types': {
-        const { data } = await itemsQuery('mattress_type, quantity').not('mattress_type', 'is', null).limit(50000);
+        const { data } = await iq('mattress_type, quantity').not('mattress_type', 'is', null).limit(50000);
         const map: Record<string, number> = {};
         for (const i of data || []) if (i.mattress_type) map[i.mattress_type] = (map[i.mattress_type] || 0) + (i.quantity || 1);
         const sorted = Object.entries(map).sort(([,a],[,b]) => b - a).slice(0, 10);
