@@ -50,7 +50,7 @@ export default function TrafficPage() {
       if (res.ok) {
         setSyncResult({ ok: true, message: `Pobrano ${json.totalRows} wierszy z GA4` });
         // Re-fetch data
-        const params = new URLSearchParams({ date_from: filters.dateFrom, date_to: filters.dateTo });
+        const params = new URLSearchParams({ date_from: filters.dateFrom, date_to: filters.dateTo, hostname: hostnameFilter });
         const dataRes = await fetch(`/api/dashboard/traffic?${params}`);
         setData(await dataRes.json());
       } else {
@@ -63,6 +63,14 @@ export default function TrafficPage() {
     }
   }
 
+  // Map shop filter to hostname for GA4
+  const shopToHostname: Record<string, string> = {
+    'mybed.pl': 'mybed.pl',
+    'mybed.de': 'mybed.de',
+    'mittohome.pl': 'mittohome.pl',
+  };
+  const hostnameFilter = shopToHostname[filters.shop] || 'all';
+
   useEffect(() => {
     async function fetchData() {
       setLoading(true);
@@ -70,6 +78,7 @@ export default function TrafficPage() {
         const params = new URLSearchParams({
           date_from: filters.dateFrom,
           date_to: filters.dateTo,
+          hostname: hostnameFilter,
         });
         const res = await fetch(`/api/dashboard/traffic?${params}`);
         const json = await res.json();
@@ -81,7 +90,7 @@ export default function TrafficPage() {
       }
     }
     fetchData();
-  }, [filters]);
+  }, [filters, hostnameFilter]);
 
   if (loading) {
     return (
@@ -140,13 +149,21 @@ export default function TrafficPage() {
         </div>
       )}
 
+      {/* Active filter label */}
+      {hostnameFilter !== 'all' && (
+        <div className="text-sm text-zinc-400">
+          Dane dla: <span className="text-zinc-200 font-medium">{hostnameFilter}</span>
+        </div>
+      )}
+
       {/* KPIs */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
         <KpiCard title="Sesje" value={formatNumber(data.kpis.sessions)} icon={<Globe size={18} />} />
         <KpiCard title="Użytkownicy" value={formatNumber(data.kpis.users)} icon={<Users size={18} />} />
         <KpiCard title="Nowi użytkownicy" value={formatNumber(data.kpis.newUsers)} icon={<Users size={18} />} />
         <KpiCard title="Odsłony" value={formatNumber(data.kpis.pageviews)} icon={<Eye size={18} />} />
-        <KpiCard title="Transakcje" value={formatNumber(data.kpis.transactions)} icon={<ShoppingCart size={18} />} />
+        <KpiCard title="Transakcje (GA4)" value={formatNumber(data.kpis.transactions)} icon={<ShoppingCart size={18} />} />
+        <KpiCard title="Revenue (GA4)" value={formatCurrency(data.kpis.revenue)} icon={<TrendingUp size={18} />} />
         <KpiCard title="Conv. Rate" value={`${data.kpis.conversionRate}%`} icon={<TrendingUp size={18} />} />
       </div>
 
