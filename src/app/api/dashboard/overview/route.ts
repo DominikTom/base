@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
       revenueQuery = revenueQuery.eq('source_shop', shop);
     }
 
-    const { data: dailyRevenue, error: revError } = await revenueQuery;
+    const { data: dailyRevenue, error: revError } = await revenueQuery.limit(50000);
 
     if (revError) {
       return NextResponse.json({ error: revError.message }, { status: 500 });

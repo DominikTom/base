@@ -77,7 +77,8 @@ async function handleStart(body: { filename?: string; dateRange?: { min: string;
       .from('fact_orders')
       .select('order_id')
       .gte('order_date', dateRange.min)
-      .lte('order_date', dateRange.max + 'T23:59:59');
+      .lte('order_date', dateRange.max + 'T23:59:59')
+      .limit(50000);
 
     if (existingOrders && existingOrders.length > 0) {
       const ids = existingOrders.map(o => o.order_id);

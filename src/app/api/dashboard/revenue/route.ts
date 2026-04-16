@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
       query = query.eq('source_shop', shop);
     }
 
-    const { data: dailyRevenue, error } = await query;
+    const { data: dailyRevenue, error } = await query.limit(50000);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
     // Group by granularity
@@ -73,7 +73,7 @@ export async function GET(request: NextRequest) {
       supplierQuery = supplierQuery.eq('source_shop', shop);
     }
 
-    const { data: supplierData } = await supplierQuery;
+    const { data: supplierData } = await supplierQuery.limit(50000);
     const supplierMap: Record<string, number> = {};
     for (const o of supplierData || []) {
       if (o.supplier) {
@@ -95,7 +95,7 @@ export async function GET(request: NextRequest) {
       statusQuery = statusQuery.eq('source_shop', shop);
     }
 
-    const { data: statusData } = await statusQuery;
+    const { data: statusData } = await statusQuery.limit(50000);
     const statusCounts: Record<string, number> = {};
     let paidCount = 0;
     for (const o of statusData || []) {
@@ -133,7 +133,7 @@ export async function GET(request: NextRequest) {
       couponQuery = couponQuery.eq('source_shop', shop);
     }
 
-    const { data: couponData } = await couponQuery;
+    const { data: couponData } = await couponQuery.limit(50000);
     const couponMap: Record<string, { count: number; revenue: number }> = {};
     for (const o of couponData || []) {
       if (o.coupon_code) {

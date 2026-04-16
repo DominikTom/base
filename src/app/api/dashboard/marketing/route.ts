@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
       query = query.eq('platform', platform);
     }
 
-    const { data: adspendData, error } = await query;
+    const { data: adspendData, error } = await query.limit(50000);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
     // KPIs

@@ -60,7 +60,7 @@ async function handleRevenueExplorer(params: {
     query = query.in('source_shop', params.filters.shop);
   }
 
-  const { data, error } = await query;
+  const { data, error } = await query.limit(50000);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   // Group by granularity
@@ -159,7 +159,7 @@ async function handleOrderExplorer(params: {
     query = query.in('status', params.filters.status);
   }
 
-  const { data: orders, error } = await query;
+  const { data: orders, error } = await query.limit(50000);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   // For product-level x_axis, we need items too

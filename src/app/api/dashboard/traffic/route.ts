@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
       query = query.eq('hostname', hostname);
     }
 
-    const { data: trafficData, error } = await query;
+    const { data: trafficData, error } = await query.limit(50000);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
     // KPIs
