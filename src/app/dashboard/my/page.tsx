@@ -7,8 +7,6 @@ import { WidgetLibrary } from '@/components/dashboard/widget-library';
 import { getWidgetDef } from '@/lib/widget-definitions';
 import {
   getOrCreateDefaultLayout,
-  saveLayouts,
-  loadLayouts,
   generateWidgetId,
   type WidgetInstance,
   type DashboardLayout,
@@ -21,18 +19,35 @@ export default function MyDashboardPage() {
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
 
+  // Load layout from DB on mount, fallback to localStorage
   useEffect(() => {
-    setLayout(getOrCreateDefaultLayout());
-    setMounted(true);
+    async function loadFromDb() {
+      try {
+        const res = await fetch('/api/user');
+        if (res.ok) {
+          const json = await res.json();
+          if (json.profile?.dashboard_layout?.widgets) {
+            setLayout(json.profile.dashboard_layout as DashboardLayout);
+            setMounted(true);
+            return;
+          }
+        }
+      } catch { /* fallback to local */ }
+      setLayout(getOrCreateDefaultLayout());
+      setMounted(true);
+    }
+    loadFromDb();
   }, []);
 
+  // Save layout to DB + localStorage
   const saveLayout = useCallback((updated: DashboardLayout) => {
     setLayout(updated);
-    const all = loadLayouts();
-    const idx = all.findIndex(l => l.id === updated.id);
-    if (idx >= 0) all[idx] = updated;
-    else all.push(updated);
-    saveLayouts(all);
+    // Save to DB in background
+    fetch('/api/user', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'save_layout', layout: updated }),
+    }).catch(() => { /* ignore */ });
   }, []);
 
   const handleAddWidget = useCallback(

@@ -14,17 +14,13 @@ export async function GET(request: Request) {
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
       {
         cookies: {
-          getAll() {
-            return cookieStore.getAll();
-          },
+          getAll() { return cookieStore.getAll(); },
           setAll(cookiesToSet) {
             try {
               cookiesToSet.forEach(({ name, value, options }) =>
                 cookieStore.set(name, value, options)
               );
-            } catch {
-              // Server component can't set cookies in some cases
-            }
+            } catch { /* Server component limitation */ }
           },
         },
       }
@@ -32,6 +28,24 @@ export async function GET(request: Request) {
 
     const { error } = await supabase.auth.exchangeCodeForSession(code);
     if (!error) {
+      // Create user profile if not exists
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data: existing } = await supabase
+          .from('user_profiles')
+          .select('user_id')
+          .eq('user_id', user.id)
+          .single();
+
+        if (!existing) {
+          await supabase.from('user_profiles').insert({
+            user_id: user.id,
+            email: user.email || '',
+            role: 'viewer',
+          });
+        }
+      }
+
       return NextResponse.redirect(`${origin}${next}`);
     }
   }
