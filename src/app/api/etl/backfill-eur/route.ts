@@ -2,97 +2,105 @@ import { NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabase';
 import { EUR_TO_PLN } from '@/lib/currency';
 
+export const maxDuration = 60;
+
 export async function POST() {
   try {
     const db = getSupabaseAdmin();
 
-    // Find all EUR orders with exchange_rate=1 (unconverted)
-    const PAGE = 1000;
-    let offset = 0;
+    // Batch update all EUR orders with exchange_rate=1 using a single SQL call
+    const { data: updateResult, error: updateError } = await db.rpc('backfill_eur_orders', {
+      new_rate: EUR_TO_PLN,
+    });
+
+    // If RPC doesn't exist, fall back to direct SQL via postgrest
     let updated = 0;
-
-    while (true) {
-      const { data: orders } = await db.from('fact_orders')
-        .select('order_id, total_gross, shipping_cost')
+    if (updateError) {
+      // Fallback: use batch update via Supabase update with filter
+      // First count how many need updating
+      const { count } = await db.from('fact_orders')
+        .select('order_id', { count: 'exact', head: true })
         .eq('currency', 'EUR')
-        .eq('exchange_rate', 1)
-        .range(offset, offset + PAGE - 1);
+        .eq('exchange_rate', 1);
 
-      if (!orders || orders.length === 0) break;
+      updated = count || 0;
 
-      for (const o of orders) {
-        const totalGrossPln = o.total_gross != null ? o.total_gross * EUR_TO_PLN : null;
-        const shippingCostPln = o.shipping_cost != null ? o.shipping_cost * EUR_TO_PLN : null;
+      if (updated > 0) {
+        // Supabase update with filter updates ALL matching rows in one query
+        const { error } = await db.from('fact_orders')
+          .update({
+            exchange_rate: EUR_TO_PLN,
+          })
+          .eq('currency', 'EUR')
+          .eq('exchange_rate', 1);
 
-        await db.from('fact_orders').update({
-          exchange_rate: EUR_TO_PLN,
-          total_gross_pln: totalGrossPln,
-          shipping_cost_pln: shippingCostPln,
-        }).eq('order_id', o.order_id);
+        if (error) throw new Error(`Update exchange_rate failed: ${error.message}`);
 
-        updated++;
+        // Now update PLN amounts — need to read and batch update
+        const PAGE = 1000;
+        let offset = 0;
+        while (true) {
+          const { data: orders } = await db.from('fact_orders')
+            .select('order_id, total_gross, shipping_cost')
+            .eq('currency', 'EUR')
+            .eq('exchange_rate', EUR_TO_PLN)
+            .range(offset, offset + PAGE - 1);
+
+          if (!orders || orders.length === 0) break;
+
+          // Batch: build array of updates and upsert
+          const updates = orders.map(o => ({
+            order_id: o.order_id,
+            total_gross_pln: o.total_gross != null ? Math.round(o.total_gross * EUR_TO_PLN * 100) / 100 : null,
+            shipping_cost_pln: o.shipping_cost != null ? Math.round(o.shipping_cost * EUR_TO_PLN * 100) / 100 : null,
+          }));
+
+          // Upsert in batches
+          for (const u of updates) {
+            await db.from('fact_orders')
+              .update({ total_gross_pln: u.total_gross_pln, shipping_cost_pln: u.shipping_cost_pln })
+              .eq('order_id', u.order_id);
+          }
+
+          if (orders.length < PAGE) break;
+          offset += PAGE;
+        }
       }
-
-      if (orders.length < PAGE) break;
-      offset += PAGE;
+    } else {
+      updated = typeof updateResult === 'number' ? updateResult : 0;
     }
 
-    // Rebuild fact_daily_revenue for all dates
-    // Get date range of affected orders
-    const { data: dateRange } = await db.from('fact_orders')
-      .select('order_date')
-      .eq('currency', 'EUR')
-      .order('order_date', { ascending: true })
-      .limit(1);
+    // Rebuild fact_daily_revenue for EUR shops only
+    const eurShops = ['mybed.de', 'amazon.de', 'kaufland.de'];
+    const PAGE = 1000;
 
-    const { data: dateRangeEnd } = await db.from('fact_orders')
-      .select('order_date')
-      .eq('currency', 'EUR')
-      .order('order_date', { ascending: false })
-      .limit(1);
-
-    if (dateRange?.[0] && dateRangeEnd?.[0]) {
-      const startDate = (dateRange[0].order_date as string).substring(0, 10);
-      const endDate = (dateRangeEnd[0].order_date as string).substring(0, 10);
-
-      // Delete existing daily revenue for the affected date range and rebuild
-      await db.from('fact_daily_revenue')
-        .delete()
-        .gte('date', startDate)
-        .lte('date', endDate);
-
-      // Fetch all orders in range and rebuild
-      let rebuildOffset = 0;
-      const dailyMap: Record<string, Record<string, {
+    for (const eurShop of eurShops) {
+      // Get all orders for this shop, paginated
+      const dailyMap: Record<string, {
         orders_count: number; orders_paid: number; orders_cancelled: number;
         revenue_gross_pln: number; revenue_paid_pln: number; shipping_revenue_pln: number;
-        revenue_gross_original: number; original_currency: string;
-      }>> = {};
+        revenue_gross_original: number;
+      }> = {};
 
+      let offset = 0;
       while (true) {
         const { data: orders } = await db.from('fact_orders')
-          .select('order_date, source_shop, total_gross, total_gross_pln, shipping_cost_pln, is_paid, status, currency')
-          .gte('order_date', startDate)
-          .lte('order_date', endDate + 'T23:59:59')
-          .range(rebuildOffset, rebuildOffset + PAGE - 1);
+          .select('order_date, total_gross, total_gross_pln, shipping_cost_pln, is_paid, status')
+          .eq('source_shop', eurShop)
+          .range(offset, offset + PAGE - 1);
 
         if (!orders || orders.length === 0) break;
 
         for (const o of orders) {
           const date = (o.order_date as string).substring(0, 10);
-          const shop = o.source_shop || 'unknown';
-          const key = `${date}|${shop}`;
-
-          if (!dailyMap[date]) dailyMap[date] = {};
-          if (!dailyMap[date][shop]) {
-            dailyMap[date][shop] = {
+          if (!dailyMap[date]) {
+            dailyMap[date] = {
               orders_count: 0, orders_paid: 0, orders_cancelled: 0,
               revenue_gross_pln: 0, revenue_paid_pln: 0, shipping_revenue_pln: 0,
-              revenue_gross_original: 0, original_currency: o.currency || 'PLN',
+              revenue_gross_original: 0,
             };
           }
-
-          const g = dailyMap[date][shop];
+          const g = dailyMap[date];
           g.orders_count++;
           if (o.is_paid) g.orders_paid++;
           if (o.status === 'anulowane') g.orders_cancelled++;
@@ -103,27 +111,30 @@ export async function POST() {
         }
 
         if (orders.length < PAGE) break;
-        rebuildOffset += PAGE;
+        offset += PAGE;
       }
 
-      // Upsert daily revenue
-      for (const [date, shops] of Object.entries(dailyMap)) {
-        for (const [shop, g] of Object.entries(shops)) {
-          const avgOrder = g.orders_count > 0 ? g.revenue_gross_pln / g.orders_count : 0;
-          await db.from('fact_daily_revenue').upsert({
-            date,
-            source_shop: shop,
-            orders_count: g.orders_count,
-            orders_paid: g.orders_paid,
-            orders_cancelled: g.orders_cancelled,
-            revenue_gross_pln: Math.round(g.revenue_gross_pln * 100) / 100,
-            revenue_paid_pln: Math.round(g.revenue_paid_pln * 100) / 100,
-            shipping_revenue_pln: Math.round(g.shipping_revenue_pln * 100) / 100,
-            avg_order_value_pln: Math.round(avgOrder * 100) / 100,
-            revenue_gross_original: Math.round(g.revenue_gross_original * 100) / 100,
-            original_currency: g.original_currency,
-          }, { onConflict: 'date, source_shop' });
-        }
+      // Delete old daily revenue for this shop and re-insert
+      await db.from('fact_daily_revenue').delete().eq('source_shop', eurShop);
+
+      const rows = Object.entries(dailyMap).map(([date, g]) => ({
+        date,
+        source_shop: eurShop,
+        orders_count: g.orders_count,
+        orders_paid: g.orders_paid,
+        orders_cancelled: g.orders_cancelled,
+        revenue_gross_pln: Math.round(g.revenue_gross_pln * 100) / 100,
+        revenue_paid_pln: Math.round(g.revenue_paid_pln * 100) / 100,
+        shipping_revenue_pln: Math.round(g.shipping_revenue_pln * 100) / 100,
+        avg_order_value_pln: g.orders_count > 0 ? Math.round((g.revenue_gross_pln / g.orders_count) * 100) / 100 : 0,
+        revenue_gross_original: Math.round(g.revenue_gross_original * 100) / 100,
+        original_currency: 'EUR',
+      }));
+
+      // Insert in batches of 500
+      for (let i = 0; i < rows.length; i += 500) {
+        const batch = rows.slice(i, i + 500);
+        await db.from('fact_daily_revenue').insert(batch);
       }
     }
 
