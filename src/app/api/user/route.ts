@@ -10,7 +10,13 @@ async function getAuthUser() {
     {
       cookies: {
         getAll() { return cookieStore.getAll(); },
-        setAll() { /* read-only in GET */ },
+        setAll(cookiesToSet) {
+          try {
+            cookiesToSet.forEach(({ name, value, options }) =>
+              cookieStore.set(name, value, options)
+            );
+          } catch { /* Server component limitation */ }
+        },
       },
     }
   );
@@ -18,11 +24,29 @@ async function getAuthUser() {
   return { user, supabase };
 }
 
+async function ensureProfile(supabase: ReturnType<typeof createServerClient>, userId: string, email: string) {
+  const { data: existing } = await supabase
+    .from('user_profiles')
+    .select('user_id')
+    .eq('user_id', userId)
+    .single();
+
+  if (!existing) {
+    await supabase.from('user_profiles').insert({
+      user_id: userId,
+      email,
+      role: 'viewer',
+    });
+  }
+}
+
 // GET — fetch user profile + role + layout
 export async function GET() {
   try {
     const { user, supabase } = await getAuthUser();
     if (!user) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
+
+    await ensureProfile(supabase, user.id, user.email || '');
 
     const { data: profile } = await supabase
       .from('user_profiles')
@@ -45,25 +69,33 @@ export async function POST(request: NextRequest) {
     const { user, supabase } = await getAuthUser();
     if (!user) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
 
+    await ensureProfile(supabase, user.id, user.email || '');
+
     const body = await request.json();
 
-    // Save entire dashboard data (all layouts + default)
     if (body.action === 'save_dashboard_data') {
+      // Upsert to handle case where profile row might not exist
       const { error } = await supabase
         .from('user_profiles')
-        .update({ dashboard_layout: body.data })
-        .eq('user_id', user.id);
+        .upsert({
+          user_id: user.id,
+          email: user.email || '',
+          dashboard_layout: body.data,
+        }, { onConflict: 'user_id' });
 
       if (error) return NextResponse.json({ error: error.message }, { status: 500 });
       return NextResponse.json({ success: true });
     }
 
-    // Legacy: save single layout (backward compat)
+    // Legacy: save single layout
     if (body.action === 'save_layout') {
       const { error } = await supabase
         .from('user_profiles')
-        .update({ dashboard_layout: body.layout })
-        .eq('user_id', user.id);
+        .upsert({
+          user_id: user.id,
+          email: user.email || '',
+          dashboard_layout: body.layout,
+        }, { onConflict: 'user_id' });
 
       if (error) return NextResponse.json({ error: error.message }, { status: 500 });
       return NextResponse.json({ success: true });

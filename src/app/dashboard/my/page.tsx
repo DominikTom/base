@@ -14,7 +14,7 @@ import {
   type DashboardLayout,
   type DashboardData,
 } from '@/lib/dashboard-store';
-import { Plus, RotateCcw, X, Save, Star, Trash2, Pencil } from 'lucide-react';
+import { Plus, RotateCcw, X, Save, Star, Trash2, Pencil, Check } from 'lucide-react';
 
 const MAX_LAYOUTS = 5;
 
@@ -28,6 +28,8 @@ export default function MyDashboardPage() {
   const [newLayoutName, setNewLayoutName] = useState('');
   const [renameId, setRenameId] = useState<string | null>(null);
   const [renameName, setRenameName] = useState('');
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
   // Load from DB on mount
   useEffect(() => {
@@ -56,16 +58,30 @@ export default function MyDashboardPage() {
 
   const activeLayout = dashData?.layouts.find(l => l.id === activeLayoutId) || dashData?.layouts[0] || null;
 
-  // Persist to DB
-  const saveToDB = useCallback((data: DashboardData) => {
-    fetch('/api/user', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'save_dashboard_data', data }),
-    }).catch(() => {});
+  // Persist to DB with feedback
+  const saveToDB = useCallback(async (data: DashboardData, showFeedback = false) => {
+    if (showFeedback) setSaveStatus('saving');
+    try {
+      const res = await fetch('/api/user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'save_dashboard_data', data }),
+      });
+      if (res.ok) {
+        if (showFeedback) {
+          setSaveStatus('saved');
+          setHasUnsavedChanges(false);
+          setTimeout(() => setSaveStatus('idle'), 2000);
+        }
+      } else {
+        if (showFeedback) setSaveStatus('error');
+      }
+    } catch {
+      if (showFeedback) setSaveStatus('error');
+    }
   }, []);
 
-  // Update active layout
+  // Update active layout (local state only, marks as unsaved)
   const updateLayout = useCallback((updated: DashboardLayout) => {
     if (!dashData) return;
     const newData: DashboardData = {
@@ -73,8 +89,8 @@ export default function MyDashboardPage() {
       layouts: dashData.layouts.map(l => l.id === updated.id ? updated : l),
     };
     setDashData(newData);
-    saveToDB(newData);
-  }, [dashData, saveToDB]);
+    setHasUnsavedChanges(true);
+  }, [dashData]);
 
   const handleAddWidget = useCallback((type: string) => {
     if (!activeLayout) return;
@@ -128,6 +144,12 @@ export default function MyDashboardPage() {
     });
   }, [activeLayout, updateLayout]);
 
+  // Explicit save button handler
+  const handleExplicitSave = useCallback(() => {
+    if (!dashData) return;
+    saveToDB(dashData, true);
+  }, [dashData, saveToDB]);
+
   // Save current layout as new named layout
   const handleSaveAs = useCallback(() => {
     if (!dashData || !activeLayout || !newLayoutName.trim()) return;
@@ -144,7 +166,7 @@ export default function MyDashboardPage() {
     };
     setDashData(newData);
     setActiveLayoutId(newLayout.id);
-    saveToDB(newData);
+    saveToDB(newData, true);
     setSaveDialogOpen(false);
     setNewLayoutName('');
   }, [dashData, activeLayout, newLayoutName, saveToDB]);
@@ -154,7 +176,7 @@ export default function MyDashboardPage() {
     if (!dashData) return;
     const newData: DashboardData = { ...dashData, defaultLayoutId: layoutId };
     setDashData(newData);
-    saveToDB(newData);
+    saveToDB(newData, true);
   }, [dashData, saveToDB]);
 
   // Delete layout
@@ -168,7 +190,7 @@ export default function MyDashboardPage() {
     };
     setDashData(newData);
     if (activeLayoutId === layoutId) setActiveLayoutId(remaining[0].id);
-    saveToDB(newData);
+    saveToDB(newData, true);
   }, [dashData, activeLayoutId, saveToDB]);
 
   // Rename layout
@@ -181,7 +203,7 @@ export default function MyDashboardPage() {
       ),
     };
     setDashData(newData);
-    saveToDB(newData);
+    saveToDB(newData, true);
     setRenameId(null);
     setRenameName('');
   }, [dashData, renameId, renameName, saveToDB]);
@@ -330,8 +352,27 @@ export default function MyDashboardPage() {
 
       {/* Header */}
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-zinc-100">{activeLayout?.name || 'Dashboard'}</h1>
+        <h1 className="text-xl font-semibold text-zinc-100">
+          {activeLayout?.name || 'Dashboard'}
+          {hasUnsavedChanges && <span className="ml-2 text-xs text-amber-500 font-normal">(niezapisane)</span>}
+        </h1>
         <div className="flex items-center gap-2">
+          <button
+            onClick={handleExplicitSave}
+            disabled={saveStatus === 'saving'}
+            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+              saveStatus === 'saved'
+                ? 'bg-emerald-600 text-white'
+                : saveStatus === 'error'
+                ? 'bg-red-600 text-white'
+                : hasUnsavedChanges
+                ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800'
+            }`}
+          >
+            {saveStatus === 'saved' ? <Check size={16} /> : <Save size={16} />}
+            {saveStatus === 'saving' ? 'Zapisywanie...' : saveStatus === 'saved' ? 'Zapisano!' : saveStatus === 'error' ? 'Błąd zapisu' : 'Zapisz'}
+          </button>
           <button
             onClick={handleReset}
             className="flex items-center gap-2 px-3 py-2 text-sm text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 rounded-lg transition-colors"
