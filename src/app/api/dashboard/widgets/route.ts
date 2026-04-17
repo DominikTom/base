@@ -144,7 +144,7 @@ export async function POST(request: NextRequest) {
           const sampleSet = new Set<string>();
           const bedPattern = /łóżko|łożko|bett|boxspring/i;
           for (const item of items || []) {
-            if (item.product_category === 'łóżko' || bedPattern.test(item.product_name || '')) bedSet.add(item.order_id);
+            if (bedPattern.test(item.product_name || '')) bedSet.add(item.order_id);
             if (item.product_category === 'próbki') sampleSet.add(item.order_id);
           }
           bedOrders = bedSet.size;
