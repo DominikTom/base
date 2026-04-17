@@ -15,43 +15,13 @@ export interface DashboardLayout {
   updatedAt: string;
 }
 
-const STORAGE_KEY = 'mybed_dashboard_layouts';
-const ACTIVE_KEY = 'mybed_active_dashboard';
-
-export function loadLayouts(): DashboardLayout[] {
-  if (typeof window === 'undefined') return [];
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
-  }
+export interface DashboardData {
+  layouts: DashboardLayout[];
+  defaultLayoutId: string;
 }
 
-export function saveLayouts(layouts: DashboardLayout[]) {
-  if (typeof window === 'undefined') return;
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(layouts));
-}
-
-export function getActiveLayoutId(): string | null {
-  if (typeof window === 'undefined') return null;
-  return localStorage.getItem(ACTIVE_KEY);
-}
-
-export function setActiveLayoutId(id: string) {
-  if (typeof window === 'undefined') return;
-  localStorage.setItem(ACTIVE_KEY, id);
-}
-
-export function getOrCreateDefaultLayout(): DashboardLayout {
-  const layouts = loadLayouts();
-  if (layouts.length > 0) {
-    const activeId = getActiveLayoutId();
-    const active = layouts.find(l => l.id === activeId);
-    return active || layouts[0];
-  }
-
-  const defaultLayout: DashboardLayout = {
+export function createDefaultLayout(): DashboardLayout {
+  return {
     id: 'default',
     name: 'Mój Dashboard',
     widgets: [
@@ -66,12 +36,42 @@ export function getOrCreateDefaultLayout(): DashboardLayout {
     ],
     updatedAt: new Date().toISOString(),
   };
+}
 
-  saveLayouts([defaultLayout]);
-  setActiveLayoutId('default');
-  return defaultLayout;
+export function createDefaultDashboardData(): DashboardData {
+  const layout = createDefaultLayout();
+  return { layouts: [layout], defaultLayoutId: layout.id };
 }
 
 export function generateWidgetId(): string {
   return 'w_' + Math.random().toString(36).substring(2, 9);
+}
+
+export function generateLayoutId(): string {
+  return 'l_' + Math.random().toString(36).substring(2, 9);
+}
+
+// Migrate old single-layout format to new multi-layout format
+export function migrateToMultiLayout(old: unknown): DashboardData {
+  if (!old || typeof old !== 'object') return createDefaultDashboardData();
+
+  const obj = old as Record<string, unknown>;
+
+  // Already new format
+  if (Array.isArray(obj.layouts)) return old as DashboardData;
+
+  // Old format: single layout with widgets array
+  if (Array.isArray(obj.widgets)) {
+    const layout = old as DashboardLayout;
+    if (!layout.id) layout.id = 'default';
+    if (!layout.name) layout.name = 'Mój Dashboard';
+    return { layouts: [layout], defaultLayoutId: layout.id };
+  }
+
+  return createDefaultDashboardData();
+}
+
+// Legacy exports for backward compatibility
+export function getOrCreateDefaultLayout(): DashboardLayout {
+  return createDefaultLayout();
 }

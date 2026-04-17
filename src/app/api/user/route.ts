@@ -39,7 +39,7 @@ export async function GET() {
   }
 }
 
-// POST — update dashboard layout
+// POST — dashboard layout operations
 export async function POST(request: NextRequest) {
   try {
     const { user, supabase } = await getAuthUser();
@@ -47,6 +47,18 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
 
+    // Save entire dashboard data (all layouts + default)
+    if (body.action === 'save_dashboard_data') {
+      const { error } = await supabase
+        .from('user_profiles')
+        .update({ dashboard_layout: body.data })
+        .eq('user_id', user.id);
+
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      return NextResponse.json({ success: true });
+    }
+
+    // Legacy: save single layout (backward compat)
     if (body.action === 'save_layout') {
       const { error } = await supabase
         .from('user_profiles')

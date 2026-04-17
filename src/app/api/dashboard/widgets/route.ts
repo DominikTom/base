@@ -6,6 +6,10 @@ export async function POST(request: NextRequest) {
     const { widget, dateFrom, dateTo, shop = 'all', limit = 20, crossFilters = [] } = await request.json();
     const db = getSupabaseAdmin();
 
+    const EUR_SHOPS = ['mybed.de', 'amazon.de', 'kaufland.de'];
+    const isEurShop = shop !== 'all' && EUR_SHOPS.includes(shop);
+    const currency = isEurShop ? 'EUR' : 'PLN';
+
     // Cross-filter fields that apply to fact_orders
     const orderCrossFields = ['supplier', 'delivery_city', 'coupon_code', 'source_shop'];
     // Cross-filter fields that apply to fact_order_items
@@ -77,6 +81,10 @@ export async function POST(request: NextRequest) {
     // Helper: get KPI totals — uses fact_daily_revenue when no cross-filters,
     // otherwise queries fact_orders directly with filtered order_ids
     async function getKpiTotals() {
+      const revField = isEurShop ? 'revenue_gross_original' : 'revenue_gross_pln';
+      const paidField = isEurShop ? 'revenue_paid_pln' : 'revenue_paid_pln'; // paid not tracked in original
+      const grossField = isEurShop ? 'total_gross' : 'total_gross_pln';
+
       if (!hasItemCrossFilters && crossFilters.length === 0) {
         // Fast path: use pre-aggregated table
         let q = db.from('fact_daily_revenue').select('*')
@@ -85,8 +93,8 @@ export async function POST(request: NextRequest) {
         const { data } = await q.limit(50000);
         const rows = data || [];
         return rows.reduce((a: typeof init, r: Record<string, number | null>) => ({
-          revenue: a.revenue + (r.revenue_gross_pln || 0),
-          paid: a.paid + (r.revenue_paid_pln || 0),
+          revenue: a.revenue + (r[revField] || r.revenue_gross_pln || 0),
+          paid: a.paid + (r[paidField] || 0),
           orders: a.orders + (r.orders_count || 0),
           ordersPaid: a.ordersPaid + (r.orders_paid || 0),
           cancelled: a.cancelled + (r.orders_cancelled || 0),
@@ -95,15 +103,14 @@ export async function POST(request: NextRequest) {
 
       // Slow path: query fact_orders with cross-filters
       const filteredIds = await getFilteredOrderIds();
-      let q = orderQuery('total_gross_pln, is_paid, status');
+      let q = orderQuery(`${grossField}, total_gross_pln, is_paid, status`);
       if (filteredIds !== null) {
         if (filteredIds.length === 0) return init;
-        // Supabase .in() has a limit, chunk if needed
         q = q.in('order_id', filteredIds.slice(0, 5000));
       }
       const { data } = await q.limit(50000);
       return (data || []).reduce((a: typeof init, r: Record<string, unknown>) => ({
-        revenue: a.revenue + ((r.total_gross_pln as number) || 0),
+        revenue: a.revenue + ((r[grossField] as number) || (r.total_gross_pln as number) || 0),
         paid: a.paid + (r.is_paid ? ((r.total_gross_pln as number) || 0) : 0),
         orders: a.orders + 1,
         ordersPaid: a.ordersPaid + (r.is_paid ? 1 : 0),
@@ -132,11 +139,12 @@ export async function POST(request: NextRequest) {
         // For bed/sample counts, query items
         let bedOrders = 0, sampleOrders = 0;
         if (widget === 'kpi_orders_beds' || widget === 'kpi_orders_samples') {
-          const { data: items } = await iq('order_id, product_category').limit(50000);
+          const { data: items } = await iq('order_id, product_category, product_name').limit(50000);
           const bedSet = new Set<string>();
           const sampleSet = new Set<string>();
+          const bedPattern = /łóżko|łożko|bett|boxspring/i;
           for (const item of items || []) {
-            if (item.product_category === 'łóżko') bedSet.add(item.order_id);
+            if (item.product_category === 'łóżko' || bedPattern.test(item.product_name || '')) bedSet.add(item.order_id);
             if (item.product_category === 'próbki') sampleSet.add(item.order_id);
           }
           bedOrders = bedSet.size;
@@ -154,7 +162,7 @@ export async function POST(request: NextRequest) {
           kpi_payment_rate: { value: paymentRate, format: 'percent' },
         };
 
-        return NextResponse.json({ type: 'kpi', ...valueMap[widget] });
+        return NextResponse.json({ type: 'kpi', ...valueMap[widget], currency });
       }
 
       // ── Rankings ──
@@ -200,11 +208,12 @@ export async function POST(request: NextRequest) {
       }
 
       case 'ranking_suppliers': {
-        const { data } = await orderQuery('supplier, total_gross_pln').not('supplier', 'is', null).limit(50000);
+        const grossCol = isEurShop ? 'total_gross' : 'total_gross_pln';
+        const { data } = await orderQuery(`supplier, ${grossCol}`).not('supplier', 'is', null).limit(50000);
         const map: Record<string, number> = {};
-        for (const o of data || []) if (o.supplier) map[o.supplier] = (map[o.supplier] || 0) + (o.total_gross_pln || 0);
+        for (const o of data || []) if (o.supplier) map[o.supplier] = (map[o.supplier] || 0) + (o[grossCol] || 0);
         const ranked = Object.entries(map).sort(([,a],[,b]) => b - a).slice(0, limit);
-        return NextResponse.json({ type: 'ranking', data: ranked.map(([name, value]) => ({ name, value: Math.round(value) })), total: ranked.reduce((s,[,v]) => s + v, 0), format: 'currency' });
+        return NextResponse.json({ type: 'ranking', data: ranked.map(([name, value]) => ({ name, value: Math.round(value) })), total: ranked.reduce((s,[,v]) => s + v, 0), format: 'currency', currency });
       }
 
       case 'ranking_coupons': {

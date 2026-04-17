@@ -1,122 +1,203 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useDashboard } from '@/lib/dashboard-context';
 import { WidgetRenderer } from '@/components/dashboard/widget-renderer';
 import { WidgetLibrary } from '@/components/dashboard/widget-library';
 import { getWidgetDef } from '@/lib/widget-definitions';
 import {
-  getOrCreateDefaultLayout,
+  createDefaultDashboardData,
+  migrateToMultiLayout,
   generateWidgetId,
+  generateLayoutId,
   type WidgetInstance,
   type DashboardLayout,
+  type DashboardData,
 } from '@/lib/dashboard-store';
-import { Plus, RotateCcw, X } from 'lucide-react';
+import { Plus, RotateCcw, X, Save, Star, Trash2, Pencil } from 'lucide-react';
+
+const MAX_LAYOUTS = 5;
 
 export default function MyDashboardPage() {
   const { crossFilters, removeCrossFilter, clearCrossFilters } = useDashboard();
-  const [layout, setLayout] = useState<DashboardLayout | null>(null);
+  const [dashData, setDashData] = useState<DashboardData | null>(null);
+  const [activeLayoutId, setActiveLayoutId] = useState<string>('');
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [saveDialogOpen, setSaveDialogOpen] = useState(false);
+  const [newLayoutName, setNewLayoutName] = useState('');
+  const [renameId, setRenameId] = useState<string | null>(null);
+  const [renameName, setRenameName] = useState('');
 
-  // Load layout from DB on mount, fallback to localStorage
+  // Load from DB on mount
   useEffect(() => {
-    async function loadFromDb() {
+    async function load() {
       try {
         const res = await fetch('/api/user');
         if (res.ok) {
           const json = await res.json();
-          if (json.profile?.dashboard_layout?.widgets) {
-            setLayout(json.profile.dashboard_layout as DashboardLayout);
+          const raw = json.profile?.dashboard_layout;
+          if (raw) {
+            const data = migrateToMultiLayout(raw);
+            setDashData(data);
+            setActiveLayoutId(data.defaultLayoutId || data.layouts[0]?.id || '');
             setMounted(true);
             return;
           }
         }
-      } catch { /* fallback to local */ }
-      setLayout(getOrCreateDefaultLayout());
+      } catch { /* fallback */ }
+      const data = createDefaultDashboardData();
+      setDashData(data);
+      setActiveLayoutId(data.defaultLayoutId);
       setMounted(true);
     }
-    loadFromDb();
+    load();
   }, []);
 
-  // Save layout to DB + localStorage
-  const saveLayout = useCallback((updated: DashboardLayout) => {
-    setLayout(updated);
-    // Save to DB in background
+  const activeLayout = dashData?.layouts.find(l => l.id === activeLayoutId) || dashData?.layouts[0] || null;
+
+  // Persist to DB
+  const saveToDB = useCallback((data: DashboardData) => {
     fetch('/api/user', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'save_layout', layout: updated }),
-    }).catch(() => { /* ignore */ });
+      body: JSON.stringify({ action: 'save_dashboard_data', data }),
+    }).catch(() => {});
   }, []);
 
-  const handleAddWidget = useCallback(
-    (type: string) => {
-      if (!layout) return;
-      const def = getWidgetDef(type);
-      if (!def) return;
-      const newWidget: WidgetInstance = {
-        id: generateWidgetId(),
-        type,
-        x: 0,
-        y: Infinity,
-        w: def.defaultSize.w,
-        h: def.defaultSize.h,
-      };
-      saveLayout({
-        ...layout,
-        widgets: [...layout.widgets, newWidget],
-        updatedAt: new Date().toISOString(),
-      });
-    },
-    [layout, saveLayout]
-  );
+  // Update active layout
+  const updateLayout = useCallback((updated: DashboardLayout) => {
+    if (!dashData) return;
+    const newData: DashboardData = {
+      ...dashData,
+      layouts: dashData.layouts.map(l => l.id === updated.id ? updated : l),
+    };
+    setDashData(newData);
+    saveToDB(newData);
+  }, [dashData, saveToDB]);
 
-  const handleRemoveWidget = useCallback(
-    (id: string) => {
-      if (!layout) return;
-      saveLayout({
-        ...layout,
-        widgets: layout.widgets.filter(w => w.id !== id),
-        updatedAt: new Date().toISOString(),
-      });
-    },
-    [layout, saveLayout]
-  );
+  const handleAddWidget = useCallback((type: string) => {
+    if (!activeLayout) return;
+    const def = getWidgetDef(type);
+    if (!def) return;
+    const newWidget: WidgetInstance = {
+      id: generateWidgetId(),
+      type,
+      x: 0,
+      y: Infinity,
+      w: def.defaultSize.w,
+      h: def.defaultSize.h,
+    };
+    updateLayout({
+      ...activeLayout,
+      widgets: [...activeLayout.widgets, newWidget],
+      updatedAt: new Date().toISOString(),
+    });
+  }, [activeLayout, updateLayout]);
 
-  const handleReset = useCallback(() => {
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem('mybed_dashboard_layouts');
-      localStorage.removeItem('mybed_active_dashboard');
-    }
-    setLayout(getOrCreateDefaultLayout());
-  }, []);
+  const handleRemoveWidget = useCallback((id: string) => {
+    if (!activeLayout) return;
+    updateLayout({
+      ...activeLayout,
+      widgets: activeLayout.widgets.filter(w => w.id !== id),
+      updatedAt: new Date().toISOString(),
+    });
+  }, [activeLayout, updateLayout]);
 
   const handleMove = useCallback((id: string, direction: -1 | 1) => {
-    if (!layout) return;
-    const widgets = [...layout.widgets];
+    if (!activeLayout) return;
+    const widgets = [...activeLayout.widgets];
     const idx = widgets.findIndex(w => w.id === id);
     if (idx < 0) return;
     const newIdx = idx + direction;
     if (newIdx < 0 || newIdx >= widgets.length) return;
     [widgets[idx], widgets[newIdx]] = [widgets[newIdx], widgets[idx]];
-    saveLayout({ ...layout, widgets, updatedAt: new Date().toISOString() });
-  }, [layout, saveLayout]);
+    updateLayout({ ...activeLayout, widgets, updatedAt: new Date().toISOString() });
+  }, [activeLayout, updateLayout]);
 
   const handleResize = useCallback((id: string, delta: number) => {
-    if (!layout) return;
-    saveLayout({
-      ...layout,
-      widgets: layout.widgets.map(w => {
+    if (!activeLayout) return;
+    updateLayout({
+      ...activeLayout,
+      widgets: activeLayout.widgets.map(w => {
         if (w.id !== id) return w;
         const newW = Math.max(3, Math.min(12, w.w + delta));
         return { ...w, w: newW };
       }),
       updatedAt: new Date().toISOString(),
     });
-  }, [layout, saveLayout]);
+  }, [activeLayout, updateLayout]);
 
-  if (!layout || !mounted) {
+  // Save current layout as new named layout
+  const handleSaveAs = useCallback(() => {
+    if (!dashData || !activeLayout || !newLayoutName.trim()) return;
+    if (dashData.layouts.length >= MAX_LAYOUTS) return;
+    const newLayout: DashboardLayout = {
+      id: generateLayoutId(),
+      name: newLayoutName.trim(),
+      widgets: [...activeLayout.widgets],
+      updatedAt: new Date().toISOString(),
+    };
+    const newData: DashboardData = {
+      ...dashData,
+      layouts: [...dashData.layouts, newLayout],
+    };
+    setDashData(newData);
+    setActiveLayoutId(newLayout.id);
+    saveToDB(newData);
+    setSaveDialogOpen(false);
+    setNewLayoutName('');
+  }, [dashData, activeLayout, newLayoutName, saveToDB]);
+
+  // Set as default
+  const handleSetDefault = useCallback((layoutId: string) => {
+    if (!dashData) return;
+    const newData: DashboardData = { ...dashData, defaultLayoutId: layoutId };
+    setDashData(newData);
+    saveToDB(newData);
+  }, [dashData, saveToDB]);
+
+  // Delete layout
+  const handleDeleteLayout = useCallback((layoutId: string) => {
+    if (!dashData || dashData.layouts.length <= 1) return;
+    const remaining = dashData.layouts.filter(l => l.id !== layoutId);
+    const newDefault = dashData.defaultLayoutId === layoutId ? remaining[0].id : dashData.defaultLayoutId;
+    const newData: DashboardData = {
+      layouts: remaining,
+      defaultLayoutId: newDefault,
+    };
+    setDashData(newData);
+    if (activeLayoutId === layoutId) setActiveLayoutId(remaining[0].id);
+    saveToDB(newData);
+  }, [dashData, activeLayoutId, saveToDB]);
+
+  // Rename layout
+  const handleRename = useCallback(() => {
+    if (!dashData || !renameId || !renameName.trim()) return;
+    const newData: DashboardData = {
+      ...dashData,
+      layouts: dashData.layouts.map(l =>
+        l.id === renameId ? { ...l, name: renameName.trim(), updatedAt: new Date().toISOString() } : l
+      ),
+    };
+    setDashData(newData);
+    saveToDB(newData);
+    setRenameId(null);
+    setRenameName('');
+  }, [dashData, renameId, renameName, saveToDB]);
+
+  // Reset current layout to defaults
+  const handleReset = useCallback(() => {
+    if (!activeLayout) return;
+    const defaultData = createDefaultDashboardData();
+    updateLayout({
+      ...activeLayout,
+      widgets: defaultData.layouts[0].widgets,
+      updatedAt: new Date().toISOString(),
+    });
+  }, [activeLayout, updateLayout]);
+
+  if (!dashData || !mounted) {
     return (
       <div className="flex items-center justify-center h-96">
         <div className="animate-pulse text-zinc-500">Ładowanie dashboardu...</div>
@@ -124,7 +205,6 @@ export default function MyDashboardPage() {
     );
   }
 
-  // Convert grid units to CSS classes
   function widgetSpan(w: number): string {
     if (w >= 12) return 'col-span-12';
     if (w >= 8) return 'col-span-12 lg:col-span-8';
@@ -144,9 +224,113 @@ export default function MyDashboardPage() {
 
   return (
     <div className="space-y-4">
+      {/* Layout tabs */}
+      <div className="flex items-center gap-1 border-b border-zinc-800 pb-0">
+        {dashData.layouts.map(l => (
+          <button
+            key={l.id}
+            onClick={() => setActiveLayoutId(l.id)}
+            className={`group relative flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium rounded-t-lg transition-colors ${
+              l.id === activeLayoutId
+                ? 'bg-zinc-800 text-zinc-100 border border-zinc-700 border-b-zinc-800 -mb-px'
+                : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50'
+            }`}
+          >
+            {dashData.defaultLayoutId === l.id && (
+              <Star size={12} className="text-amber-500 fill-amber-500" />
+            )}
+            {l.name}
+            {l.id === activeLayoutId && dashData.layouts.length > 1 && (
+              <span className="flex items-center gap-0.5 ml-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <button
+                  onClick={(e) => { e.stopPropagation(); setRenameId(l.id); setRenameName(l.name); }}
+                  className="p-0.5 text-zinc-500 hover:text-zinc-300"
+                  title="Zmień nazwę"
+                >
+                  <Pencil size={10} />
+                </button>
+                {dashData.defaultLayoutId !== l.id && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleSetDefault(l.id); }}
+                    className="p-0.5 text-zinc-500 hover:text-amber-400"
+                    title="Ustaw jako domyślny"
+                  >
+                    <Star size={10} />
+                  </button>
+                )}
+                <button
+                  onClick={(e) => { e.stopPropagation(); handleDeleteLayout(l.id); }}
+                  className="p-0.5 text-zinc-500 hover:text-red-400"
+                  title="Usuń"
+                >
+                  <Trash2 size={10} />
+                </button>
+              </span>
+            )}
+          </button>
+        ))}
+        {dashData.layouts.length < MAX_LAYOUTS && (
+          <button
+            onClick={() => { setSaveDialogOpen(true); setNewLayoutName(''); }}
+            className="flex items-center gap-1 px-3 py-2.5 text-xs text-zinc-600 hover:text-zinc-400 transition-colors"
+            title="Zapisz jako nowy dashboard"
+          >
+            <Plus size={14} />
+          </button>
+        )}
+      </div>
+
+      {/* Rename dialog */}
+      {renameId && (
+        <div className="flex items-center gap-2 p-3 rounded-lg bg-zinc-800/50 border border-zinc-700">
+          <span className="text-xs text-zinc-400">Nowa nazwa:</span>
+          <input
+            type="text"
+            value={renameName}
+            onChange={e => setRenameName(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && handleRename()}
+            className="px-3 py-1.5 rounded bg-zinc-900 border border-zinc-700 text-sm text-zinc-200 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            autoFocus
+          />
+          <button onClick={handleRename} className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded transition-colors">
+            Zapisz
+          </button>
+          <button onClick={() => setRenameId(null)} className="px-3 py-1.5 text-zinc-500 hover:text-zinc-300 text-xs">
+            Anuluj
+          </button>
+        </div>
+      )}
+
+      {/* Save as dialog */}
+      {saveDialogOpen && (
+        <div className="flex items-center gap-2 p-3 rounded-lg bg-zinc-800/50 border border-zinc-700">
+          <Save size={16} className="text-zinc-400" />
+          <span className="text-xs text-zinc-400">Nazwa dashboardu:</span>
+          <input
+            type="text"
+            value={newLayoutName}
+            onChange={e => setNewLayoutName(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && handleSaveAs()}
+            placeholder="np. Marketing, Finanse..."
+            className="flex-1 px-3 py-1.5 rounded bg-zinc-900 border border-zinc-700 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            autoFocus
+          />
+          <button
+            onClick={handleSaveAs}
+            disabled={!newLayoutName.trim()}
+            className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded transition-colors disabled:opacity-50"
+          >
+            Zapisz
+          </button>
+          <button onClick={() => setSaveDialogOpen(false)} className="px-3 py-1.5 text-zinc-500 hover:text-zinc-300 text-xs">
+            Anuluj
+          </button>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-zinc-100">Mój Dashboard</h1>
+        <h1 className="text-xl font-semibold text-zinc-100">{activeLayout?.name || 'Dashboard'}</h1>
         <div className="flex items-center gap-2">
           <button
             onClick={handleReset}
@@ -189,7 +373,7 @@ export default function MyDashboardPage() {
       )}
 
       {/* Grid */}
-      {layout.widgets.length === 0 ? (
+      {!activeLayout || activeLayout.widgets.length === 0 ? (
         <div className="flex flex-col items-center justify-center h-96 gap-4 border-2 border-dashed border-zinc-800 rounded-xl">
           <p className="text-zinc-500">Twój dashboard jest pusty</p>
           <button
@@ -202,13 +386,13 @@ export default function MyDashboardPage() {
         </div>
       ) : (
         <div className="grid grid-cols-12 gap-3">
-          {layout.widgets.map((w, i) => (
+          {activeLayout.widgets.map((w, i) => (
             <div key={w.id} className={`${widgetSpan(w.w)} ${widgetHeight(w.h)}`}>
               <WidgetRenderer
                 widgetType={w.type}
                 onRemove={() => handleRemoveWidget(w.id)}
                 onMoveUp={i > 0 ? () => handleMove(w.id, -1) : undefined}
-                onMoveDown={i < layout.widgets.length - 1 ? () => handleMove(w.id, 1) : undefined}
+                onMoveDown={i < activeLayout.widgets.length - 1 ? () => handleMove(w.id, 1) : undefined}
                 onResize={(delta) => handleResize(w.id, delta)}
               />
             </div>

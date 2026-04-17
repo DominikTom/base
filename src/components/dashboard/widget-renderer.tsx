@@ -131,7 +131,8 @@ function WidgetContent({ type, data, onItemClick }: { type: string; data: any; o
 
   // KPI
   if (data.type === 'kpi') {
-    const formatted = data.format === 'currency' ? formatCurrency(data.value)
+    const cur = data.currency || 'PLN';
+    const formatted = data.format === 'currency' ? formatCurrency(data.value, cur)
       : data.format === 'percent' ? `${data.value.toFixed(1)}%`
       : data.format === 'mer' ? `${data.value.toFixed(2)}x`
       : formatNumber(data.value);
@@ -147,6 +148,7 @@ function WidgetContent({ type, data, onItemClick }: { type: string; data: any; o
     const items: Array<{ name: string; value: number }> = data.data || [];
     const maxVal = Math.max(...items.map(i => i.value), 1);
     const isCurrency = data.format === 'currency';
+    const cur = data.currency || 'PLN';
     return (
       <div className="h-full overflow-y-auto">
         <table className="w-full text-xs">
@@ -160,7 +162,7 @@ function WidgetContent({ type, data, onItemClick }: { type: string; data: any; o
                 <td className="py-1.5 pr-2 text-zinc-500 w-6">{i + 1}.</td>
                 <td className="py-1.5 text-zinc-300 truncate max-w-[150px]">{item.name}</td>
                 <td className="py-1.5 px-2 text-right text-zinc-400 w-16 whitespace-nowrap">
-                  {isCurrency ? formatCurrency(item.value) : formatNumber(item.value)}
+                  {isCurrency ? formatCurrency(item.value, cur) : formatNumber(item.value)}
                 </td>
                 <td className="py-1.5 w-24">
                   <div className="h-3 bg-zinc-800 rounded-full overflow-hidden">
@@ -173,7 +175,7 @@ function WidgetContent({ type, data, onItemClick }: { type: string; data: any; o
         </table>
         {data.total != null && (
           <div className="text-xs text-zinc-500 mt-2 text-right">
-            Suma: {isCurrency ? formatCurrency(data.total) : formatNumber(data.total)}
+            Suma: {isCurrency ? formatCurrency(data.total, cur) : formatNumber(data.total)}
           </div>
         )}
       </div>
