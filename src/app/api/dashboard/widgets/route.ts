@@ -10,98 +10,104 @@ export async function POST(request: NextRequest) {
     const isEurShop = shop !== 'all' && EUR_SHOPS.includes(shop);
     const currency = isEurShop ? 'EUR' : 'PLN';
 
-    // Cross-filter fields that apply to fact_orders
     const orderCrossFields = ['supplier', 'delivery_city', 'coupon_code', 'source_shop'];
-    // Cross-filter fields that apply to fact_order_items
     const itemCrossFields = ['product_name', 'product_category', 'fabric', 'fabric_collection', 'bed_size', 'mattress_type', 'headboard_height', 'storage_type'];
 
-    // Helper: apply cross-filters to a query
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     function applyCross(q: any, allowedFields: string[]): any {
       for (const cf of crossFilters) {
-        if (allowedFields.includes(cf.field)) {
-          q = q.eq(cf.field, cf.value);
-        }
+        if (allowedFields.includes(cf.field)) q = q.eq(cf.field, cf.value);
       }
       return q;
     }
 
-    // Helper: get cross-filtered order IDs (for filtering items by order-level cross filters)
-    async function getCrossFilteredOrderIds(): Promise<string[] | null> {
-      const orderLevelFilters = crossFilters.filter((cf: { field: string }) => orderCrossFields.includes(cf.field));
-      if (orderLevelFilters.length === 0) return null;
-      let q = db.from('fact_orders').select('order_id')
-        .gte('order_date', dateFrom).lte('order_date', dateTo + 'T23:59:59');
-      if (shop !== 'all') q = q.eq('source_shop', shop);
-      q = applyCross(q, orderCrossFields);
-      const { data } = await q.limit(50000);
-      return data ? data.map((r: { order_id: string }) => r.order_id) : null;
-    }
-
-    // Helper: build order date filter
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     function orderQuery(select: string): any {
       let q = db.from('fact_orders').select(select)
-        .gte('order_date', dateFrom).lte('order_date', dateTo + 'T23:59:59');
+        .gte('order_date', dateFrom).lte('order_date', dateTo + 'T23:59:59')
+        .neq('status', 'anulowane');
       if (shop !== 'all') q = q.eq('source_shop', shop);
       q = applyCross(q, orderCrossFields);
       return q;
     }
 
-    // Helper: build items query with join + cross-filters
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    function iq(select: string): any {
-      let q = db.from('fact_order_items')
-        .select(select + ', order_id, fact_orders!inner(order_date, source_shop, supplier)')
-        .gte('fact_orders.order_date', dateFrom)
-        .lte('fact_orders.order_date', dateTo + 'T23:59:59')
-        .neq('fact_orders.status', 'anulowane');
-      if (shop !== 'all') q = q.eq('fact_orders.source_shop', shop);
-      q = applyCross(q, itemCrossFields);
-      for (const cf of crossFilters) {
-        if (orderCrossFields.includes(cf.field)) {
-          q = q.eq('fact_orders.' + cf.field, cf.value);
-        }
-      }
-      return q;
+    // ── SAFE items query: two-step approach (replaces broken iq() join) ──
+    // Step 1: get order_ids from fact_orders with reliable date filter (cached)
+    // Step 2: get items from fact_order_items filtered by those order_ids
+    let _validOrderIds: string[] | null = null;
+    async function getValidOrderIds(): Promise<string[]> {
+      if (_validOrderIds !== null) return _validOrderIds;
+      let q = db.from('fact_orders').select('order_id')
+        .gte('order_date', dateFrom).lte('order_date', dateTo + 'T23:59:59')
+        .neq('status', 'anulowane');
+      if (shop !== 'all') q = q.eq('source_shop', shop);
+      q = applyCross(q, orderCrossFields);
+      const { data } = await q.limit(50000);
+      _validOrderIds = (data || []).map((r: { order_id: string }) => r.order_id);
+      return _validOrderIds;
     }
 
-    // Check if any cross-filters are item-level (need to query orders via items)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    async function iqSafe(select: string, extraFilters?: { eq?: Record<string, string>; notNull?: string[] }): Promise<any[]> {
+      const validIds = await getValidOrderIds();
+      if (validIds.length === 0) return [];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const allItems: any[] = [];
+      const CHUNK = 5000;
+      for (let i = 0; i < validIds.length; i += CHUNK) {
+        const chunk = validIds.slice(i, i + CHUNK);
+        let q = db.from('fact_order_items')
+          .select(select + ', order_id')
+          .in('order_id', chunk);
+        if (extraFilters?.eq) {
+          for (const [k, v] of Object.entries(extraFilters.eq)) q = q.eq(k, v);
+        }
+        if (extraFilters?.notNull) {
+          for (const col of extraFilters.notNull) q = q.not(col, 'is', null);
+        }
+        q = applyCross(q, itemCrossFields);
+        const { data } = await q.limit(50000);
+        if (data) allItems.push(...data);
+      }
+      return allItems;
+    }
+
+    // Debug metadata added to every response
+    const debug = {
+      dateFrom,
+      dateTo,
+      shop,
+      crossFilters: crossFilters.map((cf: { field: string; value: string }) => `${cf.field}=${cf.value}`),
+    };
+
     const hasItemCrossFilters = crossFilters.some((cf: { field: string }) => itemCrossFields.includes(cf.field));
 
-    // Helper: get filtered order IDs when item-level cross-filters are active
     async function getFilteredOrderIds(): Promise<string[] | null> {
       if (!hasItemCrossFilters) return null;
-      // Query items with cross-filters to get matching order_ids
-      const { data } = await iq('order_id').limit(50000);
-      if (!data) return [];
-      return [...new Set((data as Array<{ order_id: string }>).map(r => r.order_id))];
+      const items = await iqSafe('order_id');
+      return [...new Set(items.map(r => r.order_id))];
     }
 
-    // Helper: get KPI totals — uses fact_daily_revenue when no cross-filters,
-    // otherwise queries fact_orders directly with filtered order_ids
+    const init = { revenue: 0, paid: 0, orders: 0, ordersPaid: 0, cancelled: 0 };
+
     async function getKpiTotals() {
       const revField = isEurShop ? 'revenue_gross_original' : 'revenue_gross_pln';
-      const paidField = isEurShop ? 'revenue_paid_pln' : 'revenue_paid_pln'; // paid not tracked in original
       const grossField = isEurShop ? 'total_gross' : 'total_gross_pln';
 
       if (!hasItemCrossFilters && crossFilters.length === 0) {
-        // Fast path: use pre-aggregated table
         let q = db.from('fact_daily_revenue').select('*')
           .gte('date', dateFrom).lte('date', dateTo);
         if (shop !== 'all') q = q.eq('source_shop', shop);
         const { data } = await q.limit(50000);
-        const rows = data || [];
-        return rows.reduce((a: typeof init, r: Record<string, number | null>) => ({
+        return (data || []).reduce((a: typeof init, r: Record<string, number | null>) => ({
           revenue: a.revenue + (r[revField] || r.revenue_gross_pln || 0),
-          paid: a.paid + (r[paidField] || 0),
+          paid: a.paid + (r.revenue_paid_pln || 0),
           orders: a.orders + (r.orders_count || 0),
           ordersPaid: a.ordersPaid + (r.orders_paid || 0),
           cancelled: a.cancelled + (r.orders_cancelled || 0),
         }), init);
       }
 
-      // Slow path: query fact_orders with cross-filters
       const filteredIds = await getFilteredOrderIds();
       let q = orderQuery(`${grossField}, total_gross_pln, is_paid, status`);
       if (filteredIds !== null) {
@@ -118,8 +124,6 @@ export async function POST(request: NextRequest) {
       }), init);
     }
 
-    const init = { revenue: 0, paid: 0, orders: 0, ordersPaid: 0, cancelled: 0 };
-
     switch (widget) {
       // ── KPI Cards ──
       case 'kpi_revenue':
@@ -131,72 +135,62 @@ export async function POST(request: NextRequest) {
       case 'kpi_aov':
       case 'kpi_payment_rate': {
         const totals = await getKpiTotals();
-
         const unpaid = totals.revenue - totals.paid;
         const aov = totals.orders > 0 ? totals.revenue / totals.orders : 0;
         const paymentRate = totals.orders > 0 ? (totals.ordersPaid / totals.orders) * 100 : 0;
 
-        // Bed/sample counts: use same query as ranking to guarantee matching totals
         let bedOrders = 0, sampleOrders = 0;
         if (widget === 'kpi_orders_beds') {
-          const { data } = await iq('product_name, quantity')
-            .eq('product_category', 'łóżko')
-            .limit(50000);
-          for (const i of data || []) bedOrders += (i.quantity || 1);
+          const items = await iqSafe('product_name, quantity', { eq: { product_category: 'łóżko' } });
+          for (const i of items) bedOrders += (i.quantity || 1);
+          Object.assign(debug, { query: 'fact_order_items WHERE product_category=łóżko', itemsFound: items.length, ordersInRange: (await getValidOrderIds()).length });
         }
         if (widget === 'kpi_orders_samples') {
-          const { data } = await iq('product_name, quantity')
-            .eq('product_category', 'próbki')
-            .limit(50000);
-          for (const i of data || []) sampleOrders += (i.quantity || 1);
+          const items = await iqSafe('product_name, quantity', { eq: { product_category: 'próbki' } });
+          for (const i of items) sampleOrders += (i.quantity || 1);
+          Object.assign(debug, { query: 'fact_order_items WHERE product_category=próbki', itemsFound: items.length, ordersInRange: (await getValidOrderIds()).length });
         }
 
-        const valueMap: Record<string, { value: number; format: string }> = {
-          kpi_revenue: { value: totals.revenue, format: 'currency' },
-          kpi_revenue_paid: { value: totals.paid, format: 'currency' },
-          kpi_revenue_unpaid: { value: unpaid, format: 'currency' },
-          kpi_orders: { value: totals.orders, format: 'number' },
-          kpi_orders_beds: { value: bedOrders, format: 'number' },
-          kpi_orders_samples: { value: sampleOrders, format: 'number' },
-          kpi_aov: { value: aov, format: 'currency' },
-          kpi_payment_rate: { value: paymentRate, format: 'percent' },
+        const valueMap: Record<string, { value: number; format: string; debugQuery?: string }> = {
+          kpi_revenue: { value: totals.revenue, format: 'currency', debugQuery: 'SUM(revenue_gross_pln) from fact_daily_revenue' },
+          kpi_revenue_paid: { value: totals.paid, format: 'currency', debugQuery: 'SUM(revenue_paid_pln) from fact_daily_revenue' },
+          kpi_revenue_unpaid: { value: unpaid, format: 'currency', debugQuery: 'revenue - paid' },
+          kpi_orders: { value: totals.orders, format: 'number', debugQuery: 'SUM(orders_count) from fact_daily_revenue' },
+          kpi_orders_beds: { value: bedOrders, format: 'number', debugQuery: 'SUM(quantity) from fact_order_items WHERE product_category=łóżko AND order_id IN (orders in date range)' },
+          kpi_orders_samples: { value: sampleOrders, format: 'number', debugQuery: 'SUM(quantity) from fact_order_items WHERE product_category=próbki AND order_id IN (orders in date range)' },
+          kpi_aov: { value: aov, format: 'currency', debugQuery: 'revenue / orders' },
+          kpi_payment_rate: { value: paymentRate, format: 'percent', debugQuery: 'ordersPaid / orders * 100' },
         };
 
-        return NextResponse.json({ type: 'kpi', ...valueMap[widget], currency });
+        return NextResponse.json({ type: 'kpi', ...valueMap[widget], currency, debug: { ...debug, debugQuery: valueMap[widget].debugQuery } });
       }
 
       // ── Rankings ──
       case 'ranking_models': {
-        const { data } = await iq('product_name, quantity')
-          .eq('product_category', 'łóżko')
-          .limit(50000);
+        const items = await iqSafe('product_name, quantity', { eq: { product_category: 'łóżko' } });
         const map: Record<string, number> = {};
-        for (const i of data || []) map[i.product_name] = (map[i.product_name] || 0) + (i.quantity || 1);
+        for (const i of items) map[i.product_name] = (map[i.product_name] || 0) + (i.quantity || 1);
         const ranked = Object.entries(map).sort(([,a],[,b]) => b - a).slice(0, limit);
         const total = ranked.reduce((s,[,v]) => s + v, 0);
-        return NextResponse.json({ type: 'ranking', data: ranked.map(([name, value]) => ({ name, value: Math.round(value) })), total });
+        return NextResponse.json({ type: 'ranking', data: ranked.map(([name, value]) => ({ name, value: Math.round(value) })), total, debug: { ...debug, query: 'fact_order_items WHERE product_category=łóżko, grouped by product_name, SUM(quantity)', itemsFound: items.length } });
       }
 
       case 'ranking_fabric_collections': {
-        const { data } = await iq('fabric_collection, quantity')
-          .not('fabric_collection', 'is', null)
-          .limit(50000);
+        const items = await iqSafe('fabric_collection, quantity', { notNull: ['fabric_collection'] });
         const map: Record<string, number> = {};
-        for (const i of data || []) if (i.fabric_collection) map[i.fabric_collection] = (map[i.fabric_collection] || 0) + (i.quantity || 1);
+        for (const i of items) if (i.fabric_collection) map[i.fabric_collection] = (map[i.fabric_collection] || 0) + (i.quantity || 1);
         const ranked = Object.entries(map).sort(([,a],[,b]) => b - a).slice(0, limit);
         const total = ranked.reduce((s,[,v]) => s + v, 0);
-        return NextResponse.json({ type: 'ranking', data: ranked.map(([name, value]) => ({ name, value: Math.round(value) })), total });
+        return NextResponse.json({ type: 'ranking', data: ranked.map(([name, value]) => ({ name, value: Math.round(value) })), total, debug: { ...debug, query: 'SUM(quantity) grouped by fabric_collection' } });
       }
 
       case 'ranking_fabrics': {
-        const { data } = await iq('fabric, quantity')
-          .not('fabric', 'is', null)
-          .limit(50000);
+        const items = await iqSafe('fabric, quantity', { notNull: ['fabric'] });
         const map: Record<string, number> = {};
-        for (const i of data || []) if (i.fabric) map[i.fabric] = (map[i.fabric] || 0) + (i.quantity || 1);
+        for (const i of items) if (i.fabric) map[i.fabric] = (map[i.fabric] || 0) + (i.quantity || 1);
         const ranked = Object.entries(map).sort(([,a],[,b]) => b - a).slice(0, limit);
         const total = ranked.reduce((s,[,v]) => s + v, 0);
-        return NextResponse.json({ type: 'ranking', data: ranked.map(([name, value]) => ({ name, value: Math.round(value) })), total });
+        return NextResponse.json({ type: 'ranking', data: ranked.map(([name, value]) => ({ name, value: Math.round(value) })), total, debug: { ...debug, query: 'SUM(quantity) grouped by fabric' } });
       }
 
       case 'ranking_cities': {
@@ -204,7 +198,7 @@ export async function POST(request: NextRequest) {
         const map: Record<string, number> = {};
         for (const o of data || []) if (o.delivery_city) map[o.delivery_city] = (map[o.delivery_city] || 0) + 1;
         const ranked = Object.entries(map).sort(([,a],[,b]) => b - a).slice(0, limit);
-        return NextResponse.json({ type: 'ranking', data: ranked.map(([name, value]) => ({ name, value })), total: ranked.reduce((s,[,v]) => s + v, 0) });
+        return NextResponse.json({ type: 'ranking', data: ranked.map(([name, value]) => ({ name, value })), total: ranked.reduce((s,[,v]) => s + v, 0), debug: { ...debug, query: 'COUNT grouped by delivery_city from fact_orders' } });
       }
 
       case 'ranking_suppliers': {
@@ -213,7 +207,7 @@ export async function POST(request: NextRequest) {
         const map: Record<string, number> = {};
         for (const o of data || []) if (o.supplier) map[o.supplier] = (map[o.supplier] || 0) + (o[grossCol] || 0);
         const ranked = Object.entries(map).sort(([,a],[,b]) => b - a).slice(0, limit);
-        return NextResponse.json({ type: 'ranking', data: ranked.map(([name, value]) => ({ name, value: Math.round(value) })), total: ranked.reduce((s,[,v]) => s + v, 0), format: 'currency', currency });
+        return NextResponse.json({ type: 'ranking', data: ranked.map(([name, value]) => ({ name, value: Math.round(value) })), total: ranked.reduce((s,[,v]) => s + v, 0), format: 'currency', currency, debug: { ...debug, query: `SUM(${grossCol}) grouped by supplier` } });
       }
 
       case 'ranking_coupons': {
@@ -221,31 +215,31 @@ export async function POST(request: NextRequest) {
         const map: Record<string, number> = {};
         for (const o of data || []) if (o.coupon_code) { const c = o.coupon_code.trim().toUpperCase(); map[c] = (map[c] || 0) + 1; }
         const ranked = Object.entries(map).sort(([,a],[,b]) => b - a).slice(0, limit);
-        return NextResponse.json({ type: 'ranking', data: ranked.map(([name, value]) => ({ name, value })), total: ranked.reduce((s,[,v]) => s + v, 0) });
+        return NextResponse.json({ type: 'ranking', data: ranked.map(([name, value]) => ({ name, value })), total: ranked.reduce((s,[,v]) => s + v, 0), debug: { ...debug, query: 'COUNT grouped by coupon_code' } });
       }
 
       case 'ranking_bed_sizes': {
-        const { data } = await iq('bed_size, quantity').not('bed_size', 'is', null).limit(50000);
+        const items = await iqSafe('bed_size, quantity', { notNull: ['bed_size'] });
         const map: Record<string, number> = {};
-        for (const i of data || []) if (i.bed_size) map[i.bed_size] = (map[i.bed_size] || 0) + (i.quantity || 1);
+        for (const i of items) if (i.bed_size) map[i.bed_size] = (map[i.bed_size] || 0) + (i.quantity || 1);
         const ranked = Object.entries(map).sort(([,a],[,b]) => b - a).slice(0, limit);
-        return NextResponse.json({ type: 'ranking', data: ranked.map(([name, value]) => ({ name, value: Math.round(value) })), total: ranked.reduce((s,[,v]) => s + v, 0) });
+        return NextResponse.json({ type: 'ranking', data: ranked.map(([name, value]) => ({ name, value: Math.round(value) })), total: ranked.reduce((s,[,v]) => s + v, 0), debug: { ...debug, query: 'SUM(quantity) grouped by bed_size' } });
       }
 
       case 'ranking_headboard_heights': {
-        const { data } = await iq('headboard_height, quantity').not('headboard_height', 'is', null).limit(50000);
+        const items = await iqSafe('headboard_height, quantity', { notNull: ['headboard_height'] });
         const map: Record<string, number> = {};
-        for (const i of data || []) if (i.headboard_height) map[i.headboard_height] = (map[i.headboard_height] || 0) + (i.quantity || 1);
+        for (const i of items) if (i.headboard_height) map[i.headboard_height] = (map[i.headboard_height] || 0) + (i.quantity || 1);
         const ranked = Object.entries(map).sort(([,a],[,b]) => b - a).slice(0, limit);
-        return NextResponse.json({ type: 'ranking', data: ranked.map(([name, value]) => ({ name, value: Math.round(value) })), total: ranked.reduce((s,[,v]) => s + v, 0) });
+        return NextResponse.json({ type: 'ranking', data: ranked.map(([name, value]) => ({ name, value: Math.round(value) })), total: ranked.reduce((s,[,v]) => s + v, 0), debug: { ...debug, query: 'SUM(quantity) grouped by headboard_height' } });
       }
 
       case 'ranking_storage_types': {
-        const { data } = await iq('storage_type, quantity').not('storage_type', 'is', null).limit(50000);
+        const items = await iqSafe('storage_type, quantity', { notNull: ['storage_type'] });
         const map: Record<string, number> = {};
-        for (const i of data || []) if (i.storage_type) map[i.storage_type] = (map[i.storage_type] || 0) + (i.quantity || 1);
+        for (const i of items) if (i.storage_type) map[i.storage_type] = (map[i.storage_type] || 0) + (i.quantity || 1);
         const ranked = Object.entries(map).sort(([,a],[,b]) => b - a).slice(0, limit);
-        return NextResponse.json({ type: 'ranking', data: ranked.map(([name, value]) => ({ name, value: Math.round(value) })), total: ranked.reduce((s,[,v]) => s + v, 0) });
+        return NextResponse.json({ type: 'ranking', data: ranked.map(([name, value]) => ({ name, value: Math.round(value) })), total: ranked.reduce((s,[,v]) => s + v, 0), debug: { ...debug, query: 'SUM(quantity) grouped by storage_type' } });
       }
 
       // ── Charts ──
@@ -253,11 +247,10 @@ export async function POST(request: NextRequest) {
       case 'chart_daily_orders': {
         let chartData: Array<{ name: string; value: number }>;
         if (hasItemCrossFilters || crossFilters.length > 0) {
-          // Use fact_orders with cross-filters
           const filteredIds = await getFilteredOrderIds();
           let q = orderQuery('order_date');
           if (filteredIds !== null) {
-            if (filteredIds.length === 0) return NextResponse.json({ type: widget === 'chart_daily_orders' ? 'bar' : 'line', data: [] });
+            if (filteredIds.length === 0) return NextResponse.json({ type: widget === 'chart_daily_orders' ? 'bar' : 'line', data: [], debug });
             q = q.in('order_id', filteredIds.slice(0, 5000));
           }
           const { data } = await q.limit(50000);
@@ -273,7 +266,7 @@ export async function POST(request: NextRequest) {
           for (const r of data || []) byDate[r.date] = (byDate[r.date] || 0) + (r.orders_count || 0);
           chartData = Object.entries(byDate).sort(([a],[b]) => a.localeCompare(b)).map(([name, value]) => ({ name, value }));
         }
-        return NextResponse.json({ type: widget === 'chart_daily_orders' ? 'bar' : 'line', data: chartData });
+        return NextResponse.json({ type: widget === 'chart_daily_orders' ? 'bar' : 'line', data: chartData, debug });
       }
 
       case 'chart_revenue_timeline': {
@@ -281,7 +274,7 @@ export async function POST(request: NextRequest) {
           const filteredIds = await getFilteredOrderIds();
           let q = orderQuery('order_date, source_shop, total_gross_pln');
           if (filteredIds !== null) {
-            if (filteredIds.length === 0) return NextResponse.json({ type: 'area', data: [], shops: [] });
+            if (filteredIds.length === 0) return NextResponse.json({ type: 'area', data: [], shops: [], debug });
             q = q.in('order_id', filteredIds.slice(0, 5000));
           }
           const { data } = await q.limit(50000);
@@ -296,9 +289,8 @@ export async function POST(request: NextRequest) {
           const shops = [...shopSet];
           const chartData = Object.entries(byDate).sort(([a],[b]) => a.localeCompare(b))
             .map(([date, vals]) => ({ date, ...Object.fromEntries(shops.map(s => [s, Math.round(vals[s] || 0)])) }));
-          return NextResponse.json({ type: 'area', data: chartData, shops });
+          return NextResponse.json({ type: 'area', data: chartData, shops, debug });
         }
-        // Fast path: pre-aggregated
         let q = db.from('fact_daily_revenue').select('date, source_shop, revenue_gross_pln')
           .gte('date', dateFrom).lte('date', dateTo).order('date');
         if (shop !== 'all') q = q.eq('source_shop', shop);
@@ -313,7 +305,7 @@ export async function POST(request: NextRequest) {
         const shops = [...shopSet];
         const chartData = Object.entries(byDate).sort(([a],[b]) => a.localeCompare(b))
           .map(([date, vals]) => ({ date, ...Object.fromEntries(shops.map(s => [s, Math.round(vals[s] || 0)])) }));
-        return NextResponse.json({ type: 'area', data: chartData, shops });
+        return NextResponse.json({ type: 'area', data: chartData, shops, debug });
       }
 
       case 'chart_payment_status': {
@@ -321,13 +313,13 @@ export async function POST(request: NextRequest) {
           const filteredIds = await getFilteredOrderIds();
           let q = orderQuery('total_gross_pln, is_paid');
           if (filteredIds !== null) {
-            if (filteredIds.length === 0) return NextResponse.json({ type: 'pie', data: [{ name: 'Zapłacone', value: 0 }, { name: 'Nieopłacone', value: 0 }] });
+            if (filteredIds.length === 0) return NextResponse.json({ type: 'pie', data: [{ name: 'Zapłacone', value: 0 }, { name: 'Nieopłacone', value: 0 }], debug });
             q = q.in('order_id', filteredIds.slice(0, 5000));
           }
           const { data } = await q.limit(50000);
           let paid = 0, total = 0;
           for (const r of data || []) { total += (r.total_gross_pln || 0); if (r.is_paid) paid += (r.total_gross_pln || 0); }
-          return NextResponse.json({ type: 'pie', data: [{ name: 'Zapłacone', value: Math.round(paid) }, { name: 'Nieopłacone', value: Math.round(total - paid) }] });
+          return NextResponse.json({ type: 'pie', data: [{ name: 'Zapłacone', value: Math.round(paid) }, { name: 'Nieopłacone', value: Math.round(total - paid) }], debug });
         }
         let q = db.from('fact_daily_revenue').select('revenue_paid_pln, revenue_gross_pln')
           .gte('date', dateFrom).lte('date', dateTo);
@@ -338,7 +330,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ type: 'pie', data: [
           { name: 'Zapłacone', value: Math.round(paid) },
           { name: 'Nieopłacone', value: Math.round(total - paid) },
-        ]});
+        ], debug });
       }
 
       case 'chart_suppliers': {
@@ -350,15 +342,15 @@ export async function POST(request: NextRequest) {
         const other = sorted.slice(8).reduce((s,[,v]) => s + v, 0);
         const chartData = top.map(([name, value]) => ({ name, value: Math.round(value) }));
         if (other > 0) chartData.push({ name: 'Inne', value: Math.round(other) });
-        return NextResponse.json({ type: 'pie', data: chartData });
+        return NextResponse.json({ type: 'pie', data: chartData, debug });
       }
 
       case 'chart_mattress_types': {
-        const { data } = await iq('mattress_type, quantity').not('mattress_type', 'is', null).limit(50000);
+        const items = await iqSafe('mattress_type, quantity', { notNull: ['mattress_type'] });
         const map: Record<string, number> = {};
-        for (const i of data || []) if (i.mattress_type) map[i.mattress_type] = (map[i.mattress_type] || 0) + (i.quantity || 1);
+        for (const i of items) if (i.mattress_type) map[i.mattress_type] = (map[i.mattress_type] || 0) + (i.quantity || 1);
         const sorted = Object.entries(map).sort(([,a],[,b]) => b - a).slice(0, 10);
-        return NextResponse.json({ type: 'pie', data: sorted.map(([name, value]) => ({ name, value: Math.round(value) })) });
+        return NextResponse.json({ type: 'pie', data: sorted.map(([name, value]) => ({ name, value: Math.round(value) })), debug });
       }
 
       // ── Tables ──
@@ -377,14 +369,14 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ type: 'table', columns: ['Status', 'Zamówienia', 'Kwota'], data: [
           { status: 'Zapłacone', count: paidCount, amount: Math.round(paid) },
           { status: 'Nieopłacone', count: unpaidCount, amount: Math.round(unpaidRev) },
-        ]});
+        ], debug });
       }
 
       // ── GA4 / Traffic ──
       case 'kpi_sessions':
       case 'kpi_users':
       case 'kpi_conversion_rate': {
-        let q = db.from('fact_daily_traffic').select('sessions, users, transactions')
+        const q = db.from('fact_daily_traffic').select('sessions, users, transactions')
           .gte('date', dateFrom).lte('date', dateTo);
         const { data } = await q.limit(50000);
         let sessions = 0, users = 0, transactions = 0;
@@ -395,11 +387,11 @@ export async function POST(request: NextRequest) {
           kpi_users: { value: users, format: 'number' },
           kpi_conversion_rate: { value: convRate, format: 'percent' },
         };
-        return NextResponse.json({ type: 'kpi', ...valMap[widget] });
+        return NextResponse.json({ type: 'kpi', ...valMap[widget], debug });
       }
 
       case 'ranking_traffic_sources': {
-        let q = db.from('fact_daily_traffic').select('source, medium, sessions')
+        const q = db.from('fact_daily_traffic').select('source, medium, sessions')
           .gte('date', dateFrom).lte('date', dateTo);
         const { data } = await q.limit(50000);
         const map: Record<string, number> = {};
@@ -408,11 +400,11 @@ export async function POST(request: NextRequest) {
           map[key] = (map[key] || 0) + (r.sessions || 0);
         }
         const ranked = Object.entries(map).sort(([,a],[,b]) => b - a).slice(0, limit);
-        return NextResponse.json({ type: 'ranking', data: ranked.map(([name, value]) => ({ name, value })), total: ranked.reduce((s,[,v]) => s + v, 0) });
+        return NextResponse.json({ type: 'ranking', data: ranked.map(([name, value]) => ({ name, value })), total: ranked.reduce((s,[,v]) => s + v, 0), debug });
       }
 
       case 'chart_sessions_timeline': {
-        let q = db.from('fact_daily_traffic').select('date, hostname, sessions')
+        const q = db.from('fact_daily_traffic').select('date, hostname, sessions')
           .gte('date', dateFrom).lte('date', dateTo).order('date');
         const { data } = await q.limit(50000);
         const hostSet = new Set<string>();
@@ -425,7 +417,7 @@ export async function POST(request: NextRequest) {
         const shops = [...hostSet];
         const chartData = Object.entries(byDate).sort(([a],[b]) => a.localeCompare(b))
           .map(([date, vals]) => ({ date, ...Object.fromEntries(shops.map(s => [s, vals[s] || 0])) }));
-        return NextResponse.json({ type: 'area', data: chartData, shops });
+        return NextResponse.json({ type: 'area', data: chartData, shops, debug });
       }
 
       // ── Marketing Efficiency (MER) ──
@@ -433,24 +425,20 @@ export async function POST(request: NextRequest) {
       case 'kpi_total_marketing_cost':
       case 'kpi_meta_spend':
       case 'kpi_google_spend': {
-        // Revenue from ERP
         let revQ = db.from('fact_daily_revenue').select('revenue_gross_pln')
           .gte('date', dateFrom).lte('date', dateTo);
         if (shop !== 'all') revQ = revQ.eq('source_shop', shop);
         const { data: revData } = await revQ.limit(50000);
         const totalRevenue = (revData || []).reduce((s, r) => s + (r.revenue_gross_pln || 0), 0);
 
-        // Meta spend
         const { data: metaData } = await db.from('fact_daily_adspend').select('spend')
           .eq('platform', 'meta').gte('date', dateFrom).lte('date', dateTo).limit(50000);
         const metaSpend = (metaData || []).reduce((s, r) => s + (r.spend || 0), 0);
 
-        // Google Ads spend (from GA4 __total__ rows)
         const { data: googleData } = await db.from('fact_daily_traffic').select('ad_cost')
           .eq('source', '__total__').gte('date', dateFrom).lte('date', dateTo).limit(50000);
         const googleSpend = (googleData || []).reduce((s, r) => s + (r.ad_cost || 0), 0);
 
-        // Agency costs (prorated: monthly costs split into the selected date range)
         const { data: agencyData } = await db.from('fact_agency_costs').select('month, amount_pln').limit(500);
         let agencyCost = 0;
         const dfrom = new Date(dateFrom);
@@ -470,11 +458,10 @@ export async function POST(request: NextRequest) {
           kpi_meta_spend: { value: Math.round(metaSpend), format: 'currency' },
           kpi_google_spend: { value: Math.round(googleSpend), format: 'currency' },
         };
-        // Add 'x' suffix for MER display
         if (widget === 'kpi_mer') {
-          return NextResponse.json({ type: 'kpi', value: valMap[widget].value, format: 'mer' });
+          return NextResponse.json({ type: 'kpi', value: valMap[widget].value, format: 'mer', debug: { ...debug, query: 'revenue / (meta + google + agency)' } });
         }
-        return NextResponse.json({ type: 'kpi', ...valMap[widget] });
+        return NextResponse.json({ type: 'kpi', ...valMap[widget], debug });
       }
 
       default:

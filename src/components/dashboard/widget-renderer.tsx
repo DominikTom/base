@@ -7,7 +7,7 @@ import { formatCurrency, formatNumber, SHOP_COLORS } from '@/lib/utils';
 import { SimpleBarChart } from '@/components/charts/bar-chart';
 import { SimplePieChart } from '@/components/charts/pie-chart';
 import { AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
-import { X, GripVertical, RefreshCw, ArrowUp, ArrowDown, Maximize2, Minimize2 } from 'lucide-react';
+import { X, GripVertical, RefreshCw, ArrowUp, ArrowDown, Maximize2, Minimize2, HelpCircle } from 'lucide-react';
 
 // Map widget types to cross-filter fields they produce when clicked
 const WIDGET_CLICK_FIELD: Record<string, string> = {
@@ -49,6 +49,7 @@ export function WidgetRenderer({ widgetType, onRemove, onMoveUp, onMoveDown, onR
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showDebug, setShowDebug] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -101,6 +102,7 @@ export function WidgetRenderer({ widgetType, onRemove, onMoveUp, onMoveDown, onR
       <div className="flex items-center justify-between px-3 py-2 border-b border-zinc-800/50 shrink-0">
         <span className="text-xs font-medium text-zinc-400 truncate">{def.name}</span>
         <div className="flex items-center gap-0.5">
+          <button onClick={() => setShowDebug(d => !d)} className={`p-1 ${showDebug ? 'text-blue-400' : 'text-zinc-600'} hover:text-blue-300`} title="Debug info"><HelpCircle size={12} /></button>
           {onMoveUp && <button onClick={onMoveUp} className="p-1 text-zinc-600 hover:text-zinc-300"><ArrowUp size={12} /></button>}
           {onMoveDown && <button onClick={onMoveDown} className="p-1 text-zinc-600 hover:text-zinc-300"><ArrowDown size={12} /></button>}
           {onResize && <button onClick={() => onResize(3)} className="p-1 text-zinc-600 hover:text-zinc-300"><Maximize2 size={12} /></button>}
@@ -108,6 +110,20 @@ export function WidgetRenderer({ widgetType, onRemove, onMoveUp, onMoveDown, onR
           <button onClick={onRemove} className="p-1 text-zinc-600 hover:text-red-400"><X size={12} /></button>
         </div>
       </div>
+
+      {/* Debug panel */}
+      {showDebug && data?.debug && (
+        <div className="px-3 py-2 border-b border-zinc-800/50 bg-zinc-950 text-[10px] font-mono text-zinc-500 space-y-0.5 max-h-32 overflow-auto">
+          <div><span className="text-zinc-400">widget:</span> {widgetType}</div>
+          <div><span className="text-zinc-400">zakres:</span> {data.debug.dateFrom} — {data.debug.dateTo}</div>
+          <div><span className="text-zinc-400">sklep:</span> {data.debug.shop}</div>
+          {data.debug.ordersInRange != null && <div><span className="text-zinc-400">zamówień w zakresie:</span> {data.debug.ordersInRange}</div>}
+          {data.debug.itemsFound != null && <div><span className="text-zinc-400">pozycji znalezionych:</span> {data.debug.itemsFound}</div>}
+          {data.debug.debugQuery && <div><span className="text-zinc-400">zapytanie:</span> {data.debug.debugQuery}</div>}
+          {data.debug.query && <div><span className="text-zinc-400">zapytanie:</span> {data.debug.query}</div>}
+          {data.debug.crossFilters?.length > 0 && <div><span className="text-zinc-400">cross-filtry:</span> {data.debug.crossFilters.join(', ')}</div>}
+        </div>
+      )}
 
       {/* Content */}
       <div className="flex-1 min-h-0 p-3 overflow-auto">
