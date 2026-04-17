@@ -34,16 +34,32 @@ export async function POST(request: NextRequest) {
     // ── SAFE items query: two-step approach (replaces broken iq() join) ──
     // Step 1: get order_ids from fact_orders with reliable date filter (cached)
     // Step 2: get items from fact_order_items filtered by those order_ids
+    // NOTE: Supabase caps responses at 1000 rows — must paginate with .range()
+    const PAGE = 1000;
+
     let _validOrderIds: string[] | null = null;
     async function getValidOrderIds(): Promise<string[]> {
       if (_validOrderIds !== null) return _validOrderIds;
-      let q = db.from('fact_orders').select('order_id')
-        .gte('order_date', dateFrom).lte('order_date', dateTo + 'T23:59:59')
-        .neq('status', 'anulowane');
-      if (shop !== 'all') q = q.eq('source_shop', shop);
-      q = applyCross(q, orderCrossFields);
-      const { data } = await q.limit(50000);
-      _validOrderIds = (data || []).map((r: { order_id: string }) => r.order_id);
+
+      function buildQ() {
+        let q = db.from('fact_orders').select('order_id')
+          .gte('order_date', dateFrom).lte('order_date', dateTo + 'T23:59:59')
+          .neq('status', 'anulowane');
+        if (shop !== 'all') q = q.eq('source_shop', shop);
+        q = applyCross(q, orderCrossFields);
+        return q;
+      }
+
+      const allIds: string[] = [];
+      let offset = 0;
+      while (true) {
+        const { data } = await buildQ().range(offset, offset + PAGE - 1);
+        if (!data || data.length === 0) break;
+        for (const r of data) allIds.push((r as { order_id: string }).order_id);
+        if (data.length < PAGE) break;
+        offset += PAGE;
+      }
+      _validOrderIds = allIds;
       return _validOrderIds;
     }
 
@@ -53,21 +69,32 @@ export async function POST(request: NextRequest) {
       if (validIds.length === 0) return [];
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const allItems: any[] = [];
-      const CHUNK = 5000;
+      const CHUNK = 500;
       for (let i = 0; i < validIds.length; i += CHUNK) {
         const chunk = validIds.slice(i, i + CHUNK);
-        let q = db.from('fact_order_items')
-          .select(select + ', order_id')
-          .in('order_id', chunk);
-        if (extraFilters?.eq) {
-          for (const [k, v] of Object.entries(extraFilters.eq)) q = q.eq(k, v);
+
+        function buildItemQ() {
+          let q = db.from('fact_order_items')
+            .select(select + ', order_id')
+            .in('order_id', chunk);
+          if (extraFilters?.eq) {
+            for (const [k, v] of Object.entries(extraFilters.eq)) q = q.eq(k, v);
+          }
+          if (extraFilters?.notNull) {
+            for (const col of extraFilters.notNull) q = q.not(col, 'is', null);
+          }
+          q = applyCross(q, itemCrossFields);
+          return q;
         }
-        if (extraFilters?.notNull) {
-          for (const col of extraFilters.notNull) q = q.not(col, 'is', null);
+
+        let offset = 0;
+        while (true) {
+          const { data } = await buildItemQ().range(offset, offset + PAGE - 1);
+          if (!data || data.length === 0) break;
+          allItems.push(...data);
+          if (data.length < PAGE) break;
+          offset += PAGE;
         }
-        q = applyCross(q, itemCrossFields);
-        const { data } = await q.limit(50000);
-        if (data) allItems.push(...data);
       }
       return allItems;
     }
