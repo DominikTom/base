@@ -149,24 +149,24 @@ export async function POST(request: NextRequest) {
           const { data: orderRows } = await oq.limit(50000);
           const validIds = (orderRows || []).map((r: { order_id: string }) => r.order_id);
 
-          // Step 2: query items for those orders, chunked
-          const bedSet = new Set<string>();
+          // Step 2: query items for those orders, sum quantities (not unique orders)
+          let bedCount = 0;
           const sampleSet = new Set<string>();
           const bedPattern = /łóżko|łożko|bett|boxspring/i;
           const CHUNK = 5000;
           for (let i = 0; i < validIds.length; i += CHUNK) {
             const chunk = validIds.slice(i, i + CHUNK);
             let itemQ = db.from('fact_order_items')
-              .select('order_id, product_name, product_category')
+              .select('order_id, product_name, product_category, quantity')
               .in('order_id', chunk);
             itemQ = applyCross(itemQ, itemCrossFields);
             const { data: items } = await itemQ.limit(50000);
             for (const item of items || []) {
-              if (bedPattern.test(item.product_name || '')) bedSet.add(item.order_id);
+              if (bedPattern.test(item.product_name || '')) bedCount += (item.quantity || 1);
               if (item.product_category === 'próbki') sampleSet.add(item.order_id);
             }
           }
-          bedOrders = bedSet.size;
+          bedOrders = bedCount;
           sampleOrders = sampleSet.size;
         }
 
