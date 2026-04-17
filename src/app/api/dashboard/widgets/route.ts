@@ -136,38 +136,19 @@ export async function POST(request: NextRequest) {
         const aov = totals.orders > 0 ? totals.revenue / totals.orders : 0;
         const paymentRate = totals.orders > 0 ? (totals.ordersPaid / totals.orders) * 100 : 0;
 
-        // For bed/sample counts: two-step query to avoid unreliable join-based date filtering
+        // Bed/sample counts: use same query as ranking to guarantee matching totals
         let bedOrders = 0, sampleOrders = 0;
-        if (widget === 'kpi_orders_beds' || widget === 'kpi_orders_samples') {
-          // Step 1: get order_ids from fact_orders with reliable date filter
-          let oq = db.from('fact_orders').select('order_id')
-            .gte('order_date', dateFrom)
-            .lte('order_date', dateTo + 'T23:59:59')
-            .neq('status', 'anulowane');
-          if (shop !== 'all') oq = oq.eq('source_shop', shop);
-          oq = applyCross(oq, orderCrossFields);
-          const { data: orderRows } = await oq.limit(50000);
-          const validIds = (orderRows || []).map((r: { order_id: string }) => r.order_id);
-
-          // Step 2: query items for those orders, sum quantities (not unique orders)
-          let bedCount = 0;
-          const sampleSet = new Set<string>();
-          const bedPattern = /łóżko|łożko|bett|boxspring/i;
-          const CHUNK = 5000;
-          for (let i = 0; i < validIds.length; i += CHUNK) {
-            const chunk = validIds.slice(i, i + CHUNK);
-            let itemQ = db.from('fact_order_items')
-              .select('order_id, product_name, product_category, quantity')
-              .in('order_id', chunk);
-            itemQ = applyCross(itemQ, itemCrossFields);
-            const { data: items } = await itemQ.limit(50000);
-            for (const item of items || []) {
-              if (bedPattern.test(item.product_name || '')) bedCount += (item.quantity || 1);
-              if (item.product_category === 'próbki') sampleSet.add(item.order_id);
-            }
-          }
-          bedOrders = bedCount;
-          sampleOrders = sampleSet.size;
+        if (widget === 'kpi_orders_beds') {
+          const { data } = await iq('product_name, quantity')
+            .eq('product_category', 'łóżko')
+            .limit(50000);
+          for (const i of data || []) bedOrders += (i.quantity || 1);
+        }
+        if (widget === 'kpi_orders_samples') {
+          const { data } = await iq('product_name, quantity')
+            .eq('product_category', 'próbki')
+            .limit(50000);
+          for (const i of data || []) sampleOrders += (i.quantity || 1);
         }
 
         const valueMap: Record<string, { value: number; format: string }> = {
