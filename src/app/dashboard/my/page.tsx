@@ -29,6 +29,7 @@ export default function MyDashboardPage() {
   const [renameId, setRenameId] = useState<string | null>(null);
   const [renameName, setRenameName] = useState('');
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
   // Load from DB on mount
@@ -60,7 +61,7 @@ export default function MyDashboardPage() {
 
   // Persist to DB with feedback
   const saveToDB = useCallback(async (data: DashboardData, showFeedback = false) => {
-    if (showFeedback) setSaveStatus('saving');
+    if (showFeedback) { setSaveStatus('saving'); setSaveError(null); }
     try {
       const res = await fetch('/api/user', {
         method: 'POST',
@@ -74,10 +75,14 @@ export default function MyDashboardPage() {
           setTimeout(() => setSaveStatus('idle'), 2000);
         }
       } else {
-        if (showFeedback) setSaveStatus('error');
+        const json = await res.json().catch(() => ({}));
+        const msg = json.error || `HTTP ${res.status}`;
+        console.error('Dashboard save failed:', msg);
+        if (showFeedback) { setSaveStatus('error'); setSaveError(msg); }
       }
-    } catch {
-      if (showFeedback) setSaveStatus('error');
+    } catch (err) {
+      console.error('Dashboard save error:', err);
+      if (showFeedback) { setSaveStatus('error'); setSaveError(String(err)); }
     }
   }, []);
 
@@ -373,6 +378,9 @@ export default function MyDashboardPage() {
             {saveStatus === 'saved' ? <Check size={16} /> : <Save size={16} />}
             {saveStatus === 'saving' ? 'Zapisywanie...' : saveStatus === 'saved' ? 'Zapisano!' : saveStatus === 'error' ? 'Błąd zapisu' : 'Zapisz'}
           </button>
+          {saveError && (
+            <span className="text-[10px] text-red-400 max-w-48 truncate" title={saveError}>{saveError}</span>
+          )}
           <button
             onClick={handleReset}
             className="flex items-center gap-2 px-3 py-2 text-sm text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 rounded-lg transition-colors"

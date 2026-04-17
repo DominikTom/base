@@ -7,6 +7,7 @@
  */
 
 import type { FactOrder, FactOrderItem } from '@/types/database';
+import { EUR_TO_PLN } from '@/lib/currency';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -457,8 +458,7 @@ export async function parseErpCsv(rows: RawCsvRow[]): Promise<ParseResult> {
     const shippingStr = (h['Koszt dostawy'] || '').trim();
     const shippingCost = shippingStr ? parseFloat(shippingStr) : null;
 
-    // For EUR orders, we set exchange_rate to 1 for now (ETL will update with NBP rate)
-    const exchangeRate = 1;
+    const exchangeRate = currency === 'EUR' ? EUR_TO_PLN : 1;
     const totalGrossPln = currency === 'PLN' ? totalGross : (totalGross != null ? totalGross * exchangeRate : null);
     const shippingCostPln = currency === 'PLN' ? shippingCost : (shippingCost != null ? shippingCost * exchangeRate : null);
 

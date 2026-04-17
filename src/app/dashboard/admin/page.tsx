@@ -6,7 +6,7 @@ import { parseErpCsv, type RawCsvRow } from '@/lib/erp-parser';
 import { ChartCard } from '@/components/charts/chart-card';
 import { KpiCard } from '@/components/ui/kpi-card';
 import { formatNumber } from '@/lib/utils';
-import { Upload, CheckCircle, XCircle, Clock, RefreshCw, FileText, FolderSync } from 'lucide-react';
+import { Upload, CheckCircle, XCircle, Clock, RefreshCw, FileText, FolderSync, Euro } from 'lucide-react';
 import type { EtlLog } from '@/types/database';
 
 async function safeJson(res: Response): Promise<Record<string, unknown>> {
@@ -286,6 +286,32 @@ export default function AdminPage() {
           changeLabel="Auto-import codziennie o 6:00"
         />
       </div>
+
+      {/* EUR Backfill */}
+      <ChartCard title="Przeliczenie EUR→PLN" subtitle={`Przelicza historyczne zamówienia EUR kursem 4.30 PLN i odbudowuje daily revenue`}>
+        <div className="flex items-center gap-4">
+          <button
+            onClick={async () => {
+              if (!confirm('Przeliczyć wszystkie zamówienia EUR na PLN (kurs 4.30)? To nadpisze istniejące wartości PLN.')) return;
+              const btn = document.getElementById('eur-backfill-btn');
+              if (btn) btn.textContent = 'Przeliczanie...';
+              try {
+                const res = await fetch('/api/etl/backfill-eur', { method: 'POST' });
+                const json = await safeJson(res);
+                if (res.ok) alert(`Przeliczono ${json.updated} zamówień EUR (kurs ${json.rate})`);
+                else alert(`Błąd: ${json.error}`);
+              } catch (err) { alert(String(err)); }
+              if (btn) btn.textContent = 'Przelicz EUR→PLN';
+            }}
+            id="eur-backfill-btn"
+            className="flex items-center gap-2 px-4 py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-medium rounded-lg transition-colors text-sm"
+          >
+            <Euro size={16} />
+            Przelicz EUR→PLN
+          </button>
+          <span className="text-xs text-zinc-500">Jednorazowa operacja — uruchom po pierwszym imporcie danych z mybed.de</span>
+        </div>
+      </ChartCard>
 
       {/* Upload CSV */}
       <ChartCard title="Import CSV z ERP" subtitle="Parsowanie odbywa się w przeglądarce — plik nie jest wysyłany na serwer w całości">
