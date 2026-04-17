@@ -15,6 +15,8 @@ export const WIDGET_CATALOG: WidgetDefinition[] = [
   { type: 'kpi_orders', name: 'Zamówienia (total)', category: 'KPI', defaultSize: { w: 3, h: 2 }, component: 'kpi' },
   { type: 'kpi_orders_beds', name: 'Zamówienia łóżek', category: 'KPI', defaultSize: { w: 3, h: 2 }, component: 'kpi' },
   { type: 'kpi_orders_samples', name: 'Zamówienia próbek', category: 'KPI', defaultSize: { w: 3, h: 2 }, component: 'kpi' },
+  { type: 'kpi_qty_beds', name: 'Sprzedane łóżka (szt.)', category: 'KPI', defaultSize: { w: 3, h: 2 }, component: 'kpi' },
+  { type: 'kpi_qty_samples', name: 'Sprzedane próbki (szt.)', category: 'KPI', defaultSize: { w: 3, h: 2 }, component: 'kpi' },
   { type: 'kpi_aov', name: 'AOV', category: 'KPI', defaultSize: { w: 3, h: 2 }, component: 'kpi' },
   { type: 'kpi_payment_rate', name: 'Wskaźnik płatności', category: 'KPI', defaultSize: { w: 3, h: 2 }, component: 'kpi' },
 

@@ -158,6 +158,8 @@ export async function POST(request: NextRequest) {
       case 'kpi_revenue_unpaid':
       case 'kpi_orders':
       case 'kpi_orders_beds':
+      case 'kpi_qty_beds':
+      case 'kpi_qty_samples':
       case 'kpi_orders_samples':
       case 'kpi_aov':
       case 'kpi_payment_rate': {
@@ -166,26 +168,33 @@ export async function POST(request: NextRequest) {
         const aov = totals.orders > 0 ? totals.revenue / totals.orders : 0;
         const paymentRate = totals.orders > 0 ? (totals.ordersPaid / totals.orders) * 100 : 0;
 
-        let bedOrders = 0, sampleOrders = 0;
-        if (widget === 'kpi_orders_beds') {
-          const items = await iqSafe('product_name');
-          const bedPattern = /łóżko|łożko|bett|boxspring/i;
+        let bedOrders = 0, sampleOrders = 0, bedQty = 0, sampleQty = 0;
+        const bedPattern = /łóżko|łożko|bett|boxspring/i;
+        const samplePattern = /próbk|muster|sample/i;
+
+        if (widget === 'kpi_orders_beds' || widget === 'kpi_qty_beds') {
+          const items = await iqSafe('product_name, quantity');
           const bedOrderIds = new Set<string>();
           for (const i of items) {
-            if (bedPattern.test(i.product_name || '')) bedOrderIds.add(i.order_id);
+            if (bedPattern.test(i.product_name || '')) {
+              bedOrderIds.add(i.order_id);
+              bedQty += (i.quantity || 1);
+            }
           }
           bedOrders = bedOrderIds.size;
-          Object.assign(debug, { query: 'COUNT DISTINCT order_id WHERE product_name contains łóżko/bett/boxspring', itemsFound: items.length, uniqueOrders: bedOrders, ordersInRange: (await getValidOrderIds()).length });
+          Object.assign(debug, { query: widget === 'kpi_qty_beds' ? 'SUM(quantity)' : 'COUNT DISTINCT order_id', itemsFound: items.length, uniqueOrders: bedOrders, totalQty: bedQty, ordersInRange: (await getValidOrderIds()).length });
         }
-        if (widget === 'kpi_orders_samples') {
-          const items = await iqSafe('product_name, product_category');
-          const samplePattern = /próbk|muster|sample/i;
+        if (widget === 'kpi_orders_samples' || widget === 'kpi_qty_samples') {
+          const items = await iqSafe('product_name, product_category, quantity');
           const sampleOrderIds = new Set<string>();
           for (const i of items) {
-            if (i.product_category === 'próbki' || samplePattern.test(i.product_name || '')) sampleOrderIds.add(i.order_id);
+            if (i.product_category === 'próbki' || samplePattern.test(i.product_name || '')) {
+              sampleOrderIds.add(i.order_id);
+              sampleQty += (i.quantity || 1);
+            }
           }
           sampleOrders = sampleOrderIds.size;
-          Object.assign(debug, { query: 'COUNT DISTINCT order_id WHERE product_name contains próbk/muster/sample', itemsFound: items.length, uniqueOrders: sampleOrders, ordersInRange: (await getValidOrderIds()).length });
+          Object.assign(debug, { query: widget === 'kpi_qty_samples' ? 'SUM(quantity)' : 'COUNT DISTINCT order_id', itemsFound: items.length, uniqueOrders: sampleOrders, totalQty: sampleQty, ordersInRange: (await getValidOrderIds()).length });
         }
 
         const valueMap: Record<string, { value: number; format: string; debugQuery?: string }> = {
@@ -194,7 +203,9 @@ export async function POST(request: NextRequest) {
           kpi_revenue_unpaid: { value: unpaid, format: 'currency', debugQuery: 'revenue - paid' },
           kpi_orders: { value: totals.orders, format: 'number', debugQuery: 'SUM(orders_count) from fact_daily_revenue' },
           kpi_orders_beds: { value: bedOrders, format: 'number', debugQuery: 'COUNT DISTINCT order_id WHERE product_name contains łóżko/bett/boxspring' },
+          kpi_qty_beds: { value: bedQty, format: 'number', debugQuery: 'SUM(quantity) WHERE product_name contains łóżko/bett/boxspring' },
           kpi_orders_samples: { value: sampleOrders, format: 'number', debugQuery: 'COUNT DISTINCT order_id WHERE product_name contains próbk/muster/sample' },
+          kpi_qty_samples: { value: sampleQty, format: 'number', debugQuery: 'SUM(quantity) WHERE product_name contains próbk/muster/sample' },
           kpi_aov: { value: aov, format: 'currency', debugQuery: 'revenue / orders' },
           kpi_payment_rate: { value: paymentRate, format: 'percent', debugQuery: 'ordersPaid / orders * 100' },
         };
