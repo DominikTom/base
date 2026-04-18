@@ -16,6 +16,7 @@ import {
   ChevronRight,
   PanelTop,
   Wallet,
+  Database,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { LogOut } from 'lucide-react';
@@ -29,6 +30,7 @@ const NAV_ITEMS = [
   { href: '/dashboard/products', label: 'Produkty', icon: ShoppingBag, adminOnly: false },
   { href: '/dashboard/traffic', label: 'Ruch (GA4)', icon: Globe, adminOnly: false },
   { href: '/dashboard/explorer', label: 'Eksplorator', icon: Compass, adminOnly: false },
+  { href: '/dashboard/database', label: 'Baza danych', icon: Database, adminOnly: true },
   { href: '/dashboard/admin', label: 'ETL Admin', icon: Settings, adminOnly: true },
 ];
 
