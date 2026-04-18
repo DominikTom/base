@@ -288,28 +288,41 @@ export default function AdminPage() {
       </div>
 
       {/* EUR Backfill */}
-      <ChartCard title="Przeliczenie EUR→PLN" subtitle={`Przelicza historyczne zamówienia EUR kursem 4.30 PLN i odbudowuje daily revenue`}>
-        <div className="flex items-center gap-4">
-          <button
-            onClick={async () => {
-              if (!confirm('Przeliczyć wszystkie zamówienia EUR na PLN (kurs 4.30)? To nadpisze istniejące wartości PLN.')) return;
-              const btn = document.getElementById('eur-backfill-btn');
-              if (btn) btn.textContent = 'Przeliczanie...';
-              try {
-                const res = await fetch('/api/etl/backfill-eur', { method: 'POST' });
-                const json = await safeJson(res);
-                if (res.ok) alert(`Przeliczono ${json.updated} zamówień EUR (kurs ${json.rate})`);
-                else alert(`Błąd: ${json.error}`);
-              } catch (err) { alert(String(err)); }
-              if (btn) btn.textContent = 'Przelicz EUR→PLN';
-            }}
-            id="eur-backfill-btn"
-            className="flex items-center gap-2 px-4 py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-medium rounded-lg transition-colors text-sm"
-          >
-            <Euro size={16} />
-            Przelicz EUR→PLN
-          </button>
-          <span className="text-xs text-zinc-500">Jednorazowa operacja — uruchom po pierwszym imporcie danych z mybed.de</span>
+      <ChartCard title="Przeliczenie EUR→PLN (kurs NBP)" subtitle="Pobiera średni kurs EUR/PLN z NBP per miesiąc i przelicza historyczne zamówienia">
+        <div className="space-y-3">
+          <div id="eur-current-rate" className="text-sm text-zinc-400">
+            Ładowanie aktualnego kursu NBP...
+          </div>
+          <script dangerouslySetInnerHTML={{ __html: `
+            fetch('/api/etl/backfill-eur').then(r=>r.json()).then(d=>{
+              const el=document.getElementById('eur-current-rate');
+              if(el) el.innerHTML='Aktualny kurs NBP: <span class="text-amber-400 font-bold">'+d.rate+' PLN/EUR</span>'+(d.date?' ('+d.date+')':' (fallback)');
+            }).catch(()=>{});
+          `}} />
+          <div className="flex items-center gap-4">
+            <button
+              onClick={async () => {
+                if (!confirm('Przeliczyć wszystkie zamówienia EUR na PLN kursami miesięcznymi z NBP? To nadpisze istniejące wartości PLN.')) return;
+                const btn = document.getElementById('eur-backfill-btn');
+                if (btn) btn.textContent = 'Przeliczanie (może potrwać do 60s)...';
+                try {
+                  const res = await fetch('/api/etl/backfill-eur', { method: 'POST' });
+                  const json = await safeJson(res);
+                  if (res.ok) {
+                    const rates = json.ratesUsed ? Object.entries(json.ratesUsed as Record<string, number>).map(([m,r]) => m+': '+r).join(', ') : '';
+                    alert('Przeliczono ' + json.updated + ' zamówień EUR\\n\\nKursy per miesiąc:\\n' + rates);
+                  } else alert('Błąd: ' + json.error);
+                } catch (err) { alert(String(err)); }
+                if (btn) btn.textContent = 'Przelicz EUR→PLN';
+              }}
+              id="eur-backfill-btn"
+              className="flex items-center gap-2 px-4 py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-medium rounded-lg transition-colors text-sm"
+            >
+              <Euro size={16} />
+              Przelicz EUR→PLN
+            </button>
+            <span className="text-xs text-zinc-500">Używa średniego kursu NBP per miesiąc. Nowe importy automatycznie używają kursu z dnia zamówienia.</span>
+          </div>
         </div>
       </ChartCard>
 

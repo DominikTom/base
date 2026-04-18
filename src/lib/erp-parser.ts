@@ -7,7 +7,7 @@
  */
 
 import type { FactOrder, FactOrderItem } from '@/types/database';
-import { EUR_TO_PLN } from '@/lib/currency';
+import { getEurPlnRate } from '@/lib/currency';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -452,22 +452,22 @@ export async function parseErpCsv(rows: RawCsvRow[]): Promise<ParseResult> {
     // Currency
     const currency = ['mybed.de', 'amazon.de', 'kaufland.de'].includes(shop) ? 'EUR' : 'PLN';
 
+    // Date (needed for exchange rate lookup)
+    const orderDateStr = (h['Data zamówienia'] || '').trim();
+    const orderDate = orderDateStr || new Date().toISOString();
+
     // Parse total
     const sumaStr = (h['Suma'] || '').trim();
     const totalGross = sumaStr ? parseFloat(sumaStr) : null;
     const shippingStr = (h['Koszt dostawy'] || '').trim();
     const shippingCost = shippingStr ? parseFloat(shippingStr) : null;
 
-    const exchangeRate = currency === 'EUR' ? EUR_TO_PLN : 1;
+    const exchangeRate = currency === 'EUR' ? await getEurPlnRate(orderDate.substring(0, 10)) : 1;
     const totalGrossPln = currency === 'PLN' ? totalGross : (totalGross != null ? totalGross * exchangeRate : null);
     const shippingCostPln = currency === 'PLN' ? shippingCost : (shippingCost != null ? shippingCost * exchangeRate : null);
 
     // Status
     const status = normalizeStatus(h['Status'] || '');
-
-    // Date
-    const orderDateStr = (h['Data zamówienia'] || '').trim();
-    const orderDate = orderDateStr || new Date().toISOString();
 
     // Collect ALL tags: from header + from tag-only sub-rows
     const allTags: string[] = [];
