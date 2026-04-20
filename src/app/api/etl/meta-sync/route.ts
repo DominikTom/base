@@ -4,9 +4,19 @@ import { fetchCampaignInsights, getAdAccountIds } from '@/lib/meta-ads';
 
 export const maxDuration = 60;
 
-// POST — manual trigger (default 90 days, override with ?days=N)
+// POST — manual trigger.
+// Accepts either ?days=N (last N days) or ?since=YYYY-MM-DD&until=YYYY-MM-DD.
+// Range mode lets the client chunk a long backfill across multiple calls,
+// each fitting within Vercel Hobby's 60s function timeout.
 export async function POST(request: NextRequest) {
   const { searchParams } = new URL(request.url);
+  const since = searchParams.get('since');
+  const until = searchParams.get('until');
+
+  if (since && until && /^\d{4}-\d{2}-\d{2}$/.test(since) && /^\d{4}-\d{2}-\d{2}$/.test(until)) {
+    return syncMetaRange(since, until);
+  }
+
   const daysParam = parseInt(searchParams.get('days') || '90', 10);
   const days = Number.isFinite(daysParam) && daysParam > 0 && daysParam <= 1100
     ? daysParam
@@ -28,6 +38,16 @@ export async function GET(request: NextRequest) {
 }
 
 async function syncMeta(daysBack: number) {
+  const today = new Date();
+  const dateTo = new Date(today);
+  dateTo.setDate(dateTo.getDate() - 1);
+  const dateFrom = new Date(today);
+  dateFrom.setDate(dateFrom.getDate() - daysBack);
+  const fmt = (d: Date) => d.toISOString().split('T')[0];
+  return syncMetaRange(fmt(dateFrom), fmt(dateTo));
+}
+
+async function syncMetaRange(dateFromStr: string, dateToStr: string) {
   try {
     const db = getSupabaseAdmin();
     const accountIds = getAdAccountIds();
@@ -44,15 +64,6 @@ async function syncMeta(daysBack: number) {
     const etlLogId = etlLog?.id;
 
     try {
-      const today = new Date();
-      const dateTo = new Date(today);
-      dateTo.setDate(dateTo.getDate() - 1);
-      const dateFrom = new Date(today);
-      dateFrom.setDate(dateFrom.getDate() - daysBack);
-      const fmt = (d: Date) => d.toISOString().split('T')[0];
-      const dateFromStr = fmt(dateFrom);
-      const dateToStr = fmt(dateTo);
-
       // Delete existing meta data in range
       await db.from('fact_daily_adspend').delete()
         .eq('platform', 'meta')

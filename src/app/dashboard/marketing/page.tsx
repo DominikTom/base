@@ -193,41 +193,85 @@ function formatRelativeTime(iso: string): string {
   return `${days}d temu`;
 }
 
-// Vercel Hobby ma 60s timeout — 365 dni × 1 konto jest na granicy,
-// większe backfill'e trzeba robić per-account lub z Pro planu.
 const BACKFILL_OPTIONS = [
   { value: 7, label: '7 dni' },
   { value: 30, label: '30 dni' },
   { value: 90, label: '90 dni' },
   { value: 180, label: '180 dni' },
   { value: 365, label: '365 dni' },
+  { value: 730, label: '2 lata' },
 ];
+
+// Split [today-N, today-1] into ≤90-day chunks so each POST fits within
+// Vercel Hobby's 60s function timeout. Returns newest chunk first.
+const CHUNK_DAYS = 90;
+function buildBackfillChunks(daysBack: number): Array<{ since: string; until: string }> {
+  const fmt = (d: Date) => d.toISOString().split('T')[0];
+  const chunks: Array<{ since: string; until: string }> = [];
+  const end = new Date();
+  end.setDate(end.getDate() - 1);
+  let remaining = daysBack;
+  let until = new Date(end);
+  while (remaining > 0) {
+    const size = Math.min(remaining, CHUNK_DAYS);
+    const since = new Date(until);
+    since.setDate(since.getDate() - size + 1);
+    chunks.push({ since: fmt(since), until: fmt(until) });
+    remaining -= size;
+    until = new Date(since);
+    until.setDate(until.getDate() - 1);
+  }
+  return chunks;
+}
+
+async function parseJsonOrThrow(res: Response): Promise<{ totalRows?: number; error?: string }> {
+  const text = await res.text();
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(res.status === 504 || text.startsWith('An error')
+      ? 'Timeout Vercela (60s) — spróbuj mniejszego zakresu'
+      : `Nieoczekiwana odpowiedź: ${text.slice(0, 80)}`);
+  }
+}
 
 function SyncMetaButton({ lastSync }: { lastSync: { at: string; rows: number } | null }) {
   const [syncing, setSyncing] = useState(false);
   const [days, setDays] = useState(90);
+  const [progress, setProgress] = useState<{ current: number; total: number } | null>(null);
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
 
   async function handleSync() {
     setSyncing(true);
     setResult(null);
+    setProgress(null);
     try {
-      const res = await fetch(`/api/etl/meta-sync?days=${days}`, { method: 'POST' });
-      const json = await res.json();
-      if (res.ok) {
-        setResult({ ok: true, message: `Meta Ads: pobrano ${json.totalRows} wierszy za ${days} dni` });
-      } else {
-        setResult({ ok: false, message: json.error || 'Błąd synchronizacji' });
+      const chunks = buildBackfillChunks(days);
+      let totalRows = 0;
+      for (let i = 0; i < chunks.length; i++) {
+        setProgress({ current: i + 1, total: chunks.length });
+        const { since, until } = chunks[i];
+        const res = await fetch(`/api/etl/meta-sync?since=${since}&until=${until}`, { method: 'POST' });
+        const json = await parseJsonOrThrow(res);
+        if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
+        totalRows += json.totalRows || 0;
       }
+      setResult({ ok: true, message: `Meta Ads: pobrano ${totalRows} wierszy za ${days} dni` });
     } catch (err) {
-      setResult({ ok: false, message: String(err) });
+      setResult({ ok: false, message: err instanceof Error ? err.message : String(err) });
+    } finally {
+      setSyncing(false);
+      setProgress(null);
     }
-    setSyncing(false);
   }
 
   return (
     <div className="flex items-center gap-3">
-      {result ? (
+      {progress ? (
+        <span className="text-xs text-zinc-400 flex items-center gap-1">
+          Chunk {progress.current}/{progress.total}…
+        </span>
+      ) : result ? (
         <span className={`text-xs flex items-center gap-1 ${result.ok ? 'text-emerald-400' : 'text-red-400'}`}>
           {result.ok ? <CheckCircle size={14} /> : <XCircle size={14} />}
           {result.message}
@@ -241,7 +285,6 @@ function SyncMetaButton({ lastSync }: { lastSync: { at: string; rows: number } |
         value={days}
         onChange={e => setDays(parseInt(e.target.value, 10))}
         disabled={syncing}
-        title={days >= 365 ? 'Duży backfill może przekroczyć 60s timeout Vercela' : undefined}
         className="bg-zinc-800 text-zinc-200 text-sm rounded-lg px-2 py-2 border border-zinc-700 disabled:opacity-50"
       >
         {BACKFILL_OPTIONS.map(o => (
