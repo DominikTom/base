@@ -181,6 +181,19 @@ async function syncAdsRange(dateFromStr: string, dateToStr: string) {
         }).eq('id', etlLogId);
       }
 
+      // Fire-and-forget: jeśli są nowe kreacje, tryggeruj AI tagging.
+      // Nie czekamy na wynik — funkcja i tak wróci do klienta szybciej,
+      // a tagger ma własny timeout 60s. Cron meta-ad-sync łapie ew. pudła.
+      if (newCreatives > 0 && process.env.NEXT_PUBLIC_APP_URL) {
+        const taggerUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/jobs/tag-creatives?limit=${Math.min(newCreatives, 20)}`;
+        fetch(taggerUrl, {
+          method: 'POST',
+          headers: process.env.ETL_CRON_SECRET
+            ? { authorization: `Bearer ${process.env.ETL_CRON_SECRET}` }
+            : undefined,
+        }).catch(err => console.warn('tag-creatives trigger failed:', err));
+      }
+
       return NextResponse.json({
         success: true,
         accounts: results,
