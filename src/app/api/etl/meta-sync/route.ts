@@ -4,12 +4,17 @@ import { fetchCampaignInsights, getAdAccountIds } from '@/lib/meta-ads';
 
 export const maxDuration = 60;
 
-// POST — manual trigger (90 days)
-export async function POST() {
-  return syncMeta(90);
+// POST — manual trigger (default 90 days, override with ?days=N)
+export async function POST(request: NextRequest) {
+  const { searchParams } = new URL(request.url);
+  const daysParam = parseInt(searchParams.get('days') || '90', 10);
+  const days = Number.isFinite(daysParam) && daysParam > 0 && daysParam <= 1100
+    ? daysParam
+    : 90;
+  return syncMeta(days);
 }
 
-// GET — Vercel Cron daily at 5:00 UTC
+// GET — Vercel Cron daily at 5:00 UTC (Hobby plan = daily minimum)
 export async function GET(request: NextRequest) {
   const isVercelCron = request.headers.get('x-vercel-cron') === '1';
   const cronSecret = process.env.ETL_CRON_SECRET;
@@ -17,7 +22,9 @@ export async function GET(request: NextRequest) {
   if (!isVercelCron && cronSecret && authHeader !== `Bearer ${cronSecret}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
-  return syncMeta(7);
+  // 28-day window covers Meta's attribution lookback so late-reported
+  // conversions retroactively update historical rows.
+  return syncMeta(28);
 }
 
 async function syncMeta(daysBack: number) {

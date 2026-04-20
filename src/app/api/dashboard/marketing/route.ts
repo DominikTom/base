@@ -23,6 +23,35 @@ export async function GET(request: NextRequest) {
     const { data: adspendData, error } = await query.limit(50000);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
+    const { data: lastSyncRow } = await getSupabaseAdmin()
+      .from('etl_log')
+      .select('finished_at, rows_processed')
+      .eq('source', 'meta_ads')
+      .eq('status', 'success')
+      .order('finished_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const db = getSupabaseAdmin();
+    const [minRes, maxRes, countRes] = await Promise.all([
+      db.from('fact_daily_adspend').select('date').eq('platform', 'meta')
+        .order('date', { ascending: true }).limit(1).maybeSingle(),
+      db.from('fact_daily_adspend').select('date').eq('platform', 'meta')
+        .order('date', { ascending: false }).limit(1).maybeSingle(),
+      db.from('fact_daily_adspend').select('*', { count: 'exact', head: true })
+        .eq('platform', 'meta'),
+    ]);
+
+    const coverage = {
+      meta: minRes.data && maxRes.data
+        ? {
+            from: minRes.data.date as string,
+            to: maxRes.data.date as string,
+            rows: countRes.count ?? 0,
+          }
+        : null,
+    };
+
     // KPIs
     const totals = (adspendData || []).reduce(
       (acc, row) => {
@@ -131,6 +160,10 @@ export async function GET(request: NextRequest) {
         topByRoas,
       },
       campaignTable,
+      lastSync: lastSyncRow
+        ? { at: lastSyncRow.finished_at, rows: lastSyncRow.rows_processed }
+        : null,
+      coverage,
     });
   } catch (err) {
     console.error('Marketing API error:', err);

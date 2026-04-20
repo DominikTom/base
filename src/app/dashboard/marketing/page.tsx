@@ -26,6 +26,10 @@ interface MarketingData {
     spendByPlatform: Array<{ name: string; value: number }>;
     topByRoas: Array<{ name: string; value: number }>;
   };
+  lastSync: { at: string; rows: number } | null;
+  coverage: {
+    meta: { from: string; to: string; rows: number } | null;
+  };
   campaignTable: Array<{
     campaign_id: string;
     campaign_name: string;
@@ -100,9 +104,22 @@ export default function MarketingPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-zinc-100">Marketing Performance</h1>
-        <SyncMetaButton />
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-semibold text-zinc-100">Marketing Performance</h1>
+          {data.coverage.meta && (
+            <p className="text-xs text-zinc-500 mt-1">
+              Meta: <span className="text-zinc-400">{data.coverage.meta.from}</span>
+              {' → '}
+              <span className="text-zinc-400">{data.coverage.meta.to}</span>
+              {' · '}
+              {daysBetween(data.coverage.meta.from, data.coverage.meta.to)} dni
+              {' · '}
+              {formatNumber(data.coverage.meta.rows)} wierszy
+            </p>
+          )}
+        </div>
+        <SyncMetaButton lastSync={data.lastSync} />
       </div>
 
       {/* KPI Cards */}
@@ -160,18 +177,45 @@ export default function MarketingPage() {
   );
 }
 
-function SyncMetaButton() {
+function daysBetween(from: string, to: string): number {
+  const ms = new Date(to).getTime() - new Date(from).getTime();
+  return Math.floor(ms / 86_400_000) + 1;
+}
+
+function formatRelativeTime(iso: string): string {
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 1) return 'przed chwilą';
+  if (mins < 60) return `${mins} min temu`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h temu`;
+  const days = Math.floor(hours / 24);
+  return `${days}d temu`;
+}
+
+// Vercel Hobby ma 60s timeout — 365 dni × 1 konto jest na granicy,
+// większe backfill'e trzeba robić per-account lub z Pro planu.
+const BACKFILL_OPTIONS = [
+  { value: 7, label: '7 dni' },
+  { value: 30, label: '30 dni' },
+  { value: 90, label: '90 dni' },
+  { value: 180, label: '180 dni' },
+  { value: 365, label: '365 dni' },
+];
+
+function SyncMetaButton({ lastSync }: { lastSync: { at: string; rows: number } | null }) {
   const [syncing, setSyncing] = useState(false);
+  const [days, setDays] = useState(90);
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
 
   async function handleSync() {
     setSyncing(true);
     setResult(null);
     try {
-      const res = await fetch('/api/etl/meta-sync', { method: 'POST' });
+      const res = await fetch(`/api/etl/meta-sync?days=${days}`, { method: 'POST' });
       const json = await res.json();
       if (res.ok) {
-        setResult({ ok: true, message: `Meta Ads: pobrano ${json.totalRows} wierszy` });
+        setResult({ ok: true, message: `Meta Ads: pobrano ${json.totalRows} wierszy za ${days} dni` });
       } else {
         setResult({ ok: false, message: json.error || 'Błąd synchronizacji' });
       }
@@ -183,12 +227,27 @@ function SyncMetaButton() {
 
   return (
     <div className="flex items-center gap-3">
-      {result && (
+      {result ? (
         <span className={`text-xs flex items-center gap-1 ${result.ok ? 'text-emerald-400' : 'text-red-400'}`}>
           {result.ok ? <CheckCircle size={14} /> : <XCircle size={14} />}
           {result.message}
         </span>
-      )}
+      ) : lastSync ? (
+        <span className="text-xs text-zinc-500">
+          Meta: {formatRelativeTime(lastSync.at)}
+        </span>
+      ) : null}
+      <select
+        value={days}
+        onChange={e => setDays(parseInt(e.target.value, 10))}
+        disabled={syncing}
+        title={days >= 365 ? 'Duży backfill może przekroczyć 60s timeout Vercela' : undefined}
+        className="bg-zinc-800 text-zinc-200 text-sm rounded-lg px-2 py-2 border border-zinc-700 disabled:opacity-50"
+      >
+        {BACKFILL_OPTIONS.map(o => (
+          <option key={o.value} value={o.value}>{o.label}</option>
+        ))}
+      </select>
       <button onClick={handleSync} disabled={syncing}
         className="flex items-center gap-2 px-3 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-sm rounded-lg transition-colors disabled:opacity-50">
         {syncing ? <RefreshCw size={14} className="animate-spin" /> : <RefreshCw size={14} />}
