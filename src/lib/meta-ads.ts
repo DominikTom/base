@@ -103,3 +103,194 @@ export async function fetchCampaignInsights(
 
   return rows;
 }
+
+// =============================================================
+// AD-LEVEL FETCHERS (Phase 1 creative analytics)
+// =============================================================
+
+export interface MetaAdInsightRow {
+  date: string;
+  accountId: string;
+  campaignId: string;
+  campaignName: string;
+  adsetId: string;
+  adsetName: string;
+  adId: string;
+  adName: string;
+  creativeId: string | null;
+  currency: string;
+  impressions: number;
+  reach: number;
+  clicks: number;
+  spend: number;
+  conversions: number;
+  conversionValue: number;
+  cpc: number;
+  cpm: number;
+  ctr: number;
+  frequency: number;
+  videoPlay3s: number;
+  videoP25: number;
+  videoP50: number;
+  videoP75: number;
+  videoP95: number;
+  videoP100: number;
+  thruplays: number;
+}
+
+export interface MetaCreativeMeta {
+  creativeId: string;
+  accountId: string;
+  title: string | null;
+  body: string | null;
+  callToActionType: string | null;
+  thumbnailUrl: string | null;
+  imageUrl: string | null;
+  videoId: string | null;
+  permalinkUrl: string | null;
+  format: 'video' | 'image' | 'carousel' | 'dynamic' | 'unknown';
+  aspectRatio: string | null;
+  durationSec: number | null;
+  autoTags: string[];
+}
+
+function extractAction(arr: Array<{ action_type: string; value?: string }> | undefined, type: string): number {
+  if (!arr) return 0;
+  const row = arr.find(a => a.action_type === type);
+  return row ? parseFloat(row.value || '0') : 0;
+}
+
+function extractVideoMetric(arr: Array<{ action_type: string; value?: string }> | undefined): number {
+  // Meta zwraca video metrics jako actions z kluczami video_p25_watched_actions itd.
+  // ale przy ?fields=video_* dostajemy je osobno. Dla bezpieczeństwa — obie ścieżki.
+  return arr?.[0]?.value ? parseFloat(arr[0].value) : 0;
+}
+
+export async function fetchAdInsights(
+  accountId: string,
+  dateFrom: string,
+  dateTo: string
+): Promise<MetaAdInsightRow[]> {
+  const token = getAccessToken();
+  const currency = await fetchAccountCurrency(accountId);
+
+  // Uwaga: fields z wideo breakdownami są drogie pod kątem CPU weighted rate limit,
+  // ale Meta w jednym call'u potrafi je zwrócić razem z insights — bez dodatkowych tripów.
+  const fields = [
+    'ad_id', 'ad_name',
+    'adset_id', 'adset_name',
+    'campaign_id', 'campaign_name',
+    'creative{id}',
+    'impressions', 'reach', 'clicks', 'spend',
+    'cpc', 'cpm', 'ctr', 'frequency',
+    'actions', 'action_values',
+    'video_play_actions',
+    'video_p25_watched_actions',
+    'video_p50_watched_actions',
+    'video_p75_watched_actions',
+    'video_p95_watched_actions',
+    'video_p100_watched_actions',
+    'video_thruplay_watched_actions',
+  ].join(',');
+
+  const rows: MetaAdInsightRow[] = [];
+  let url: string | null = `${META_BASE_URL}/${accountId}/insights?fields=${fields}&time_range=%7B%22since%22%3A%22${dateFrom}%22%2C%22until%22%3A%22${dateTo}%22%7D&time_increment=1&level=ad&limit=200&access_token=${token}` as string | null;
+
+  while (url) {
+    const res: Response = await fetch(url);
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`Meta AD API error: ${text}`);
+    }
+    const json = await res.json();
+
+    for (const row of json.data || []) {
+      rows.push({
+        date: row.date_start,
+        accountId,
+        currency,
+        campaignId: row.campaign_id || '',
+        campaignName: row.campaign_name || '',
+        adsetId: row.adset_id || '',
+        adsetName: row.adset_name || '',
+        adId: row.ad_id || '',
+        adName: row.ad_name || '',
+        creativeId: row.creative?.id || null,
+        impressions: parseInt(row.impressions || '0'),
+        reach: parseInt(row.reach || '0'),
+        clicks: parseInt(row.clicks || '0'),
+        spend: parseFloat(row.spend || '0'),
+        conversions: extractAction(row.actions, 'purchase'),
+        conversionValue: extractAction(row.action_values, 'purchase'),
+        cpc: parseFloat(row.cpc || '0'),
+        cpm: parseFloat(row.cpm || '0'),
+        ctr: parseFloat(row.ctr || '0'),
+        frequency: parseFloat(row.frequency || '0'),
+        videoPlay3s: extractVideoMetric(row.video_play_actions),
+        videoP25: extractVideoMetric(row.video_p25_watched_actions),
+        videoP50: extractVideoMetric(row.video_p50_watched_actions),
+        videoP75: extractVideoMetric(row.video_p75_watched_actions),
+        videoP95: extractVideoMetric(row.video_p95_watched_actions),
+        videoP100: extractVideoMetric(row.video_p100_watched_actions),
+        thruplays: extractVideoMetric(row.video_thruplay_watched_actions),
+      });
+    }
+    url = json.paging?.next || null;
+  }
+
+  return rows;
+}
+
+// Meta AdCreative object — pobiera thumbnail, copy, video, format
+export async function fetchCreativeMeta(
+  creativeId: string,
+  accountId: string
+): Promise<MetaCreativeMeta | null> {
+  const token = getAccessToken();
+  const fields = [
+    'id', 'name', 'title', 'body',
+    'call_to_action_type',
+    'thumbnail_url', 'image_url',
+    'video_id', 'object_type',
+    'effective_object_story_id',
+    'instagram_permalink_url',
+    'asset_feed_spec',
+  ].join(',');
+
+  const url = `${META_BASE_URL}/${creativeId}?fields=${fields}&access_token=${token}`;
+  const res = await fetch(url);
+  if (!res.ok) {
+    const text = await res.text();
+    // Kreacje bywają usunięte — nie wywalamy całego syncu
+    console.warn(`fetchCreativeMeta failed for ${creativeId}: ${text.slice(0, 200)}`);
+    return null;
+  }
+  const data = await res.json();
+
+  // Format detection: video jeśli video_id, image jeśli image_url, carousel jeśli asset_feed_spec.
+  let format: MetaCreativeMeta['format'] = 'unknown';
+  if (data.video_id) format = 'video';
+  else if (data.asset_feed_spec?.images && data.asset_feed_spec.images.length > 1) format = 'carousel';
+  else if (data.image_url || data.thumbnail_url) format = 'image';
+
+  // Auto-tags — deterministyczne z API, nie AI
+  const autoTags: string[] = [];
+  if (format !== 'unknown') autoTags.push(format);
+  if (data.call_to_action_type) autoTags.push(`cta_${String(data.call_to_action_type).toLowerCase()}`);
+
+  return {
+    creativeId: data.id || creativeId,
+    accountId,
+    title: data.title || data.name || null,
+    body: data.body || null,
+    callToActionType: data.call_to_action_type || null,
+    thumbnailUrl: data.thumbnail_url || null,
+    imageUrl: data.image_url || null,
+    videoId: data.video_id || null,
+    permalinkUrl: data.instagram_permalink_url || data.effective_object_story_id || null,
+    format,
+    aspectRatio: null,  // wymaga osobnego call'a do /video lub /image — zostawiamy na Phase 4
+    durationSec: null,
+    autoTags,
+  };
+}
