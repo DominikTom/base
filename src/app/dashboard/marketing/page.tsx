@@ -193,13 +193,14 @@ function formatRelativeTime(iso: string): string {
   return `${days}d temu`;
 }
 
+// Vercel Hobby ma 60s timeout — 365 dni × 1 konto jest na granicy,
+// większe backfill'e trzeba robić per-account lub z Pro planu.
 const BACKFILL_OPTIONS = [
   { value: 7, label: '7 dni' },
   { value: 30, label: '30 dni' },
   { value: 90, label: '90 dni' },
   { value: 180, label: '180 dni' },
   { value: 365, label: '365 dni' },
-  { value: 730, label: '2 lata' },
 ];
 
 function SyncMetaButton({ lastSync }: { lastSync: { at: string; rows: number } | null }) {
@@ -240,7 +241,7 @@ function SyncMetaButton({ lastSync }: { lastSync: { at: string; rows: number } |
         value={days}
         onChange={e => setDays(parseInt(e.target.value, 10))}
         disabled={syncing}
-        title={days > 365 ? 'Duży backfill może przekroczyć timeout Vercela (5 min)' : undefined}
+        title={days >= 365 ? 'Duży backfill może przekroczyć 60s timeout Vercela' : undefined}
         className="bg-zinc-800 text-zinc-200 text-sm rounded-lg px-2 py-2 border border-zinc-700 disabled:opacity-50"
       >
         {BACKFILL_OPTIONS.map(o => (

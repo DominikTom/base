@@ -2,8 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabase';
 import { fetchCampaignInsights, getAdAccountIds } from '@/lib/meta-ads';
 
-// 300s = Vercel Pro limit. Needed for multi-account backfills > 180 days.
-export const maxDuration = 300;
+export const maxDuration = 60;
 
 // POST — manual trigger (default 90 days, override with ?days=N)
 export async function POST(request: NextRequest) {
@@ -15,7 +14,7 @@ export async function POST(request: NextRequest) {
   return syncMeta(days);
 }
 
-// GET — Vercel Cron every 4h
+// GET — Vercel Cron daily at 5:00 UTC (Hobby plan = daily minimum)
 export async function GET(request: NextRequest) {
   const isVercelCron = request.headers.get('x-vercel-cron') === '1';
   const cronSecret = process.env.ETL_CRON_SECRET;
