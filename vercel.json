@@ -11,6 +11,10 @@
     {
       "path": "/api/etl/meta-sync",
       "schedule": "0 5 * * *"
+    },
+    {
+      "path": "/api/etl/thulium-sync",
+      "schedule": "15 5 * * *"
     }
   ]
 }

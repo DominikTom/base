@@ -17,6 +17,7 @@ import {
   PanelTop,
   Wallet,
   Database,
+  Headphones,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { LogOut } from 'lucide-react';
@@ -29,6 +30,7 @@ const NAV_ITEMS = [
   { href: '/dashboard/costs', label: 'Koszty agencji', icon: Wallet, adminOnly: true },
   { href: '/dashboard/products', label: 'Produkty', icon: ShoppingBag, adminOnly: false },
   { href: '/dashboard/traffic', label: 'Ruch (GA4)', icon: Globe, adminOnly: false },
+  { href: '/dashboard/thulium', label: 'Obsługa klienta (BOK/CS)', icon: Headphones, adminOnly: true },
   { href: '/dashboard/explorer', label: 'Eksplorator', icon: Compass, adminOnly: false },
   { href: '/dashboard/database', label: 'Baza danych', icon: Database, adminOnly: true },
   { href: '/dashboard/admin', label: 'ETL Admin', icon: Settings, adminOnly: true },
