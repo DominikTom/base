@@ -27,6 +27,9 @@ interface MarketingData {
     topByRoas: Array<{ name: string; value: number }>;
   };
   lastSync: { at: string; rows: number } | null;
+  coverage: {
+    meta: { from: string; to: string; rows: number } | null;
+  };
   campaignTable: Array<{
     campaign_id: string;
     campaign_name: string;
@@ -101,8 +104,21 @@ export default function MarketingPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-zinc-100">Marketing Performance</h1>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-semibold text-zinc-100">Marketing Performance</h1>
+          {data.coverage.meta && (
+            <p className="text-xs text-zinc-500 mt-1">
+              Meta: <span className="text-zinc-400">{data.coverage.meta.from}</span>
+              {' → '}
+              <span className="text-zinc-400">{data.coverage.meta.to}</span>
+              {' · '}
+              {daysBetween(data.coverage.meta.from, data.coverage.meta.to)} dni
+              {' · '}
+              {formatNumber(data.coverage.meta.rows)} wierszy
+            </p>
+          )}
+        </div>
         <SyncMetaButton lastSync={data.lastSync} />
       </div>
 
@@ -161,6 +177,11 @@ export default function MarketingPage() {
   );
 }
 
+function daysBetween(from: string, to: string): number {
+  const ms = new Date(to).getTime() - new Date(from).getTime();
+  return Math.floor(ms / 86_400_000) + 1;
+}
+
 function formatRelativeTime(iso: string): string {
   const diffMs = Date.now() - new Date(iso).getTime();
   const mins = Math.floor(diffMs / 60000);
@@ -172,18 +193,28 @@ function formatRelativeTime(iso: string): string {
   return `${days}d temu`;
 }
 
+const BACKFILL_OPTIONS = [
+  { value: 7, label: '7 dni' },
+  { value: 30, label: '30 dni' },
+  { value: 90, label: '90 dni' },
+  { value: 180, label: '180 dni' },
+  { value: 365, label: '365 dni' },
+  { value: 730, label: '2 lata' },
+];
+
 function SyncMetaButton({ lastSync }: { lastSync: { at: string; rows: number } | null }) {
   const [syncing, setSyncing] = useState(false);
+  const [days, setDays] = useState(90);
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
 
   async function handleSync() {
     setSyncing(true);
     setResult(null);
     try {
-      const res = await fetch('/api/etl/meta-sync', { method: 'POST' });
+      const res = await fetch(`/api/etl/meta-sync?days=${days}`, { method: 'POST' });
       const json = await res.json();
       if (res.ok) {
-        setResult({ ok: true, message: `Meta Ads: pobrano ${json.totalRows} wierszy` });
+        setResult({ ok: true, message: `Meta Ads: pobrano ${json.totalRows} wierszy za ${days} dni` });
       } else {
         setResult({ ok: false, message: json.error || 'Błąd synchronizacji' });
       }
@@ -205,6 +236,17 @@ function SyncMetaButton({ lastSync }: { lastSync: { at: string; rows: number } |
           Meta: {formatRelativeTime(lastSync.at)}
         </span>
       ) : null}
+      <select
+        value={days}
+        onChange={e => setDays(parseInt(e.target.value, 10))}
+        disabled={syncing}
+        title={days > 365 ? 'Duży backfill może przekroczyć timeout Vercela (5 min)' : undefined}
+        className="bg-zinc-800 text-zinc-200 text-sm rounded-lg px-2 py-2 border border-zinc-700 disabled:opacity-50"
+      >
+        {BACKFILL_OPTIONS.map(o => (
+          <option key={o.value} value={o.value}>{o.label}</option>
+        ))}
+      </select>
       <button onClick={handleSync} disabled={syncing}
         className="flex items-center gap-2 px-3 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-sm rounded-lg transition-colors disabled:opacity-50">
         {syncing ? <RefreshCw size={14} className="animate-spin" /> : <RefreshCw size={14} />}
