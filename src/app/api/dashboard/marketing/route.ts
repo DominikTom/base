@@ -8,20 +8,29 @@ export async function GET(request: NextRequest) {
     const dateTo = searchParams.get('date_to') || new Date().toISOString().split('T')[0];
     const platform = searchParams.get('platform') || 'all';
 
-    // Fetch ad spend data (WARM from DB)
-    let query = getSupabaseAdmin()
-      .from('fact_daily_adspend')
-      .select('*')
-      .gte('date', dateFrom)
-      .lte('date', dateTo)
-      .order('date', { ascending: true });
-
-    if (platform !== 'all') {
-      query = query.eq('platform', platform);
+    // Fetch ad spend data (WARM from DB) — paginated to defeat PostgREST's
+    // default 1000-row server-side cap that .limit() can't override.
+    const PAGE_SIZE = 1000;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const adspendData: any[] = [];
+    let offset = 0;
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      let pageQuery = getSupabaseAdmin()
+        .from('fact_daily_adspend')
+        .select('*')
+        .gte('date', dateFrom)
+        .lte('date', dateTo)
+        .order('date', { ascending: true })
+        .range(offset, offset + PAGE_SIZE - 1);
+      if (platform !== 'all') pageQuery = pageQuery.eq('platform', platform);
+      const { data: page, error } = await pageQuery;
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+      if (!page || page.length === 0) break;
+      adspendData.push(...page);
+      if (page.length < PAGE_SIZE) break;
+      offset += PAGE_SIZE;
     }
-
-    const { data: adspendData, error } = await query.limit(50000);
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
     const { data: lastSyncRow } = await getSupabaseAdmin()
       .from('etl_log')
