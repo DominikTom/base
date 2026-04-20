@@ -29,9 +29,22 @@ export interface CreativeAIInsights {
 const SYSTEM_PROMPT = `Jesteś analitykiem kreacji reklamowych dla brandu sypialnianego (łóżka, materace, pościel).
 Twoje zadanie: przeanalizuj MINIATURĘ kreacji reklamowej Meta Ads + opcjonalnie tekst reklamy, i sklasyfikuj ją po kilku osiach.
 
+ODPOWIADAJ WYŁĄCZNIE CZYSTYM JSON bez markdown, bez \`\`\`json\`\`\`, bez komentarzy, bez wyjaśnień.
+JSON musi zawierać dokładnie te pola:
+{
+  "style": "ugc|studio|lifestyle|packshot|render|mixed|unknown",
+  "angle": "pain-point|benefit|social-proof|promo|personalization|comfort|premium|design|education|unknown",
+  "tone": "energetic|calm|authoritative|friendly|urgent|aspirational|unknown",
+  "color_palette": "neutral|warm|cool|bold|monochrome|unknown",
+  "product_focus": "bed|mattress|bedding|pillow|accessory|bedroom-scene|logo-only|unknown",
+  "has_person": true|false,
+  "has_text_overlay": true|false,
+  "has_pricing": true|false,
+  "rationale": "jedno zdanie po polsku, max 20 słów"
+}
+
 Zasady:
-- Odpowiedź MUSI być zgodna ze schematem JSON (strict).
-- Jeśli czegoś nie widać/nie da się ocenić, używaj "unknown". Nie zgaduj.
+- Jeśli czegoś nie widać/nie da się ocenić, użyj "unknown". Nie zgaduj.
 - rationale: jedno zdanie po polsku (max 20 słów).
 
 Osie klasyfikacji:
@@ -57,18 +70,11 @@ ANGLE — kąt komunikacyjny:
 - education: "jak wybrać materac", poradnikowe
 - unknown
 
-TONE — ton emocjonalny:
-- energetic, calm, authoritative, friendly, urgent, aspirational, unknown
+TONE: energetic, calm, authoritative, friendly, urgent, aspirational, unknown
+COLOR_PALETTE: neutral (beż/szary), warm (ciepłe), cool (zimne niebieskie/zielone), bold (mocne kontrasty), monochrome, unknown
+PRODUCT_FOCUS: bed, mattress, bedding, pillow, accessory, bedroom-scene, logo-only, unknown
 
-COLOR_PALETTE:
-- neutral (beż/szary), warm (ciepłe), cool (zimne niebieskie/zielone),
-  bold (mocne kontrasty), monochrome (jednobarwne), unknown
-
-PRODUCT_FOCUS — główny bohater kadru:
-- bed, mattress, bedding, pillow, accessory, bedroom-scene, logo-only, unknown
-
-Booleany: has_person (czy widać człowieka), has_text_overlay (czy jest nałożony tekst),
-has_pricing (czy widać cenę lub % rabatu).`;
+Booleany: has_person (czy widać człowieka), has_text_overlay (czy jest nałożony tekst), has_pricing (czy widać cenę lub % rabatu).`;
 
 let cachedClient: Anthropic | null = null;
 
@@ -87,26 +93,29 @@ export interface CreativeTagInput {
   format?: string | null;  // 'video' | 'image' | ...
 }
 
-// JSON Schema do structured outputs — strict enum enforcement
-const INSIGHTS_SCHEMA = {
-  type: 'object',
-  additionalProperties: false,
-  required: [
-    'style', 'angle', 'tone', 'color_palette', 'product_focus',
-    'has_person', 'has_text_overlay', 'has_pricing', 'rationale',
-  ],
-  properties: {
-    style: { type: 'string', enum: CREATIVE_TAG_TAXONOMY.style as unknown as string[] },
-    angle: { type: 'string', enum: CREATIVE_TAG_TAXONOMY.angle as unknown as string[] },
-    tone: { type: 'string', enum: CREATIVE_TAG_TAXONOMY.tone as unknown as string[] },
-    color_palette: { type: 'string', enum: CREATIVE_TAG_TAXONOMY.color_palette as unknown as string[] },
-    product_focus: { type: 'string', enum: CREATIVE_TAG_TAXONOMY.product_focus as unknown as string[] },
-    has_person: { type: 'boolean' },
-    has_text_overlay: { type: 'boolean' },
-    has_pricing: { type: 'boolean' },
-    rationale: { type: 'string' },
-  },
-};
+// Post-parse walidator — wpadający JSON wrzucamy przez ten filtr zanim
+// zapiszemy do DB. Nieznane enumy → 'unknown', nie-boolean → false.
+function sanitizeInsights(raw: Record<string, unknown>): CreativeAIInsights {
+  const pick = <T extends readonly string[]>(
+    value: unknown,
+    allowed: T
+  ): T[number] => {
+    return typeof value === 'string' && (allowed as readonly string[]).includes(value)
+      ? (value as T[number])
+      : ('unknown' as T[number]);
+  };
+  return {
+    style: pick(raw.style, CREATIVE_TAG_TAXONOMY.style),
+    angle: pick(raw.angle, CREATIVE_TAG_TAXONOMY.angle),
+    tone: pick(raw.tone, CREATIVE_TAG_TAXONOMY.tone),
+    color_palette: pick(raw.color_palette, CREATIVE_TAG_TAXONOMY.color_palette),
+    product_focus: pick(raw.product_focus, CREATIVE_TAG_TAXONOMY.product_focus),
+    has_person: raw.has_person === true,
+    has_text_overlay: raw.has_text_overlay === true,
+    has_pricing: raw.has_pricing === true,
+    rationale: typeof raw.rationale === 'string' ? raw.rationale.slice(0, 300) : '',
+  };
+}
 
 // Pobiera obrazek z Meta CDN, konwertuje na base64 dla vision API.
 // Meta thumbnail_url wygasają po pewnym czasie; złap 404/403 i zwróć null.
@@ -145,13 +154,6 @@ export async function classifyCreative(input: CreativeTagInput): Promise<Creativ
         cache_control: { type: 'ephemeral' },
       },
     ],
-    output_config: {
-      format: {
-        type: 'json_schema',
-        name: 'creative_insights',
-        schema: INSIGHTS_SCHEMA,
-      },
-    },
     messages: [
       {
         role: 'user',
@@ -166,15 +168,21 @@ export async function classifyCreative(input: CreativeTagInput): Promise<Creativ
     ],
   });
 
-  // Parse structured output — response.content ma text block z JSON
+  // Model został zinstruowany w system prompcie żeby zwracać WYŁĄCZNIE czysty JSON.
+  // Bierzemy pierwszy text block i próbujemy sparsować. Jeśli model wbrew instrukcji
+  // owinął JSON w ```json ... ```, ekstraktujemy przez match.
   const textBlock = response.content.find(b => b.type === 'text');
   if (!textBlock || textBlock.type !== 'text') return null;
 
+  let jsonStr = textBlock.text.trim();
+  const fenceMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fenceMatch) jsonStr = fenceMatch[1].trim();
+
   try {
-    const parsed = JSON.parse(textBlock.text) as CreativeAIInsights;
-    return parsed;
+    const parsed = JSON.parse(jsonStr) as Record<string, unknown>;
+    return sanitizeInsights(parsed);
   } catch (err) {
-    console.warn('classifyCreative JSON parse failed:', err, textBlock.text.slice(0, 200));
+    console.warn('classifyCreative JSON parse failed:', err, jsonStr.slice(0, 200));
     return null;
   }
 }
