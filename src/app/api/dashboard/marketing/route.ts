@@ -23,6 +23,15 @@ export async function GET(request: NextRequest) {
     const { data: adspendData, error } = await query.limit(50000);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
+    const { data: lastSyncRow } = await getSupabaseAdmin()
+      .from('etl_log')
+      .select('finished_at, rows_processed')
+      .eq('source', 'meta_ads')
+      .eq('status', 'success')
+      .order('finished_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
     // KPIs
     const totals = (adspendData || []).reduce(
       (acc, row) => {
@@ -131,6 +140,9 @@ export async function GET(request: NextRequest) {
         topByRoas,
       },
       campaignTable,
+      lastSync: lastSyncRow
+        ? { at: lastSyncRow.finished_at, rows: lastSyncRow.rows_processed }
+        : null,
     });
   } catch (err) {
     console.error('Marketing API error:', err);

@@ -26,6 +26,7 @@ interface MarketingData {
     spendByPlatform: Array<{ name: string; value: number }>;
     topByRoas: Array<{ name: string; value: number }>;
   };
+  lastSync: { at: string; rows: number } | null;
   campaignTable: Array<{
     campaign_id: string;
     campaign_name: string;
@@ -102,7 +103,7 @@ export default function MarketingPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold text-zinc-100">Marketing Performance</h1>
-        <SyncMetaButton />
+        <SyncMetaButton lastSync={data.lastSync} />
       </div>
 
       {/* KPI Cards */}
@@ -160,7 +161,18 @@ export default function MarketingPage() {
   );
 }
 
-function SyncMetaButton() {
+function formatRelativeTime(iso: string): string {
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 1) return 'przed chwilą';
+  if (mins < 60) return `${mins} min temu`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h temu`;
+  const days = Math.floor(hours / 24);
+  return `${days}d temu`;
+}
+
+function SyncMetaButton({ lastSync }: { lastSync: { at: string; rows: number } | null }) {
   const [syncing, setSyncing] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
 
@@ -183,12 +195,16 @@ function SyncMetaButton() {
 
   return (
     <div className="flex items-center gap-3">
-      {result && (
+      {result ? (
         <span className={`text-xs flex items-center gap-1 ${result.ok ? 'text-emerald-400' : 'text-red-400'}`}>
           {result.ok ? <CheckCircle size={14} /> : <XCircle size={14} />}
           {result.message}
         </span>
-      )}
+      ) : lastSync ? (
+        <span className="text-xs text-zinc-500">
+          Meta: {formatRelativeTime(lastSync.at)}
+        </span>
+      ) : null}
       <button onClick={handleSync} disabled={syncing}
         className="flex items-center gap-2 px-3 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-sm rounded-lg transition-colors disabled:opacity-50">
         {syncing ? <RefreshCw size={14} className="animate-spin" /> : <RefreshCw size={14} />}

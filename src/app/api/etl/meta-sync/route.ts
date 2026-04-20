@@ -17,7 +17,9 @@ export async function GET(request: NextRequest) {
   if (!isVercelCron && cronSecret && authHeader !== `Bearer ${cronSecret}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
-  return syncMeta(7);
+  // 28-day window covers Meta's attribution lookback so late-reported
+  // conversions retroactively update historical rows.
+  return syncMeta(28);
 }
 
 async function syncMeta(daysBack: number) {

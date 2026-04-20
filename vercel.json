@@ -10,7 +10,7 @@
     },
     {
       "path": "/api/etl/meta-sync",
-      "schedule": "0 5 * * *"
+      "schedule": "0 */4 * * *"
     }
   ]
 }
