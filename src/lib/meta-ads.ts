@@ -1,15 +1,29 @@
 const META_API_VERSION = 'v21.0';
 const META_BASE_URL = `https://graph.facebook.com/${META_API_VERSION}`;
 
-function getAccessToken(): string {
-  const token = process.env.META_ACCESS_TOKEN;
-  if (!token) throw new Error('META_ACCESS_TOKEN env var is not set');
-  return token;
+// Każda marka ma osobną apkę Meta w swoim portfolio biznesowym → token per ad account.
+// META_AD_ACCOUNTS format: "act_123:EAA_token_A,act_456:EAA_token_B,act_789:EAA_token_C"
+function parseAccountEntries(): Array<{ accountId: string; token: string }> {
+  const raw = process.env.META_AD_ACCOUNTS ?? '';
+  const entries: Array<{ accountId: string; token: string }> = [];
+  for (const chunk of raw.split(',').map(s => s.trim()).filter(Boolean)) {
+    const colonAt = chunk.indexOf(':');
+    if (colonAt < 0) continue;
+    const accountId = chunk.slice(0, colonAt).trim();
+    const token = chunk.slice(colonAt + 1).trim();
+    if (accountId && token) entries.push({ accountId, token });
+  }
+  return entries;
+}
+
+function getAccessTokenFor(accountId: string): string {
+  const entry = parseAccountEntries().find(e => e.accountId === accountId);
+  if (!entry) throw new Error(`META_AD_ACCOUNTS: no token configured for ${accountId}`);
+  return entry.token;
 }
 
 export function getAdAccountIds(): string[] {
-  const ids = process.env.META_AD_ACCOUNT_IDS || '';
-  return ids.split(',').map(s => s.trim()).filter(Boolean);
+  return parseAccountEntries().map(e => e.accountId);
 }
 
 export interface MetaInsightRow {
@@ -30,7 +44,7 @@ export interface MetaInsightRow {
 }
 
 export async function fetchAccountCurrency(accountId: string): Promise<string> {
-  const token = getAccessToken();
+  const token = getAccessTokenFor(accountId);
   const res = await fetch(`${META_BASE_URL}/${accountId}?fields=currency&access_token=${token}`);
   if (!res.ok) {
     const text = await res.text();
@@ -45,7 +59,7 @@ export async function fetchCampaignInsights(
   dateFrom: string,
   dateTo: string
 ): Promise<MetaInsightRow[]> {
-  const token = getAccessToken();
+  const token = getAccessTokenFor(accountId);
   const currency = await fetchAccountCurrency(accountId);
 
   const fields = [
@@ -171,7 +185,7 @@ export async function fetchAdInsights(
   dateFrom: string,
   dateTo: string
 ): Promise<MetaAdInsightRow[]> {
-  const token = getAccessToken();
+  const token = getAccessTokenFor(accountId);
   const currency = await fetchAccountCurrency(accountId);
 
   // Uwaga: fields z wideo breakdownami są drogie pod kątem CPU weighted rate limit,
@@ -246,7 +260,7 @@ export async function fetchCreativeMeta(
   creativeId: string,
   accountId: string
 ): Promise<MetaCreativeMeta | null> {
-  const token = getAccessToken();
+  const token = getAccessTokenFor(accountId);
   const fields = [
     'id', 'name', 'title', 'body',
     'call_to_action_type',

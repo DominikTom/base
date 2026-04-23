@@ -51,7 +51,7 @@ async function syncAdsRange(dateFromStr: string, dateToStr: string) {
     const accountIds = getAdAccountIds();
 
     if (accountIds.length === 0) {
-      return NextResponse.json({ error: 'META_AD_ACCOUNT_IDS not configured' }, { status: 500 });
+      return NextResponse.json({ error: 'META_AD_ACCOUNTS not configured' }, { status: 500 });
     }
 
     const { data: etlLog } = await db
