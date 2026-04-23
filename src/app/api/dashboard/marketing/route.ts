@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabase';
+import { SHOP_TO_META_ACCOUNT } from '@/lib/meta-ads';
 
 export async function GET(request: NextRequest) {
   try {
@@ -7,6 +8,11 @@ export async function GET(request: NextRequest) {
     const dateFrom = searchParams.get('date_from') || '2025-01-01';
     const dateTo = searchParams.get('date_to') || new Date().toISOString().split('T')[0];
     const platform = searchParams.get('platform') || 'all';
+    const shop = searchParams.get('shop') || 'all';
+
+    // Shop → account_id. Sklepy bez kampanii Meta (amazon.de, allegro.pl, kaufland.de,
+    // showroom) trafiają tu jako 'NONE' → 0 wierszy, bo tak jest semantycznie poprawnie.
+    const accountIdFilter = shop === 'all' ? null : (SHOP_TO_META_ACCOUNT[shop] ?? 'NONE');
 
     // Fetch ad spend data (WARM from DB) — paginated to defeat PostgREST's
     // default 1000-row server-side cap that .limit() can't override.
@@ -24,6 +30,7 @@ export async function GET(request: NextRequest) {
         .order('date', { ascending: true })
         .range(offset, offset + PAGE_SIZE - 1);
       if (platform !== 'all') pageQuery = pageQuery.eq('platform', platform);
+      if (accountIdFilter) pageQuery = pageQuery.eq('account_id', accountIdFilter);
       const { data: page, error } = await pageQuery;
       if (error) return NextResponse.json({ error: error.message }, { status: 500 });
       if (!page || page.length === 0) break;

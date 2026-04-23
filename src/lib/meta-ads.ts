@@ -1,6 +1,14 @@
 const META_API_VERSION = 'v21.0';
 const META_BASE_URL = `https://graph.facebook.com/${META_API_VERSION}`;
 
+// Mapowanie Shop label → Meta Ad Account ID (do filtrowania dashboardów per marka).
+// Przy dodaniu nowej marki: dodaj wpis tutaj + parę act_id:token do META_AD_ACCOUNTS.
+export const SHOP_TO_META_ACCOUNT: Record<string, string> = {
+  'mybed.pl': 'act_1681802382204753',
+  'mybed.de': 'act_637792865917248',
+  'mittohome.pl': 'act_797212915921530',
+};
+
 // Każda marka ma osobną apkę Meta w swoim portfolio biznesowym → token per ad account.
 // META_AD_ACCOUNTS format: "act_123:EAA_token_A,act_456:EAA_token_B,act_789:EAA_token_C"
 function parseAccountEntries(): Array<{ accountId: string; token: string }> {
