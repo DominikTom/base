@@ -57,6 +57,7 @@ export default function MarketingPage() {
         const params = new URLSearchParams({
           date_from: filters.dateFrom,
           date_to: filters.dateTo,
+          shop: filters.shop,
         });
         const res = await fetch(`/api/dashboard/marketing?${params}`);
         const json = await res.json();
