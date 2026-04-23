@@ -180,6 +180,27 @@ function extractVideoMetric(arr: Array<{ action_type: string; value?: string }> 
   return arr?.[0]?.value ? parseFloat(arr[0].value) : 0;
 }
 
+async function fetchAdCreativeMap(
+  accountId: string,
+  token: string
+): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  let url: string | null = `${META_BASE_URL}/${accountId}/ads?fields=id,creative{id}&limit=500&access_token=${token}` as string | null;
+  while (url) {
+    const res: Response = await fetch(url);
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`Meta /ads list error for ${accountId}: ${text}`);
+    }
+    const json = await res.json();
+    for (const ad of json.data || []) {
+      if (ad.id && ad.creative?.id) map.set(ad.id, ad.creative.id);
+    }
+    url = json.paging?.next || null;
+  }
+  return map;
+}
+
 export async function fetchAdInsights(
   accountId: string,
   dateFrom: string,
@@ -188,13 +209,16 @@ export async function fetchAdInsights(
   const token = getAccessTokenFor(accountId);
   const currency = await fetchAccountCurrency(accountId);
 
+  // Meta Insights API nie akceptuje `creative{id}` w fields — `creative` jest polem
+  // na /ads, nie na /insights. Pobieramy więc mapę ad_id → creative_id osobnym callem.
+  const creativeMap = await fetchAdCreativeMap(accountId, token);
+
   // Uwaga: fields z wideo breakdownami są drogie pod kątem CPU weighted rate limit,
   // ale Meta w jednym call'u potrafi je zwrócić razem z insights — bez dodatkowych tripów.
   const fields = [
     'ad_id', 'ad_name',
     'adset_id', 'adset_name',
     'campaign_id', 'campaign_name',
-    'creative{id}',
     'impressions', 'reach', 'clicks', 'spend',
     'cpc', 'cpm', 'ctr', 'frequency',
     'actions', 'action_values',
@@ -229,7 +253,7 @@ export async function fetchAdInsights(
         adsetName: row.adset_name || '',
         adId: row.ad_id || '',
         adName: row.ad_name || '',
-        creativeId: row.creative?.id || null,
+        creativeId: creativeMap.get(row.ad_id) || null,
         impressions: parseInt(row.impressions || '0'),
         reach: parseInt(row.reach || '0'),
         clicks: parseInt(row.clicks || '0'),
