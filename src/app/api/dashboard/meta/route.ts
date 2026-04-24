@@ -75,6 +75,12 @@ export async function GET(request: NextRequest) {
       conversions: number;
       conversion_value: number;
       video_play_3s: number;
+      video_p25: number;
+      video_p50: number;
+      video_p75: number;
+      video_p95: number;
+      video_p100: number;
+      thruplays: number;
     };
     const byCreative = new Map<string, CreativeAgg>();
     for (const r of adRows) {
@@ -83,6 +89,7 @@ export async function GET(request: NextRequest) {
       const cur = byCreative.get(cid) || {
         creative_id: cid, spend: 0, impressions: 0, clicks: 0,
         conversions: 0, conversion_value: 0, video_play_3s: 0,
+        video_p25: 0, video_p50: 0, video_p75: 0, video_p95: 0, video_p100: 0, thruplays: 0,
       };
       cur.spend += Number(r.spend) || 0;
       cur.impressions += Number(r.impressions) || 0;
@@ -90,6 +97,12 @@ export async function GET(request: NextRequest) {
       cur.conversions += Number(r.conversions) || 0;
       cur.conversion_value += Number(r.conversion_value) || 0;
       cur.video_play_3s += Number(r.video_play_3s) || 0;
+      cur.video_p25 += Number(r.video_p25_watched) || 0;
+      cur.video_p50 += Number(r.video_p50_watched) || 0;
+      cur.video_p75 += Number(r.video_p75_watched) || 0;
+      cur.video_p95 += Number(r.video_p95_watched) || 0;
+      cur.video_p100 += Number(r.video_p100_watched) || 0;
+      cur.thruplays += Number(r.thruplays) || 0;
       byCreative.set(cid, cur);
     }
 
@@ -103,7 +116,7 @@ export async function GET(request: NextRequest) {
     const topIds = topByCrea.map(c => c.creative_id);
     const metaRes = topIds.length > 0
       ? await db.from('dim_creatives')
-          .select('creative_id, title, body, thumbnail_url, format, ai_tags, ai_insights, first_seen_at, account_id')
+          .select('creative_id, title, body, thumbnail_url, image_url, permalink_url, format, ai_tags, ai_insights, first_seen_at, account_id, video_id')
           .in('creative_id', topIds)
       : { data: [] };
     const metaMap = new Map(
@@ -112,14 +125,19 @@ export async function GET(request: NextRequest) {
 
     const topCreatives = topByCrea.map(c => {
       const m = metaMap.get(c.creative_id) || {};
-      const insights = m.ai_insights as Record<string, unknown> | undefined;
+      const insights = m.ai_insights as Record<string, unknown> | null | undefined;
+      const videoViews = c.video_play_3s || 0;
       return {
         creative_id: c.creative_id,
         title: (m.title as string) || null,
+        body: (m.body as string) || null,
         thumbnail_url: (m.thumbnail_url as string) || null,
+        image_url: (m.image_url as string) || null,
+        permalink_url: (m.permalink_url as string) || null,
+        video_id: (m.video_id as string) || null,
         format: (m.format as string) || 'unknown',
         ai_tags: (m.ai_tags as string[]) || [],
-        ai_rationale: (insights?.rationale as string) || null,
+        ai_insights: insights || null,
         first_seen_at: (m.first_seen_at as string) || null,
         account_id: (m.account_id as string) || null,
         spend: Math.round(c.spend),
@@ -131,35 +149,62 @@ export async function GET(request: NextRequest) {
         ctr: c.impressions > 0 ? Math.round((c.clicks / c.impressions) * 10000) / 100 : 0,
         hook_rate: c.impressions > 0 ? Math.round((c.video_play_3s / c.impressions) * 10000) / 100 : 0,
         cpa: c.conversions > 0 ? Math.round((c.spend / c.conversions) * 100) / 100 : 0,
+        video_retention: videoViews > 0 ? {
+          p25: Math.round((c.video_p25 / videoViews) * 1000) / 10,
+          p50: Math.round((c.video_p50 / videoViews) * 1000) / 10,
+          p75: Math.round((c.video_p75 / videoViews) * 1000) / 10,
+          p95: Math.round((c.video_p95 / videoViews) * 1000) / 10,
+          p100: Math.round((c.video_p100 / videoViews) * 1000) / 10,
+        } : null,
       };
     });
 
     // Recently launched — kreacje z pierwszym pokazaniem w ostatnich 14 dniach
+    // FILTRUJE po account_id tak samo jak fact query, żeby przełącznik sklepu działał.
     const fourteenDaysAgo = new Date();
     fourteenDaysAgo.setDate(fourteenDaysAgo.getDate() - 14);
-    const { data: recent } = await db
+    let recentQuery = db
       .from('dim_creatives')
-      .select('creative_id, title, thumbnail_url, format, first_seen_at, ai_tags, account_id')
+      .select('creative_id, title, body, thumbnail_url, image_url, permalink_url, format, first_seen_at, ai_tags, ai_insights, account_id, video_id')
       .gte('first_seen_at', fourteenDaysAgo.toISOString())
       .order('first_seen_at', { ascending: false })
       .limit(12);
+    if (accountIdFilter) recentQuery = recentQuery.eq('account_id', accountIdFilter);
+    const { data: recent } = await recentQuery;
 
     const recentlyLaunched = (recent || []).map(r => {
       const c = byCreative.get(r.creative_id as string);
+      const insights = r.ai_insights as Record<string, unknown> | null | undefined;
+      const videoViews = c?.video_play_3s || 0;
       return {
         creative_id: r.creative_id,
         title: r.title,
+        body: r.body,
         thumbnail_url: r.thumbnail_url,
+        image_url: r.image_url,
+        permalink_url: r.permalink_url,
+        video_id: r.video_id,
         format: r.format,
         first_seen_at: r.first_seen_at,
         ai_tags: r.ai_tags || [],
+        ai_insights: insights || null,
         account_id: r.account_id,
         spend: c ? Math.round(c.spend) : 0,
         impressions: c?.impressions || 0,
         clicks: c?.clicks || 0,
         conversions: c?.conversions || 0,
+        conversion_value: c ? Math.round(c.conversion_value) : 0,
         roas: c && c.spend > 0 ? Math.round((c.conversion_value / c.spend) * 100) / 100 : 0,
         ctr: c && c.impressions > 0 ? Math.round((c.clicks / c.impressions) * 10000) / 100 : 0,
+        hook_rate: c && c.impressions > 0 ? Math.round((c.video_play_3s / c.impressions) * 10000) / 100 : 0,
+        cpa: c && c.conversions > 0 ? Math.round((c.spend / c.conversions) * 100) / 100 : 0,
+        video_retention: c && videoViews > 0 ? {
+          p25: Math.round((c.video_p25 / videoViews) * 1000) / 10,
+          p50: Math.round((c.video_p50 / videoViews) * 1000) / 10,
+          p75: Math.round((c.video_p75 / videoViews) * 1000) / 10,
+          p95: Math.round((c.video_p95 / videoViews) * 1000) / 10,
+          p100: Math.round((c.video_p100 / videoViews) * 1000) / 10,
+        } : null,
       };
     });
 

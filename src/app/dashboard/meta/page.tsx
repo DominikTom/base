@@ -6,6 +6,7 @@ import { KpiCard } from '@/components/ui/kpi-card';
 import { ChartCard } from '@/components/charts/chart-card';
 import { formatCurrency, formatNumber } from '@/lib/utils';
 import { CreativeCard, type CreativeCardData } from '@/components/meta/creative-card';
+import { CreativeDetailSheet } from '@/components/meta/creative-detail-sheet';
 import {
   DollarSign, Target, TrendingUp, MousePointerClick, Percent,
   Sparkles, Film, CheckCircle2, Clock, AlertCircle,
@@ -43,6 +44,7 @@ export default function MetaPage() {
   const [data, setData] = useState<MetaDashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [selected, setSelected] = useState<CreativeCardData | null>(null);
 
   useEffect(() => {
     async function fetchData() {
@@ -153,11 +155,14 @@ export default function MetaPage() {
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
             {data.topCreatives.map(c => (
-              <CreativeCard key={c.creative_id} data={c} />
+              <CreativeCard key={c.creative_id} data={c} onClick={() => setSelected(c)} />
             ))}
           </div>
         )}
       </ChartCard>
+
+      {/* Detail panel */}
+      <CreativeDetailSheet creative={selected} onClose={() => setSelected(null)} />
 
       {/* Recently launched */}
       {data.recentlyLaunched.length > 0 && (
@@ -167,7 +172,7 @@ export default function MetaPage() {
         >
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
             {data.recentlyLaunched.map(c => (
-              <CreativeCard key={c.creative_id} data={c} />
+              <CreativeCard key={c.creative_id} data={c} onClick={() => setSelected(c)} />
             ))}
           </div>
         </ChartCard>

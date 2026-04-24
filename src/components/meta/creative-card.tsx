@@ -4,22 +4,37 @@ import { useState } from 'react';
 import { formatCurrency, formatNumber } from '@/lib/utils';
 import { Play, Image as ImageIcon, Layers, HelpCircle } from 'lucide-react';
 
+export interface VideoRetention {
+  p25: number;
+  p50: number;
+  p75: number;
+  p95: number;
+  p100: number;
+}
+
 export interface CreativeCardData {
   creative_id: string;
   title: string | null;
+  body?: string | null;
   thumbnail_url: string | null;
+  image_url?: string | null;        // full-res (preferred) — low-res fallback: thumbnail_url
+  permalink_url?: string | null;    // link do postu na FB, "otwórz w Meta Ad Library"
+  video_id?: string | null;
   format: string;
   ai_tags: string[];
-  ai_rationale?: string | null;
+  ai_insights?: Record<string, unknown> | null;
   spend: number;
   impressions: number;
   clicks: number;
   conversions: number;
+  conversion_value?: number;
   roas: number;
   ctr: number;
   hook_rate?: number;
   cpa?: number;
   first_seen_at?: string | null;
+  account_id?: string | null;
+  video_retention?: VideoRetention | null;
 }
 
 function FormatBadge({ format }: { format: string }) {
@@ -50,6 +65,11 @@ function formatDaysAgo(iso: string | null | undefined): string | null {
 }
 
 export function CreativeCard({ data, onClick }: { data: CreativeCardData; onClick?: () => void }) {
+  // Meta zwraca thumbnail_url w 64×64 — używamy image_url jeśli dostępny (full-res),
+  // z fallbackiem na thumbnail_url gdy image_url jest null/empty (typowo dla video).
+  const previewUrl = (data.image_url && data.image_url.length > 0)
+    ? data.image_url
+    : data.thumbnail_url;
   const [imgError, setImgError] = useState(false);
   const roasColor =
     data.roas >= 3 ? 'text-emerald-400' :
@@ -63,10 +83,10 @@ export function CreativeCard({ data, onClick }: { data: CreativeCardData; onClic
     >
       {/* Thumbnail */}
       <div className="relative aspect-[4/5] bg-zinc-950 overflow-hidden">
-        {data.thumbnail_url && !imgError ? (
+        {previewUrl && !imgError ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={data.thumbnail_url}
+            src={previewUrl}
             alt={data.title || 'Creative'}
             loading="lazy"
             onError={() => setImgError(true)}
