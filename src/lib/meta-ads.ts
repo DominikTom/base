@@ -319,6 +319,28 @@ export async function fetchCreativeMeta(
   else if (data.asset_feed_spec?.images && data.asset_feed_spec.images.length > 1) format = 'carousel';
   else if (data.image_url || data.thumbnail_url) format = 'image';
 
+  // HD thumbnail override: AdCreative.thumbnail_url jest 64×64.
+  // Dla wideo Meta ma HD preview przez /{video_id}?fields=picture — hotlinkowalny URL.
+  let hdThumbnail: string | null = data.thumbnail_url || null;
+  if (data.video_id) {
+    try {
+      const vidRes = await fetch(
+        `${META_BASE_URL}/${data.video_id}?fields=picture&access_token=${encodeURIComponent(token)}`
+      );
+      if (vidRes.ok) {
+        const vidData = await vidRes.json();
+        if (vidData.picture && typeof vidData.picture === 'string') {
+          hdThumbnail = vidData.picture;
+        }
+      }
+    } catch {
+      // Non-fatal — zachowujemy low-res thumbnail jako fallback.
+    }
+  } else if (data.image_url) {
+    // Dla static kreacji image_url JEST HD — użyj jako thumbnail dla spójności.
+    hdThumbnail = data.image_url;
+  }
+
   // Auto-tags — deterministyczne z API, nie AI
   const autoTags: string[] = [];
   if (format !== 'unknown') autoTags.push(format);
@@ -330,7 +352,7 @@ export async function fetchCreativeMeta(
     title: data.title || data.name || null,
     body: data.body || null,
     callToActionType: data.call_to_action_type || null,
-    thumbnailUrl: data.thumbnail_url || null,
+    thumbnailUrl: hdThumbnail,
     imageUrl: data.image_url || null,
     videoId: data.video_id || null,
     permalinkUrl: data.instagram_permalink_url || data.effective_object_story_id || null,

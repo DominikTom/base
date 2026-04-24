@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { X, Play, Image as ImageIcon, Layers, ExternalLink, Sparkles, Loader2 } from 'lucide-react';
+import { useEffect } from 'react';
+import { X, Play, Image as ImageIcon, Layers, ExternalLink, Sparkles } from 'lucide-react';
 import { formatCurrency, formatNumber } from '@/lib/utils';
 import type { CreativeCardData, VideoRetention } from './creative-card';
 
@@ -80,49 +80,11 @@ export function CreativeDetailSheet({
     };
   }, [creative, onClose]);
 
-  // Pobierz oficjalny Meta Graph preview iframe (Ad Library format).
-  // Działa dla każdego formatu — video, image, carousel — bo to Meta renderuje.
-  const [iframeUrl, setIframeUrl] = useState<string | null>(null);
-  const [iframeError, setIframeError] = useState(false);
-  const [iframeLoading, setIframeLoading] = useState(false);
-
-  useEffect(() => {
-    if (!creative) {
-      setIframeUrl(null);
-      setIframeError(false);
-      return;
-    }
-    let cancelled = false;
-    setIframeUrl(null);
-    setIframeError(false);
-    setIframeLoading(true);
-    fetch(`/api/meta/creative-preview/${creative.creative_id}`)
-      .then(r => r.json())
-      .then(json => {
-        if (cancelled) return;
-        if (json.iframeUrl) {
-          setIframeUrl(json.iframeUrl);
-        } else {
-          setIframeError(true);
-        }
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setIframeError(true);
-      })
-      .finally(() => {
-        if (!cancelled) setIframeLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [creative?.creative_id]);
-
   if (!creative) return null;
 
-  const fallbackUrl = (creative.image_url && creative.image_url.length > 0)
-    ? creative.image_url
-    : creative.thumbnail_url;
+  // HD preview URL: thumbnail_url jest już HD po refresh-thumbnails
+  // (dla video = /{video_id}?fields=picture, dla static = image_url).
+  const previewUrl = creative.thumbnail_url || creative.image_url;
 
   const insights = creative.ai_insights as Record<string, unknown> | null;
   const rationale = insights?.rationale as string | undefined;
@@ -158,28 +120,14 @@ export function CreativeDetailSheet({
         </div>
 
         <div className="px-5 py-5 space-y-6">
-          {/* Large preview — Meta Graph API iframe (Ad Library format).
-              Iframe renderuje się tak jak reklama wygląda w FB/IG.
-              Fallback: static image jeśli iframe się nie udało załadować. */}
+          {/* Large preview — HD thumbnail z Meta (/video_id/picture dla wideo). */}
           <div className="bg-zinc-900 rounded-xl overflow-hidden border border-zinc-800">
-            {iframeLoading ? (
-              <div className="aspect-[9/16] max-h-[600px] flex items-center justify-center text-zinc-500">
-                <Loader2 size={28} className="animate-spin" />
-              </div>
-            ) : iframeUrl && !iframeError ? (
-              <iframe
-                src={iframeUrl}
-                title={creative.title || 'Creative preview'}
-                className="w-full h-[600px] border-0 bg-white"
-                sandbox="allow-scripts allow-same-origin allow-popups"
-                onError={() => setIframeError(true)}
-              />
-            ) : fallbackUrl ? (
+            {previewUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
-                src={fallbackUrl}
+                src={previewUrl}
                 alt={creative.title || 'Creative'}
-                className="w-full aspect-[4/5] object-contain bg-zinc-950"
+                className="w-full max-h-[600px] object-contain bg-zinc-950"
               />
             ) : (
               <div className="aspect-[4/5] flex items-center justify-center text-zinc-700">
