@@ -59,6 +59,36 @@ function formatInsightValue(key: string, v: unknown): string {
   return String(v);
 }
 
+// Konwertuje permalink_url do oficjalnego embed URL Meta.
+// - Instagram: https://www.instagram.com/p/{shortcode}/ → .../embed/
+// - Facebook: effective_object_story_id "{page_id}_{post_id}" →
+//   https://www.facebook.com/plugins/post.php?href=...
+function buildEmbedUrl(permalink: string | null): { url: string; platform: 'fb' | 'ig' } | null {
+  if (!permalink) return null;
+
+  // Instagram permalink URL
+  const igMatch = permalink.match(/instagram\.com\/(?:p|reel)\/([A-Za-z0-9_-]+)/);
+  if (igMatch) {
+    return {
+      url: `https://www.instagram.com/p/${igMatch[1]}/embed/captioned/`,
+      platform: 'ig',
+    };
+  }
+
+  // Facebook effective_object_story_id: "{page_id}_{post_id}"
+  const fbMatch = permalink.match(/^(\d+)_(\d+)$/);
+  if (fbMatch) {
+    const [, pageId, postId] = fbMatch;
+    const postUrl = `https://www.facebook.com/${pageId}/posts/${postId}`;
+    return {
+      url: `https://www.facebook.com/plugins/post.php?href=${encodeURIComponent(postUrl)}&show_text=true&width=460`,
+      platform: 'fb',
+    };
+  }
+
+  return null;
+}
+
 export function CreativeDetailSheet({
   creative,
   onClose,
@@ -85,6 +115,12 @@ export function CreativeDetailSheet({
   // HD preview URL: thumbnail_url jest już HD po refresh-thumbnails
   // (dla video = /{video_id}?fields=picture, dla static = image_url).
   const previewUrl = creative.thumbnail_url || creative.image_url;
+
+  // Facebook Post / Instagram embed — publiczny oficjalny plugin Meta,
+  // działa bez logowania, renderuje kreację z tekstem i CTA tak jak wygląda
+  // w feedzie. permalink_url zawiera albo IG URL, albo FB effective_object_story_id
+  // w formacie {page_id}_{post_id}.
+  const embedUrl = buildEmbedUrl(creative.permalink_url || null);
 
   const insights = creative.ai_insights as Record<string, unknown> | null;
   const rationale = insights?.rationale as string | undefined;
@@ -120,9 +156,22 @@ export function CreativeDetailSheet({
         </div>
 
         <div className="px-5 py-5 space-y-6">
-          {/* Large preview — HD thumbnail z Meta (/video_id/picture dla wideo). */}
+          {/* Large preview — oficjalny Meta embed (FB Post Plugin / IG embed).
+              Renderuje reklamę z tekstem, CTA, video playerem, dokładnie jak
+              w feedzie. Działa publicznie — bez logowania. Fallback na HD
+              thumbnail (scontent.xx.fbcdn.net) gdyby permalink nie pasował. */}
           <div className="bg-zinc-900 rounded-xl overflow-hidden border border-zinc-800">
-            {previewUrl ? (
+            {embedUrl ? (
+              <iframe
+                src={embedUrl.url}
+                title={creative.title || 'Creative preview'}
+                className="w-full border-0 bg-white"
+                style={{ height: embedUrl.platform === 'ig' ? 720 : 680 }}
+                scrolling="no"
+                allow="autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share"
+                allowFullScreen
+              />
+            ) : previewUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={previewUrl}
