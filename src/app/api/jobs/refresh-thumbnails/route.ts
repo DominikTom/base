@@ -10,15 +10,14 @@ export const maxDuration = 60;
 // robienia full re-syncu fact_daily_ad_performance.
 //
 // POST ?limit=N (default 30, max 100)
-// ?only_video=1 — tylko wideo (domyślnie: wszystko)
-// ?all=1 — także te które już mają nie-pustą thumbnail (inaczej: tylko null/64-char URL)
+// Domyślnie: tylko kreacje z video_id (to tam Meta zwraca 64×64 thumbnail).
+// ?all=1 — także static (mają już image_url HD, ale dla spójności też można).
 export async function POST(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const limitParam = parseInt(searchParams.get('limit') || '30', 10);
   const limit = Number.isFinite(limitParam) && limitParam > 0 && limitParam <= 100 ? limitParam : 30;
-  const onlyVideo = searchParams.get('only_video') === '1';
   const refreshAll = searchParams.get('all') === '1';
-  return refreshThumbnails(limit, onlyVideo, refreshAll);
+  return refreshThumbnails(limit, refreshAll);
 }
 
 export async function GET(request: NextRequest) {
@@ -28,10 +27,10 @@ export async function GET(request: NextRequest) {
   if (!isVercelCron && cronSecret && authHeader !== `Bearer ${cronSecret}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
-  return refreshThumbnails(30, false, false);
+  return refreshThumbnails(30, false);
 }
 
-async function refreshThumbnails(limit: number, onlyVideo: boolean, refreshAll: boolean) {
+async function refreshThumbnails(limit: number, refreshAll: boolean) {
   try {
     const db = getSupabaseAdmin();
 
@@ -41,11 +40,10 @@ async function refreshThumbnails(limit: number, onlyVideo: boolean, refreshAll: 
       .order('last_seen_at', { ascending: false })
       .limit(limit);
 
-    if (onlyVideo) query = query.not('video_id', 'is', null);
     if (!refreshAll) {
-      // Refresh tylko te z null thumbnail albo które na pewno są low-res
-      // (stare 64×64 Meta URL-e z "thumbnail" w path).
-      query = query.or('thumbnail_url.is.null,thumbnail_url.like.%_thumbnail_%');
+      // Domyślnie: tylko wideo — to tam Meta zwraca low-res thumbnail.
+      // Static creatives mają już image_url w HD z AdCreative.
+      query = query.not('video_id', 'is', null);
     }
 
     const { data: creatives, error } = await query;
