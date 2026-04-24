@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, Suspense } from 'react';
 import { useSearchParams, useRouter, usePathname } from 'next/navigation';
 import { useDashboard } from '@/lib/dashboard-context';
 import { KpiCard } from '@/components/ui/kpi-card';
@@ -48,6 +48,15 @@ function formatRelativeTime(iso: string): string {
 }
 
 export default function MetaPage() {
+  // useSearchParams w Next 16 wymaga Suspense boundary przy prerenderingu.
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center h-96"><div className="animate-pulse text-zinc-500">Ładowanie…</div></div>}>
+      <MetaPageInner />
+    </Suspense>
+  );
+}
+
+function MetaPageInner() {
   const { filters } = useDashboard();
   const searchParams = useSearchParams();
   const router = useRouter();
