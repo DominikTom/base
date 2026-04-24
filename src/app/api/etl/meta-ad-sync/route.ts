@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabase';
 import { fetchAdInsights, fetchCreativeMeta, getAdAccountIds } from '@/lib/meta-ads';
+import { getEurPlnRates } from '@/lib/nbp';
 
 export const maxDuration = 60;
 
@@ -69,15 +70,18 @@ async function syncAdsRange(dateFromStr: string, dateToStr: string) {
 
       let totalRows = 0;
       let newCreatives = 0;
-      const EUR_TO_PLN = 4.30;
       const results: Record<string, number> = {};
 
       for (const accountId of accountIds) {
         const rows = await fetchAdInsights(accountId, dateFromStr, dateToStr);
-        const isEur = rows[0]?.currency === 'EUR';
-        const rate = isEur ? EUR_TO_PLN : 1;
+        const isEurAccount = rows[0]?.currency === 'EUR';
+        const rateByDate = isEurAccount
+          ? await getEurPlnRates(rows.map(r => r.date))
+          : new Map<string, number>();
 
-        const dbRows = rows.map(r => ({
+        const dbRows = rows.map(r => {
+          const rate = isEurAccount ? (rateByDate.get(r.date) ?? 1) : 1;
+          return {
           date: r.date,
           platform: 'meta',
           account_id: r.accountId,
@@ -109,7 +113,8 @@ async function syncAdsRange(dateFromStr: string, dateToStr: string) {
           video_p100_watched: r.videoP100,
           thruplays: r.thruplays,
           data_source: 'etl',
-        }));
+          };
+        });
 
         for (let i = 0; i < dbRows.length; i += 500) {
           const { error } = await db.from('fact_daily_ad_performance').upsert(

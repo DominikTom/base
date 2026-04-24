@@ -8,6 +8,7 @@ interface KpiCardProps {
   value: string;
   change?: number | null;
   changeLabel?: string;
+  subLabel?: string;
   icon?: React.ReactNode;
   sparkline?: number[];
   className?: string;
@@ -38,7 +39,7 @@ function MiniSparkline({ data, positive }: { data: number[]; positive: boolean }
   );
 }
 
-export function KpiCard({ title, value, change, changeLabel, icon, sparkline, className }: KpiCardProps) {
+export function KpiCard({ title, value, change, changeLabel, subLabel, icon, sparkline, className }: KpiCardProps) {
   const isPositive = (change ?? 0) >= 0;
   const isNeutral = change === null || change === undefined;
 
@@ -54,6 +55,9 @@ export function KpiCard({ title, value, change, changeLabel, icon, sparkline, cl
       <div className="flex items-end justify-between gap-4">
         <div>
           <div className="text-2xl font-bold text-zinc-100">{value}</div>
+          {subLabel && (
+            <div className="text-xs text-zinc-500 mt-0.5">{subLabel}</div>
+          )}
           {!isNeutral && (
             <div className={cn(
               'flex items-center gap-1 text-sm mt-1',

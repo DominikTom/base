@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabase';
 import { fetchCampaignInsights, getAdAccountIds } from '@/lib/meta-ads';
+import { getEurPlnRates } from '@/lib/nbp';
 
 export const maxDuration = 60;
 
@@ -76,12 +77,15 @@ async function syncMetaRange(dateFromStr: string, dateToStr: string) {
       for (const accountId of accountIds) {
         const rows = await fetchCampaignInsights(accountId, dateFromStr, dateToStr);
 
-        // EUR→PLN conversion rate (rough, should use NBP)
-        const EUR_TO_PLN = 4.30;
+        // EUR→PLN: kurs NBP z danego dnia (cofa do ostatniego roboczego przy weekendach/świętach).
+        // Pobieramy batch żeby równolegle, tylko gdy waluta konta to EUR.
+        const isEurAccount = rows[0]?.currency === 'EUR';
+        const rateByDate = isEurAccount
+          ? await getEurPlnRates(rows.map(r => r.date))
+          : new Map<string, number>();
 
         const dbRows = rows.map(r => {
-          const isEur = r.currency === 'EUR';
-          const rate = isEur ? EUR_TO_PLN : 1;
+          const rate = isEurAccount ? (rateByDate.get(r.date) ?? 1) : 1;
           return {
             date: r.date,
             platform: 'meta',
