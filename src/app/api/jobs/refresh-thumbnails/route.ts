@@ -10,15 +10,14 @@ export const maxDuration = 60;
 // → adimages hash lookup → low-res thumbnail).
 //
 // POST ?limit=N (default 30, max 100)
-// Default: TYLKO brakujące (null thumbnail_url) — typowy przypadek po deployu.
-// ?force=1 — wymusza refresh WSZYSTKICH (również tych które już mają URL)
-//            żeby podnieść jakość lub wymienić wygasłe scontent URL-e.
+// Default: refresh WSZYSTKICH (najnowsze najpierw) — podmienia low-res/expired URL-e.
+// ?only_missing=1 — tylko te z thumbnail_url IS NULL.
 export async function POST(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const limitParam = parseInt(searchParams.get('limit') || '30', 10);
   const limit = Number.isFinite(limitParam) && limitParam > 0 && limitParam <= 100 ? limitParam : 30;
-  const force = searchParams.get('force') === '1' || searchParams.get('all') === '1';
-  return refreshThumbnails(limit, force);
+  const onlyMissing = searchParams.get('only_missing') === '1';
+  return refreshThumbnails(limit, onlyMissing);
 }
 
 export async function GET(request: NextRequest) {
@@ -31,7 +30,7 @@ export async function GET(request: NextRequest) {
   return refreshThumbnails(30, false);
 }
 
-async function refreshThumbnails(limit: number, force: boolean) {
+async function refreshThumbnails(limit: number, onlyMissing: boolean) {
   try {
     const db = getSupabaseAdmin();
 
@@ -41,10 +40,11 @@ async function refreshThumbnails(limit: number, force: boolean) {
       .order('last_seen_at', { ascending: false })
       .limit(limit);
 
-    if (!force) {
-      // Domyślnie: tylko te którym brakuje thumbnail (null)
+    if (onlyMissing) {
+      // Opt-in: tylko kreacje bez URL-a
       query = query.is('thumbnail_url', null);
     }
+    // Default: refresh wszystkich — istniejące URL-e mogą być low-res lub expired.
 
     const { data: creatives, error } = await query;
     if (error) throw new Error(`fetch creatives: ${error.message}`);
