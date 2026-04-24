@@ -24,7 +24,7 @@ function parseAccountEntries(): Array<{ accountId: string; token: string }> {
   return entries;
 }
 
-function getAccessTokenFor(accountId: string): string {
+export function getAccessTokenFor(accountId: string): string {
   const entry = parseAccountEntries().find(e => e.accountId === accountId);
   if (!entry) throw new Error(`META_AD_ACCOUNTS: no token configured for ${accountId}`);
   return entry.token;
