@@ -7,6 +7,8 @@ async function fetchAllAdPerf(params: {
   dateFrom: string;
   dateTo: string;
   accountId: string | null;
+  campaignId?: string | null;
+  adsetId?: string | null;
 }): Promise<Array<Record<string, unknown>>> {
   const db = getSupabaseAdmin();
   const PAGE_SIZE = 1000;
@@ -20,6 +22,8 @@ async function fetchAllAdPerf(params: {
       .order('date', { ascending: true })
       .range(offset, offset + PAGE_SIZE - 1);
     if (params.accountId) q = q.eq('account_id', params.accountId);
+    if (params.campaignId) q = q.eq('campaign_id', params.campaignId);
+    if (params.adsetId) q = q.eq('adset_id', params.adsetId);
     const { data, error } = await q;
     if (error) throw new Error(`fact_daily_ad_performance: ${error.message}`);
     if (!data || data.length === 0) break;
@@ -30,6 +34,81 @@ async function fetchAllAdPerf(params: {
   return rows;
 }
 
+type LevelAgg = {
+  id: string;
+  name: string;
+  parent_id?: string;
+  parent_name?: string;
+  spend: number;
+  impressions: number;
+  clicks: number;
+  conversions: number;
+  conversion_value: number;
+  video_play_3s: number;
+  ads: Set<string>;
+  adsets: Set<string>;
+  creatives: Set<string>;
+};
+
+function makeEmpty(id: string, name: string, parent_id?: string, parent_name?: string): LevelAgg {
+  return {
+    id, name, parent_id, parent_name,
+    spend: 0, impressions: 0, clicks: 0, conversions: 0, conversion_value: 0, video_play_3s: 0,
+    ads: new Set(), adsets: new Set(), creatives: new Set(),
+  };
+}
+
+function buildLevelMap(
+  rows: Array<Record<string, unknown>>,
+  keyField: 'campaign_id' | 'adset_id'
+): Map<string, LevelAgg> {
+  const map = new Map<string, LevelAgg>();
+  for (const r of rows) {
+    const key = r[keyField] as string | null;
+    if (!key) continue;
+    const name = keyField === 'campaign_id'
+      ? (r.campaign_name as string | null) || key
+      : (r.adset_name as string | null) || key;
+    const cur = map.get(key) || makeEmpty(
+      key, name,
+      keyField === 'adset_id' ? (r.campaign_id as string) : undefined,
+      keyField === 'adset_id' ? (r.campaign_name as string) : undefined,
+    );
+    cur.spend += Number(r.spend) || 0;
+    cur.impressions += Number(r.impressions) || 0;
+    cur.clicks += Number(r.clicks) || 0;
+    cur.conversions += Number(r.conversions) || 0;
+    cur.conversion_value += Number(r.conversion_value) || 0;
+    cur.video_play_3s += Number(r.video_play_3s) || 0;
+    if (r.ad_id) cur.ads.add(r.ad_id as string);
+    if (r.adset_id) cur.adsets.add(r.adset_id as string);
+    if (r.creative_id) cur.creatives.add(r.creative_id as string);
+    map.set(key, cur);
+  }
+  return map;
+}
+
+function aggRow(a: LevelAgg) {
+  return {
+    id: a.id,
+    name: a.name,
+    parent_id: a.parent_id || null,
+    parent_name: a.parent_name || null,
+    spend: Math.round(a.spend),
+    impressions: a.impressions,
+    clicks: a.clicks,
+    conversions: a.conversions,
+    conversion_value: Math.round(a.conversion_value),
+    roas: a.spend > 0 ? Math.round((a.conversion_value / a.spend) * 100) / 100 : 0,
+    ctr: a.impressions > 0 ? Math.round((a.clicks / a.impressions) * 10000) / 100 : 0,
+    cpa: a.conversions > 0 ? Math.round((a.spend / a.conversions) * 100) / 100 : 0,
+    hook_rate: a.impressions > 0 ? Math.round((a.video_play_3s / a.impressions) * 10000) / 100 : 0,
+    ads_count: a.ads.size,
+    adsets_count: a.adsets.size,
+    creatives_count: a.creatives.size,
+  };
+}
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -37,10 +116,17 @@ export async function GET(request: NextRequest) {
     const dateTo = searchParams.get('date_to') || new Date().toISOString().split('T')[0];
     const shop = searchParams.get('shop') || 'all';
     const accountIdFilter = shop === 'all' ? null : (SHOP_TO_META_ACCOUNT[shop] ?? 'NONE');
+    const level = (searchParams.get('level') || 'creative') as 'campaign' | 'adset' | 'creative';
+    const campaignId = searchParams.get('campaign_id') || null;
+    const adsetId = searchParams.get('adset_id') || null;
 
     const db = getSupabaseAdmin();
 
-    const adRows = await fetchAllAdPerf({ dateFrom, dateTo, accountId: accountIdFilter });
+    const adRows = await fetchAllAdPerf({
+      dateFrom, dateTo,
+      accountId: accountIdFilter,
+      campaignId, adsetId,
+    });
 
     // KPIs — agregacja po wszystkich wierszach w zakresie
     const totals = { spend: 0, impressions: 0, clicks: 0, conversions: 0, conversionValue: 0, videoPlay3s: 0 };
@@ -226,10 +312,45 @@ export async function GET(request: NextRequest) {
       rows: countRes.count ?? 0,
     } : null;
 
+    // Level-based agregacje — campaign i adset.
+    // Creative level pozostaje w topCreatives / recentlyLaunched (bez zmian back-compat).
+    let campaigns: ReturnType<typeof aggRow>[] | null = null;
+    let adsets: ReturnType<typeof aggRow>[] | null = null;
+    if (level === 'campaign') {
+      const campaignMap = buildLevelMap(adRows, 'campaign_id');
+      campaigns = Array.from(campaignMap.values())
+        .map(aggRow)
+        .sort((a, b) => b.spend - a.spend);
+    } else if (level === 'adset') {
+      const adsetMap = buildLevelMap(adRows, 'adset_id');
+      adsets = Array.from(adsetMap.values())
+        .map(aggRow)
+        .sort((a, b) => b.spend - a.spend);
+    }
+
+    // Kontekst filtra — jeśli jest ?campaign_id lub ?adset_id, rozkoduj nazwy
+    // żeby UI mogło pokazać breadcrumb.
+    const filterContext = {
+      campaign: campaignId ? {
+        id: campaignId,
+        name: adRows.find(r => r.campaign_id === campaignId)?.campaign_name as string || campaignId,
+      } : null,
+      adset: adsetId ? {
+        id: adsetId,
+        name: adRows.find(r => r.adset_id === adsetId)?.adset_name as string || adsetId,
+        campaign_id: adRows.find(r => r.adset_id === adsetId)?.campaign_id as string || null,
+        campaign_name: adRows.find(r => r.adset_id === adsetId)?.campaign_name as string || null,
+      } : null,
+    };
+
     return NextResponse.json({
+      level,
       kpis,
       topCreatives,
       recentlyLaunched,
+      campaigns,
+      adsets,
+      filterContext,
       coverage,
       tagging: {
         completed: taggedRes.count ?? 0,

@@ -165,6 +165,7 @@ async function syncAdsRange(dateFromStr: string, dateToStr: string) {
               permalink_url: meta.permalinkUrl,
               format: meta.format,
               auto_tags: meta.autoTags,
+              is_dynamic: meta.isDynamic,
               ai_tag_status: 'pending',
               first_seen_at: new Date().toISOString(),
               last_seen_at: new Date().toISOString(),

@@ -174,6 +174,7 @@ export interface MetaCreativeMeta {
   aspectRatio: string | null;
   durationSec: number | null;
   autoTags: string[];
+  isDynamic: boolean;
 }
 
 function extractAction(arr: Array<{ action_type: string; value?: string }> | undefined, type: string): number {
@@ -314,9 +315,21 @@ export async function fetchCreativeMeta(
   }
   const data = await res.json();
 
-  // Format detection: video jeśli video_id, image jeśli image_url, carousel jeśli asset_feed_spec.
+  // DPA detection: template_data / {{...}} w body / product_set_id
+  // Meta Dynamic Product Ads są szablonami renderowanymi per user z katalogu.
+  const bodyStr: string = typeof data.body === 'string' ? data.body : '';
+  const hasTemplateVar = /\{\{[^}]+\}\}/.test(bodyStr);
+  const hasTemplateData = !!data.object_story_spec?.template_data
+    || !!data.asset_feed_spec?.asset_customization_rules;
+  const hasProductSet = !!data.product_set_id
+    || !!data.object_story_spec?.template_data?.link_data?.child_attachments
+    || !!data.object_story_spec?.link_data?.multi_share_optimized;
+  const isDynamic = hasTemplateVar || hasTemplateData || hasProductSet;
+
+  // Format detection: dynamic jeśli DPA, inaczej video/carousel/image.
   let format: MetaCreativeMeta['format'] = 'unknown';
-  if (data.video_id) format = 'video';
+  if (isDynamic) format = 'dynamic';
+  else if (data.video_id) format = 'video';
   else if (data.asset_feed_spec?.images && data.asset_feed_spec.images.length > 1) format = 'carousel';
   else if (data.image_url || data.thumbnail_url) format = 'image';
 
@@ -385,6 +398,7 @@ export async function fetchCreativeMeta(
   // Auto-tags — deterministyczne z API, nie AI
   const autoTags: string[] = [];
   if (format !== 'unknown') autoTags.push(format);
+  if (isDynamic) autoTags.push('dpa');
   if (data.call_to_action_type) autoTags.push(`cta_${String(data.call_to_action_type).toLowerCase()}`);
 
   return {
@@ -401,5 +415,6 @@ export async function fetchCreativeMeta(
     aspectRatio: null,  // wymaga osobnego call'a do /video lub /image — zostawiamy na Phase 4
     durationSec: null,
     autoTags,
+    isDynamic,
   };
 }

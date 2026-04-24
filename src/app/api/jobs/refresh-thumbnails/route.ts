@@ -68,6 +68,8 @@ async function refreshThumbnails(limit: number, onlyMissing: boolean) {
           image_url: meta.imageUrl,
           video_id: meta.videoId,
           format: meta.format,
+          auto_tags: meta.autoTags,
+          is_dynamic: meta.isDynamic,
           last_seen_at: new Date().toISOString(),
         }).eq('creative_id', c.creative_id);
         if (upErr) {

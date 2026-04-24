@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
-import { X, Play, Image as ImageIcon, Layers, ExternalLink, Sparkles } from 'lucide-react';
+import { X, Play, Image as ImageIcon, Layers, ExternalLink, Sparkles, Wand2, Info } from 'lucide-react';
 import { formatCurrency, formatNumber } from '@/lib/utils';
 import type { CreativeCardData, VideoRetention } from './creative-card';
 
@@ -116,11 +116,16 @@ export function CreativeDetailSheet({
   // (dla video = /{video_id}?fields=picture, dla static = image_url).
   const previewUrl = creative.thumbnail_url || creative.image_url;
 
-  // Facebook Post / Instagram embed — publiczny oficjalny plugin Meta,
-  // działa bez logowania, renderuje kreację z tekstem i CTA tak jak wygląda
-  // w feedzie. permalink_url zawiera albo IG URL, albo FB effective_object_story_id
-  // w formacie {page_id}_{post_id}.
-  const embedUrl = buildEmbedUrl(creative.permalink_url || null);
+  // Dynamic Product Ad (DPA) detection — template'y z {{product.*}} nie mają
+  // sensu embed'ować bo pokazują szablon, nie realny render.
+  const isDynamic =
+    creative.format === 'dynamic' ||
+    creative.ai_tags.includes('dpa') ||
+    creative.ai_tags.includes('dynamic');
+
+  // Facebook Post / Instagram embed — publiczny oficjalny plugin Meta.
+  // Dla DPA pomijamy — pokazujemy dedicated info box zamiast szablonu.
+  const embedUrl = isDynamic ? null : buildEmbedUrl(creative.permalink_url || null);
 
   const insights = creative.ai_insights as Record<string, unknown> | null;
   const rationale = insights?.rationale as string | undefined;
@@ -140,12 +145,18 @@ export function CreativeDetailSheet({
       <div className="fixed top-0 right-0 bottom-0 w-full max-w-lg bg-zinc-950 border-l border-zinc-800 z-50 overflow-y-auto animate-in slide-in-from-right duration-200">
         <div className="sticky top-0 bg-zinc-950/95 backdrop-blur border-b border-zinc-800 px-5 py-3 flex items-center justify-between z-10">
           <div className="flex items-center gap-2 min-w-0">
-            {creative.format === 'video' ? <Play size={14} className="text-purple-400 shrink-0" /> :
+            {isDynamic ? <Wand2 size={14} className="text-fuchsia-400 shrink-0" /> :
+             creative.format === 'video' ? <Play size={14} className="text-purple-400 shrink-0" /> :
              creative.format === 'carousel' ? <Layers size={14} className="text-amber-400 shrink-0" /> :
              <ImageIcon size={14} className="text-blue-400 shrink-0" />}
             <span className="text-sm font-medium text-zinc-200 truncate">
               {creative.title || `Kreacja ${creative.creative_id.slice(-6)}`}
             </span>
+            {isDynamic && (
+              <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-fuchsia-500/20 text-fuchsia-300 shrink-0">
+                DPA
+              </span>
+            )}
           </div>
           <button
             onClick={onClose}
@@ -156,6 +167,23 @@ export function CreativeDetailSheet({
         </div>
 
         <div className="px-5 py-5 space-y-6">
+          {/* DPA info box — zamiast próby renderowania szablonu pokazujemy
+              kontekst czemu to nie jest reprezentatywny podgląd. */}
+          {isDynamic && (
+            <div className="rounded-lg bg-fuchsia-500/5 border border-fuchsia-500/20 p-4 flex gap-3">
+              <Info size={16} className="text-fuchsia-400 shrink-0 mt-0.5" />
+              <div className="text-sm text-zinc-300 leading-relaxed">
+                <p className="font-medium text-fuchsia-300 mb-1">Dynamic Product Ad (katalog)</p>
+                <p className="text-xs text-zinc-400">
+                  Ta kreacja to szablon — Meta renderuje produkty dynamicznie z Twojego katalogu
+                  per user. Podgląd ze zmiennymi <code className="text-zinc-300">{'{{product.*}}'}</code> to
+                  template, nie realny render. KPI poniżej agregują wszystkie warianty
+                  wyemitowane z tego szablonu.
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Large preview — oficjalny Meta embed (FB Post Plugin / IG embed).
               Renderuje reklamę z tekstem, CTA, video playerem, dokładnie jak
               w feedzie. Działa publicznie — bez logowania. Fallback na HD
