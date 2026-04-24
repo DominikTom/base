@@ -43,15 +43,15 @@ export async function GET(request: NextRequest) {
     const adRows = await fetchAllAdPerf({ dateFrom, dateTo, accountId: accountIdFilter });
 
     // KPIs — agregacja po wszystkich wierszach w zakresie
-    const totals = adRows.reduce((acc, r) => {
-      acc.spend += Number(r.spend) || 0;
-      acc.impressions += Number(r.impressions) || 0;
-      acc.clicks += Number(r.clicks) || 0;
-      acc.conversions += Number(r.conversions) || 0;
-      acc.conversionValue += Number(r.conversion_value) || 0;
-      acc.videoPlay3s += Number(r.video_play_3s) || 0;
-      return acc;
-    }, { spend: 0, impressions: 0, clicks: 0, conversions: 0, conversionValue: 0, videoPlay3s: 0 });
+    const totals = { spend: 0, impressions: 0, clicks: 0, conversions: 0, conversionValue: 0, videoPlay3s: 0 };
+    for (const r of adRows) {
+      totals.spend += Number(r.spend) || 0;
+      totals.impressions += Number(r.impressions) || 0;
+      totals.clicks += Number(r.clicks) || 0;
+      totals.conversions += Number(r.conversions) || 0;
+      totals.conversionValue += Number(r.conversion_value) || 0;
+      totals.videoPlay3s += Number(r.video_play_3s) || 0;
+    }
 
     const activeCreatives = new Set(adRows.map(r => r.creative_id).filter(Boolean)).size;
 
