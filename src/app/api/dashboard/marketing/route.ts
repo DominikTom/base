@@ -72,14 +72,21 @@ export async function GET(request: NextRequest) {
     const totals = (adspendData || []).reduce(
       (acc, row) => {
         acc.spend += row.spend || 0;
+        acc.spendOriginal += row.spend_original || 0;
         acc.impressions += row.impressions || 0;
         acc.clicks += row.clicks || 0;
         acc.conversions += row.conversions || 0;
         acc.conversionValue += row.conversion_value || 0;
         return acc;
       },
-      { spend: 0, impressions: 0, clicks: 0, conversions: 0, conversionValue: 0 }
+      { spend: 0, spendOriginal: 0, impressions: 0, clicks: 0, conversions: 0, conversionValue: 0 }
     );
+
+    // Jeśli wszystkie wiersze mają tę samą walutę oryginalną ≠ PLN, wystawiamy ją w response
+    // żeby frontend mógł pokazać KPI „266 543 zł ≈ 61 987 €" dla sklepów rozliczanych w EUR.
+    const currencies = new Set((adspendData || []).map(r => r.original_currency).filter(Boolean));
+    const singleOriginalCurrency = currencies.size === 1 ? Array.from(currencies)[0] : null;
+    const hasForeignCurrency = singleOriginalCurrency && singleOriginalCurrency !== 'PLN';
 
     const avgCpc = totals.clicks > 0 ? totals.spend / totals.clicks : 0;
     const avgCpm = totals.impressions > 0 ? (totals.spend / totals.impressions) * 1000 : 0;
@@ -163,6 +170,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       kpis: {
         totalSpend: Math.round(totals.spend),
+        totalSpendOriginal: hasForeignCurrency ? Math.round(totals.spendOriginal) : null,
+        originalCurrency: hasForeignCurrency ? singleOriginalCurrency : null,
         totalConversions: totals.conversions,
         blendedRoas: Math.round(blendedRoas * 100) / 100,
         avgCpc: Math.round(avgCpc * 100) / 100,

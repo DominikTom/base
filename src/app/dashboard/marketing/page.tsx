@@ -14,6 +14,8 @@ import { DollarSign, Target, TrendingUp, MousePointerClick, Eye, Percent, Refres
 interface MarketingData {
   kpis: {
     totalSpend: number;
+    totalSpendOriginal: number | null;
+    originalCurrency: string | null;
     totalConversions: number;
     blendedRoas: number;
     avgCpc: number;
@@ -125,7 +127,14 @@ export default function MarketingPage() {
 
       {/* KPI Cards */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-        <KpiCard title="Total Spend" value={formatCurrency(data.kpis.totalSpend)} icon={<DollarSign size={18} />} />
+        <KpiCard
+          title="Total Spend"
+          value={formatCurrency(data.kpis.totalSpend)}
+          subLabel={data.kpis.totalSpendOriginal != null && data.kpis.originalCurrency
+            ? `≈ ${formatNumber(data.kpis.totalSpendOriginal)} ${data.kpis.originalCurrency}`
+            : undefined}
+          icon={<DollarSign size={18} />}
+        />
         <KpiCard title="Konwersje" value={formatNumber(data.kpis.totalConversions)} icon={<Target size={18} />} />
         <KpiCard title="Blended ROAS" value={`${data.kpis.blendedRoas}x`} icon={<TrendingUp size={18} />} />
         <KpiCard title="Avg CPC" value={`${data.kpis.avgCpc.toFixed(2)} zł`} icon={<MousePointerClick size={18} />} />
