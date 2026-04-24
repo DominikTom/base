@@ -14,8 +14,8 @@ export const maxDuration = 60;
 // ?only_missing=1 — tylko te z thumbnail_url IS NULL.
 export async function POST(request: NextRequest) {
   const { searchParams } = new URL(request.url);
-  const limitParam = parseInt(searchParams.get('limit') || '30', 10);
-  const limit = Number.isFinite(limitParam) && limitParam > 0 && limitParam <= 100 ? limitParam : 30;
+  const limitParam = parseInt(searchParams.get('limit') || '100', 10);
+  const limit = Number.isFinite(limitParam) && limitParam > 0 && limitParam <= 100 ? limitParam : 100;
   const onlyMissing = searchParams.get('only_missing') === '1';
   return refreshThumbnails(limit, onlyMissing);
 }
@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
   if (!isVercelCron && cronSecret && authHeader !== `Bearer ${cronSecret}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
-  return refreshThumbnails(30, false);
+  return refreshThumbnails(100, false);
 }
 
 async function refreshThumbnails(limit: number, onlyMissing: boolean) {
