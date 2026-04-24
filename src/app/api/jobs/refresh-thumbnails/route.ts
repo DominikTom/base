@@ -5,19 +5,20 @@ import { fetchCreativeMeta } from '@/lib/meta-ads';
 export const maxDuration = 60;
 
 // Odświeża thumbnail_url dla istniejących kreacji — fetchuje HD preview
-// z Meta (dla wideo via /{video_id}?fields=picture, dla static via image_url).
-// Używane po pierwszym deployu żeby naprawić low-res thumbnails bez
-// robienia full re-syncu fact_daily_ad_performance.
+// z Meta przez fetchCreativeMeta() który teraz ma 6-poziomową hierarchię
+// fallbacków (video.picture → image_url → object_story_spec → asset_feed_spec
+// → adimages hash lookup → low-res thumbnail).
 //
 // POST ?limit=N (default 30, max 100)
-// Domyślnie: tylko kreacje z video_id (to tam Meta zwraca 64×64 thumbnail).
-// ?all=1 — także static (mają już image_url HD, ale dla spójności też można).
+// Default: TYLKO brakujące (null thumbnail_url) — typowy przypadek po deployu.
+// ?force=1 — wymusza refresh WSZYSTKICH (również tych które już mają URL)
+//            żeby podnieść jakość lub wymienić wygasłe scontent URL-e.
 export async function POST(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const limitParam = parseInt(searchParams.get('limit') || '30', 10);
   const limit = Number.isFinite(limitParam) && limitParam > 0 && limitParam <= 100 ? limitParam : 30;
-  const refreshAll = searchParams.get('all') === '1';
-  return refreshThumbnails(limit, refreshAll);
+  const force = searchParams.get('force') === '1' || searchParams.get('all') === '1';
+  return refreshThumbnails(limit, force);
 }
 
 export async function GET(request: NextRequest) {
@@ -30,7 +31,7 @@ export async function GET(request: NextRequest) {
   return refreshThumbnails(30, false);
 }
 
-async function refreshThumbnails(limit: number, refreshAll: boolean) {
+async function refreshThumbnails(limit: number, force: boolean) {
   try {
     const db = getSupabaseAdmin();
 
@@ -40,10 +41,9 @@ async function refreshThumbnails(limit: number, refreshAll: boolean) {
       .order('last_seen_at', { ascending: false })
       .limit(limit);
 
-    if (!refreshAll) {
-      // Domyślnie: tylko wideo — to tam Meta zwraca low-res thumbnail.
-      // Static creatives mają już image_url w HD z AdCreative.
-      query = query.not('video_id', 'is', null);
+    if (!force) {
+      // Domyślnie: tylko te którym brakuje thumbnail (null)
+      query = query.is('thumbnail_url', null);
     }
 
     const { data: creatives, error } = await query;

@@ -296,11 +296,12 @@ export async function fetchCreativeMeta(
   const fields = [
     'id', 'name', 'title', 'body',
     'call_to_action_type',
-    'thumbnail_url', 'image_url',
+    'thumbnail_url', 'image_url', 'image_hash',
     'video_id', 'object_type',
     'effective_object_story_id',
     'instagram_permalink_url',
     'asset_feed_spec',
+    'object_story_spec',
   ].join(',');
 
   const url = `${META_BASE_URL}/${creativeId}?fields=${fields}&access_token=${token}`;
@@ -319,9 +320,12 @@ export async function fetchCreativeMeta(
   else if (data.asset_feed_spec?.images && data.asset_feed_spec.images.length > 1) format = 'carousel';
   else if (data.image_url || data.thumbnail_url) format = 'image';
 
-  // HD thumbnail override: AdCreative.thumbnail_url jest 64×64.
-  // Dla wideo Meta ma HD preview przez /{video_id}?fields=picture — hotlinkowalny URL.
-  let hdThumbnail: string | null = data.thumbnail_url || null;
+  // HD thumbnail — AdCreative.thumbnail_url jest 64×64, szukamy lepszego URL-a
+  // idąc w kolejności priorytetu: video picture → image_url → object_story_spec →
+  // asset_feed_spec → image_hash lookup → low-res fallback.
+  let hdThumbnail: string | null = null;
+
+  // 1) Video creative: Meta ma HD preview przez /{video_id}?fields=picture
   if (data.video_id) {
     try {
       const vidRes = await fetch(
@@ -329,17 +333,54 @@ export async function fetchCreativeMeta(
       );
       if (vidRes.ok) {
         const vidData = await vidRes.json();
-        if (vidData.picture && typeof vidData.picture === 'string') {
-          hdThumbnail = vidData.picture;
-        }
+        if (typeof vidData.picture === 'string') hdThumbnail = vidData.picture;
       }
-    } catch {
-      // Non-fatal — zachowujemy low-res thumbnail jako fallback.
-    }
-  } else if (data.image_url) {
-    // Dla static kreacji image_url JEST HD — użyj jako thumbnail dla spójności.
-    hdThumbnail = data.image_url;
+    } catch { /* non-fatal */ }
   }
+
+  // 2) Static creative z image_url — już pełnowymiarowy
+  if (!hdThumbnail && data.image_url) hdThumbnail = data.image_url;
+
+  // 3) object_story_spec — link ads, page post ads, video ads z tego stylu
+  if (!hdThumbnail && data.object_story_spec) {
+    const oss = data.object_story_spec;
+    hdThumbnail =
+      oss?.link_data?.picture ||
+      oss?.video_data?.image_url ||
+      oss?.photo_data?.url ||
+      oss?.link_data?.child_attachments?.[0]?.picture ||
+      null;
+  }
+
+  // 4) asset_feed_spec — Advantage+ / dynamic creative
+  if (!hdThumbnail && data.asset_feed_spec) {
+    const afs = data.asset_feed_spec;
+    hdThumbnail =
+      afs?.images?.[0]?.url ||
+      afs?.videos?.[0]?.thumbnail_url ||
+      null;
+  }
+
+  // 5) image_hash lookup — last stable resort przez /{account}/adimages
+  const imageHash =
+    data.image_hash ||
+    data.object_story_spec?.link_data?.image_hash ||
+    data.asset_feed_spec?.images?.[0]?.hash;
+  if (!hdThumbnail && imageHash) {
+    try {
+      const imgRes = await fetch(
+        `${META_BASE_URL}/${accountId}/adimages?hashes=${encodeURIComponent(JSON.stringify([imageHash]))}&fields=hash,permalink_url,url&access_token=${encodeURIComponent(token)}`
+      );
+      if (imgRes.ok) {
+        const imgData = await imgRes.json();
+        const first = imgData?.data?.[0];
+        if (first) hdThumbnail = first.permalink_url || first.url || null;
+      }
+    } catch { /* non-fatal */ }
+  }
+
+  // 6) Absolute fallback — low-res thumbnail (lepsze niż nic)
+  if (!hdThumbnail) hdThumbnail = data.thumbnail_url || null;
 
   // Auto-tags — deterministyczne z API, nie AI
   const autoTags: string[] = [];
