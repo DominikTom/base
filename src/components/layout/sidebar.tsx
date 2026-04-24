@@ -17,6 +17,7 @@ import {
   PanelTop,
   Wallet,
   Database,
+  Sparkles,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { LogOut } from 'lucide-react';
@@ -26,6 +27,7 @@ const NAV_ITEMS = [
   { href: '/dashboard/overview', label: 'Przegląd', icon: LayoutDashboard, adminOnly: false },
   { href: '/dashboard/revenue', label: 'Revenue & Zamówienia', icon: TrendingUp, adminOnly: false },
   { href: '/dashboard/marketing', label: 'Marketing', icon: Megaphone, adminOnly: false },
+  { href: '/dashboard/meta', label: 'Meta', icon: Sparkles, adminOnly: false },
   { href: '/dashboard/costs', label: 'Koszty agencji', icon: Wallet, adminOnly: true },
   { href: '/dashboard/products', label: 'Produkty', icon: ShoppingBag, adminOnly: false },
   { href: '/dashboard/traffic', label: 'Ruch (GA4)', icon: Globe, adminOnly: false },
