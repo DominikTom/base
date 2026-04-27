@@ -242,6 +242,50 @@ function extractFabricCollection(fabric: string | undefined): string | null {
   return match ? match[1].trim() : fabric.trim();
 }
 
+function parseDecimal(value: string): number | null {
+  const raw = (value || '').trim();
+  if (!raw) return null;
+
+  // ERP CSV often uses EU formatting:
+  // - decimal comma: "1234,56"
+  // - thousand separators: "1 234,56" or "1.234,56"
+  // but we also want to tolerate mixed inputs.
+  const sanitized = raw
+    .replace(/\s+/g, '')
+    .replace(/[^\d,.-]/g, '');
+
+  if (!sanitized) return null;
+
+  const hasComma = sanitized.includes(',');
+  const hasDot = sanitized.includes('.');
+  let normalized = sanitized;
+
+  if (hasComma && hasDot) {
+    // Last separator wins as decimal, the other is thousands.
+    const lastComma = sanitized.lastIndexOf(',');
+    const lastDot = sanitized.lastIndexOf('.');
+    const decimalSep = lastComma > lastDot ? ',' : '.';
+    const thousandSep = decimalSep === ',' ? '.' : ',';
+    normalized = sanitized.split(thousandSep).join('');
+    if (decimalSep === ',') normalized = normalized.replace(',', '.');
+  } else if (hasComma) {
+    // Comma-only → treat last comma as decimal separator.
+    const parts = sanitized.split(',');
+    const decimal = parts.pop() || '';
+    normalized = `${parts.join('')}.${decimal}`;
+  } else if (hasDot) {
+    // Dot-only with 3 trailing digits is usually a thousands separator in EU exports.
+    const parts = sanitized.split('.');
+    const singleDot = parts.length === 2;
+    const trailing = parts[parts.length - 1] || '';
+    const looksLikeThousands = singleDot && trailing.length === 3;
+    normalized = looksLikeThousands ? parts.join('') : sanitized;
+  }
+
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 // ---------------------------------------------------------------------------
 // Tag classification
 // ---------------------------------------------------------------------------
@@ -458,9 +502,9 @@ export async function parseErpCsv(rows: RawCsvRow[]): Promise<ParseResult> {
 
     // Parse total
     const sumaStr = (h['Suma'] || '').trim();
-    const totalGross = sumaStr ? parseFloat(sumaStr) : null;
+    const totalGross = parseDecimal(sumaStr);
     const shippingStr = (h['Koszt dostawy'] || '').trim();
-    const shippingCost = shippingStr ? parseFloat(shippingStr) : null;
+    const shippingCost = parseDecimal(shippingStr);
 
     const exchangeRate = currency === 'EUR' ? await getEurPlnRate(orderDate.substring(0, 10)) : 1;
     const totalGrossPln = currency === 'PLN' ? totalGross : (totalGross != null ? totalGross * exchangeRate : null);
@@ -540,7 +584,7 @@ export async function parseErpCsv(rows: RawCsvRow[]): Promise<ParseResult> {
       lineNumber++;
       const { category, item_type } = categorizeProduct(productName);
       const quantityStr = (itemRow['Pozycje zamówienia/Ilość'] || '1').trim();
-      const quantity = parseFloat(quantityStr) || 1;
+      const quantity = parseDecimal(quantityStr) || 1;
 
       const optionStr = (itemRow['Pozycje zamówienia/Opcja'] || '').trim();
       const { parsed, language } = parseOptions(optionStr);
