@@ -3,6 +3,7 @@ import Papa from 'papaparse';
 import { parseErpCsv, type RawCsvRow } from '@/lib/erp-parser';
 import { listCsvFiles, downloadFileAsText } from '@/lib/google-drive';
 import { getSupabaseAdmin } from '@/lib/supabase';
+import { getUserProfile } from '@/lib/user-profile';
 
 export const maxDuration = 300; // 5 min for large CSV processing
 
@@ -16,16 +17,19 @@ export const maxDuration = 300; // 5 min for large CSV processing
  * 3. Download + parse + insert into Supabase
  * 4. Rebuild aggregations
  */
-export async function GET(request: NextRequest) {
+async function isAuthorized(request: NextRequest): Promise<boolean> {
+  if (request.headers.get('x-vercel-cron') === '1') return true;
+
+  const cronSecret = process.env.ETL_CRON_SECRET;
+  if (cronSecret && request.headers.get('authorization') === `Bearer ${cronSecret}`) return true;
+
+  const profile = await getUserProfile();
+  return profile?.role === 'admin';
+}
+
+async function runSync(request: NextRequest) {
   try {
-    // Auth check — Vercel Cron sends this header, or manual trigger via secret
-    const authHeader = request.headers.get('authorization');
-    const cronSecret = process.env.ETL_CRON_SECRET;
-
-    // Vercel Cron sets CRON_SECRET automatically for cron invocations
-    const isVercelCron = request.headers.get('x-vercel-cron') === '1';
-
-    if (!isVercelCron && cronSecret && authHeader !== `Bearer ${cronSecret}`) {
+    if (!await isAuthorized(request)) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -135,6 +139,9 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: String(err) }, { status: 500 });
   }
 }
+
+export const GET = runSync;
+export const POST = runSync;
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 

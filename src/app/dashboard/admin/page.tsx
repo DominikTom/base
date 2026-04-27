@@ -41,7 +41,28 @@ export default function AdminPage() {
   const [logs, setLogs] = useState<EtlLog[]>([]);
   const [freshness, setFreshness] = useState<Record<string, string>>({});
   const [dragOver, setDragOver] = useState(false);
+  const [gdriveSyncing, setGdriveSyncing] = useState(false);
+  const [gdriveResult, setGdriveResult] = useState<string | null>(null);
   const abortRef = useRef(false);
+
+  async function handleGdriveSync() {
+    setGdriveSyncing(true);
+    setGdriveResult(null);
+    try {
+      const res = await fetch('/api/etl/gdrive-sync', { method: 'POST' });
+      const json = await safeJson(res);
+      if (res.ok && json.success) {
+        setGdriveResult(`OK — ${String(json.file)}: ${String(json.orders)} zamówień, ${String(json.items)} pozycji`);
+        await fetchLogs();
+      } else {
+        setGdriveResult(`Błąd: ${String(json.error || 'nieznany')}`);
+      }
+    } catch (err) {
+      setGdriveResult(`Błąd: ${String(err)}`);
+    } finally {
+      setGdriveSyncing(false);
+    }
+  }
 
   const fetchLogs = useCallback(async () => {
     try {
@@ -323,6 +344,25 @@ export default function AdminPage() {
             </button>
             <span className="text-xs text-zinc-500">Używa średniego kursu NBP per miesiąc. Nowe importy automatycznie używają kursu z dnia zamówienia.</span>
           </div>
+        </div>
+      </ChartCard>
+
+      {/* Google Drive — manual sync */}
+      <ChartCard title="Google Drive — synchronizacja ręczna" subtitle="Pobiera najnowszy CSV z folderu Drive i uruchamia ten sam ETL co cron o 6:00">
+        <div className="flex items-center gap-4">
+          <button
+            onClick={handleGdriveSync}
+            disabled={gdriveSyncing}
+            className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium rounded-lg transition-colors text-sm"
+          >
+            <FolderSync size={16} className={gdriveSyncing ? 'animate-spin' : ''} />
+            {gdriveSyncing ? 'Pobieranie i ETL (do 5 min)...' : 'Pobierz ręcznie z Drive'}
+          </button>
+          {gdriveResult && (
+            <span className={`text-sm ${gdriveResult.startsWith('OK') ? 'text-emerald-400' : 'text-red-400'}`}>
+              {gdriveResult}
+            </span>
+          )}
         </div>
       </ChartCard>
 
