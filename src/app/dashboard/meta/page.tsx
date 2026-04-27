@@ -11,6 +11,7 @@ import { CreativeDetailSheet } from '@/components/meta/creative-detail-sheet';
 import { ViewTabs, CampaignSubTabs, type MetaView, type CampaignSubview } from '@/components/meta/level-tabs';
 import { FilterChips, type FilterChipsContext } from '@/components/meta/filter-chips';
 import { HierarchyTable, type HierarchyRow } from '@/components/meta/hierarchy-table';
+import { SyncMenu } from '@/components/meta/sync-menu';
 import {
   DollarSign, Target, TrendingUp, MousePointerClick,
   Sparkles, Film, CheckCircle2, Clock, AlertCircle,
@@ -132,31 +133,30 @@ function MetaPageInner() {
     ? (subview === 'adsets' ? 'adset' : 'campaign')
     : 'creative';
 
-  useEffect(() => {
-    async function fetchData() {
-      setLoading(true);
-      setError(null);
-      try {
-        const params = new URLSearchParams({
-          date_from: filters.dateFrom,
-          date_to: filters.dateTo,
-          shop: filters.shop,
-          level: apiLevel,
-        });
-        if (campaignId) params.set('campaign_id', campaignId);
-        if (adsetId) params.set('adset_id', adsetId);
-        const res = await fetch(`/api/dashboard/meta?${params}`);
-        const json = await res.json();
-        if (!res.ok) throw new Error(json.error || 'Błąd API');
-        setData(json);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
-      } finally {
-        setLoading(false);
-      }
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const params = new URLSearchParams({
+        date_from: filters.dateFrom,
+        date_to: filters.dateTo,
+        shop: filters.shop,
+        level: apiLevel,
+      });
+      if (campaignId) params.set('campaign_id', campaignId);
+      if (adsetId) params.set('adset_id', adsetId);
+      const res = await fetch(`/api/dashboard/meta?${params}`);
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Błąd API');
+      setData(json);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoading(false);
     }
-    fetchData();
   }, [filters, apiLevel, campaignId, adsetId]);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
 
   // Drill-down handlers
   const onCampaignClick = (row: HierarchyRow) => {
@@ -194,22 +194,25 @@ function MetaPageInner() {
             {data.lastSync && <span className="text-zinc-600"> · sync: {formatRelativeTime(data.lastSync.at)}</span>}
           </p>
         </div>
-        <div className="flex items-center gap-2 text-xs">
-          {data.tagging.completed > 0 && (
-            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-emerald-500/10 text-emerald-400">
-              <CheckCircle2 size={12} /> {formatNumber(data.tagging.completed)} otagowane
-            </span>
-          )}
-          {data.tagging.pending > 0 && (
-            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-amber-500/10 text-amber-400">
-              <Clock size={12} /> {formatNumber(data.tagging.pending)} w kolejce
-            </span>
-          )}
-          {data.tagging.failed > 0 && (
-            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-red-500/10 text-red-400">
-              <AlertCircle size={12} /> {formatNumber(data.tagging.failed)} błędy
-            </span>
-          )}
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 text-xs">
+            {data.tagging.completed > 0 && (
+              <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-emerald-500/10 text-emerald-400">
+                <CheckCircle2 size={12} /> {formatNumber(data.tagging.completed)} otagowane
+              </span>
+            )}
+            {data.tagging.pending > 0 && (
+              <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-amber-500/10 text-amber-400">
+                <Clock size={12} /> {formatNumber(data.tagging.pending)} w kolejce
+              </span>
+            )}
+            {data.tagging.failed > 0 && (
+              <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-red-500/10 text-red-400">
+                <AlertCircle size={12} /> {formatNumber(data.tagging.failed)} błędy
+              </span>
+            )}
+          </div>
+          <SyncMenu onComplete={() => fetchData()} />
         </div>
       </div>
 
@@ -275,6 +278,11 @@ function MetaPageInner() {
       {/* === KREACJE === */}
       {view === 'creatives' && (
         <>
+          {/* Alert: kreacje bez podglądów lub w kolejce tagowania */}
+          <DataHealthAlert
+            topCreatives={data.topCreatives}
+            taggingPending={data.tagging.pending}
+          />
           {/* KPI strip podstawowy (bez deltów — Pulse od tego jest) */}
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
             <KpiCard title="Spend" value={formatCurrency(data.kpis.spend)} icon={<DollarSign size={18} />} />
@@ -386,6 +394,43 @@ function MetaPageInner() {
 }
 
 // === Sub-components ===
+
+function DataHealthAlert({
+  topCreatives, taggingPending,
+}: {
+  topCreatives: CreativeCardData[];
+  taggingPending: number;
+}) {
+  const missingThumbs = topCreatives.filter(
+    c => !c.thumbnail_url && !c.image_url
+  ).length;
+  const totalShown = topCreatives.length;
+  if (totalShown === 0) return null;
+  const missingPct = totalShown > 0 ? Math.round((missingThumbs / totalShown) * 100) : 0;
+
+  // Pokaż tylko gdy >30% kreacji bez podglądu albo >0 w kolejce tagowania
+  if (missingPct < 30 && taggingPending === 0) return null;
+
+  return (
+    <div className="rounded-lg bg-amber-500/5 border border-amber-500/20 p-3 flex items-start gap-3">
+      <AlertCircle size={16} className="text-amber-400 shrink-0 mt-0.5" />
+      <div className="flex-1 text-xs text-zinc-300 leading-relaxed">
+        {missingPct >= 30 && (
+          <p>
+            <span className="font-medium text-amber-300">{missingThumbs} z {totalShown} kreacji</span>
+            {' '}bez podglądu. Kliknij <span className="text-zinc-100 font-medium">Synchronizuj → Odśwież podglądy</span> w prawym górnym rogu.
+          </p>
+        )}
+        {taggingPending > 0 && (
+          <p className={missingPct >= 30 ? 'mt-1' : ''}>
+            <span className="font-medium text-amber-300">{formatNumber(taggingPending)} kreacji</span>
+            {' '}czeka na otagowanie AI. Kliknij <span className="text-zinc-100 font-medium">Synchronizuj → Otaguj AI</span> żeby uzupełnić tagi i analizę.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function PulseColumn({
   title, subtitle, icon, creatives, empty, onClick,
