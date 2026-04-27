@@ -41,6 +41,8 @@ export default function AdminPage() {
   const [logs, setLogs] = useState<EtlLog[]>([]);
   const [freshness, setFreshness] = useState<Record<string, string>>({});
   const [dragOver, setDragOver] = useState(false);
+  const [gdriveSyncing, setGdriveSyncing] = useState(false);
+  const [gdriveSyncResult, setGdriveSyncResult] = useState<{ ok: boolean; message: string } | null>(null);
   const abortRef = useRef(false);
 
   const fetchLogs = useCallback(async () => {
@@ -55,6 +57,28 @@ export default function AdminPage() {
   }, []);
 
   useEffect(() => { fetchLogs(); }, [fetchLogs]);
+
+  async function handleManualGdriveSync() {
+    setGdriveSyncing(true);
+    setGdriveSyncResult(null);
+    try {
+      const res = await fetch('/api/etl/gdrive-sync');
+      const json = await safeJson(res);
+      if (!res.ok) {
+        setGdriveSyncResult({ ok: false, message: String(json.error || `HTTP ${res.status}`) });
+      } else {
+        setGdriveSyncResult({
+          ok: true,
+          message: `Sync OK: ${formatNumber((json.orders as number) || 0)} zamówień, ${formatNumber((json.items as number) || 0)} pozycji (${String(json.file || 'CSV')})`,
+        });
+        await fetchLogs();
+      }
+    } catch (err) {
+      setGdriveSyncResult({ ok: false, message: String(err) });
+    } finally {
+      setGdriveSyncing(false);
+    }
+  }
 
   async function handleUpload() {
     if (!file) return;
@@ -286,6 +310,32 @@ export default function AdminPage() {
           changeLabel="Auto-import codziennie o 6:00"
         />
       </div>
+
+      {/* Manual GDrive sync */}
+      <ChartCard title="Google Drive Sync — ręczne uruchomienie" subtitle="Pobiera najnowszy CSV z folderu Google Drive bez czekania na cron">
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center gap-4">
+            <button
+              onClick={handleManualGdriveSync}
+              disabled={gdriveSyncing}
+              className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-900/50 disabled:cursor-not-allowed text-white font-medium rounded-lg transition-colors text-sm"
+            >
+              {gdriveSyncing ? <RefreshCw size={16} className="animate-spin" /> : <FolderSync size={16} />}
+              {gdriveSyncing ? 'Synchronizacja...' : 'Pobierz z Google Drive teraz'}
+            </button>
+            <span className="text-xs text-zinc-500">Użyj po wrzuceniu nowego CSV, żeby od razu przeliczyć dashboard.</span>
+          </div>
+          {gdriveSyncResult && (
+            <div className={`rounded-lg border px-3 py-2 text-sm ${
+              gdriveSyncResult.ok
+                ? 'border-emerald-800 bg-emerald-900/20 text-emerald-400'
+                : 'border-red-800 bg-red-900/20 text-red-400'
+            }`}>
+              {gdriveSyncResult.message}
+            </div>
+          )}
+        </div>
+      </ChartCard>
 
       {/* EUR Backfill */}
       <ChartCard title="Przeliczenie EUR→PLN (kurs NBP)" subtitle="Pobiera średni kurs EUR/PLN z NBP per miesiąc i przelicza historyczne zamówienia">
