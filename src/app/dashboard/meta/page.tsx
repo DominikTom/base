@@ -217,18 +217,34 @@ function MetaPageInner() {
         </div>
       </div>
 
-      {/* Tabs + filter chips */}
+      {/* Tabs */}
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <ViewTabs
           value={view}
-          onChange={(next) => pushParams({ view: next, sub: null })}
-        />
-        <FilterChips
-          context={data.filterContext}
-          onClearCampaign={() => pushParams({ campaign_id: null })}
-          onClearAdset={() => pushParams({ adset_id: null })}
+          onChange={(next) => {
+            // Zmiana top-level taba = świeży start. Czyścimy cross-filtery
+            // (campaign_id, adset_id) bo drill-down nie jest już relewantny.
+            // Filtr globalny (sklep, daty) z DashboardContext zostaje.
+            pushParams({
+              view: next,
+              sub: null,
+              campaign_id: null,
+              adset_id: null,
+            });
+          }}
         />
       </div>
+
+      {/* Filter chips — pełny baner pod tabami, dobrze widoczny */}
+      {(data.filterContext.campaign || data.filterContext.adset) && (
+        <div className="rounded-lg bg-blue-500/5 border border-blue-500/20 p-3">
+          <FilterChips
+            context={data.filterContext}
+            onClearCampaign={() => pushParams({ campaign_id: null, adset_id: null })}
+            onClearAdset={() => pushParams({ adset_id: null })}
+          />
+        </div>
+      )}
 
       {/* Detail panel — globalny */}
       <CreativeDetailSheet creative={selected} onClose={() => setSelected(null)} />

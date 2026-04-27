@@ -230,8 +230,8 @@ export function CreativeDetailSheet({
             </div>
           )}
 
-          {/* Body copy */}
-          {creative.body && (
+          {/* Body copy — pomiń jeśli zawiera template variables */}
+          {creative.body && !/\{\{[^}]+\}\}/.test(creative.body) && (
             <div>
               <h3 className="text-xs uppercase tracking-wide text-zinc-500 mb-2">Treść reklamy</h3>
               <p className="text-sm text-zinc-300 whitespace-pre-wrap leading-relaxed">
