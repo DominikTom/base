@@ -1,4 +1,18 @@
 {
+  "functions": {
+    "src/app/api/etl/gdrive-sync/route.ts": {
+      "maxDuration": 300
+    },
+    "src/app/api/etl/meta-ad-sync/route.ts": {
+      "maxDuration": 300
+    },
+    "src/app/api/etl/meta-sync/route.ts": {
+      "maxDuration": 300
+    },
+    "src/app/api/etl/ga4-sync/route.ts": {
+      "maxDuration": 300
+    }
+  },
   "crons": [
     {
       "path": "/api/etl/gdrive-sync",
