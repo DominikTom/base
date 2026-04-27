@@ -194,10 +194,12 @@ export function CreativeDetailSheet({
           {!isDynamic && (
             <div className="bg-zinc-900 rounded-xl overflow-hidden border border-zinc-800">
               {creative.video_id ? (
+                // Native player z dynamic HD poster przez nasz endpoint —
+                // zawsze świeży URL z Meta, niezależnie od stanu DB.
                 // eslint-disable-next-line jsx-a11y/media-has-caption
                 <video
                   src={`/api/meta/video/${creative.video_id}`}
-                  poster={previewUrl || undefined}
+                  poster={`/api/meta/video-poster/${creative.video_id}`}
                   controls
                   playsInline
                   preload="metadata"

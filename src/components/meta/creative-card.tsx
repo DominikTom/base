@@ -65,11 +65,15 @@ function formatDaysAgo(iso: string | null | undefined): string | null {
 }
 
 export function CreativeCard({ data, onClick }: { data: CreativeCardData; onClick?: () => void }) {
-  // Meta zwraca thumbnail_url w 64×64 — używamy image_url jeśli dostępny (full-res),
-  // z fallbackiem na thumbnail_url gdy image_url jest null/empty (typowo dla video).
-  const previewUrl = (data.image_url && data.image_url.length > 0)
-    ? data.image_url
-    : data.thumbnail_url;
+  // Strategia HD preview:
+  // - VIDEO: zawsze przez /api/meta/video-poster/{id} (dynamic HD z Meta,
+  //   bez polegania na zapisanym thumbnail_url który może być stary/low-res).
+  // - STATIC: image_url (full-res) z fallbackiem na thumbnail_url.
+  const previewUrl = data.video_id
+    ? `/api/meta/video-poster/${data.video_id}`
+    : (data.image_url && data.image_url.length > 0)
+      ? data.image_url
+      : data.thumbnail_url;
   const [imgError, setImgError] = useState(false);
   const roasColor =
     data.roas >= 3 ? 'text-emerald-400' :
