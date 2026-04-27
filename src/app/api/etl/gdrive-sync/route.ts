@@ -5,6 +5,7 @@ import { listCsvFiles, downloadFileAsText } from '@/lib/google-drive';
 import { getSupabaseAdmin } from '@/lib/supabase';
 
 export const maxDuration = 300; // 5 min for large CSV processing
+const PAGE_SIZE = 1000;
 
 /**
  * Google Drive auto-import endpoint.
@@ -74,14 +75,14 @@ export async function GET(request: NextRequest) {
 
       // Step 4: Delete old data in range
       if (minDate && maxDate && minDate !== '9999-12-31') {
-        const { data: existing } = await getSupabaseAdmin()
-          .from('fact_orders')
-          .select('order_id')
-          .gte('order_date', minDate)
-          .lte('order_date', maxDate + 'T23:59:59');
+        const existing = await fetchAllFrom(
+          'fact_orders',
+          'order_id',
+          q => q.gte('order_date', minDate).lte('order_date', maxDate + 'T23:59:59')
+        );
 
-        if (existing && existing.length > 0) {
-          const ids = existing.map(o => o.order_id);
+        if (existing.length > 0) {
+          const ids = existing.map(o => o.order_id as string);
           for (let i = 0; i < ids.length; i += 500) {
             await getSupabaseAdmin().from('fact_order_items').delete().in('order_id', ids.slice(i, i + 500));
           }
@@ -158,13 +159,13 @@ async function rebuildDailyRevenue(minDate: string, maxDate: string) {
 
   await getSupabaseAdmin().from('fact_daily_revenue').delete().gte('date', minDate).lte('date', maxDate);
 
-  const { data: orders } = await getSupabaseAdmin()
-    .from('fact_orders')
-    .select('order_date, source_shop, total_gross, total_gross_pln, shipping_cost_pln, is_paid, status, currency')
-    .gte('order_date', minDate)
-    .lte('order_date', maxDate + 'T23:59:59');
+  const orders = await fetchAllFrom(
+    'fact_orders',
+    'order_date, source_shop, total_gross, total_gross_pln, shipping_cost_pln, is_paid, status, currency',
+    q => q.gte('order_date', minDate).lte('order_date', maxDate + 'T23:59:59')
+  );
 
-  if (!orders?.length) return;
+  if (!orders.length) return;
 
   const grouped: Record<string, {
     orders_count: number; orders_paid: number; orders_cancelled: number;
@@ -207,11 +208,9 @@ async function rebuildDailyRevenue(minDate: string, maxDate: string) {
 
 async function rebuildDimTables() {
   // Products
-  const { data: items } = await getSupabaseAdmin()
-    .from('fact_order_items')
-    .select('product_name, product_category, quantity, order_id');
+  const items = await fetchAllFrom('fact_order_items', 'product_name, product_category, quantity, order_id');
 
-  if (items?.length) {
+  if (items.length) {
     const map: Record<string, { category: string; orders: Set<string>; qty: number }> = {};
     for (const i of items) {
       if (!map[i.product_name]) map[i.product_name] = { category: i.product_category, orders: new Set(), qty: 0 };
@@ -229,12 +228,13 @@ async function rebuildDimTables() {
   }
 
   // Fabrics
-  const { data: fabItems } = await getSupabaseAdmin()
-    .from('fact_order_items')
-    .select('fabric, fabric_collection, order_id')
-    .not('fabric', 'is', null);
+  const fabItems = await fetchAllFrom(
+    'fact_order_items',
+    'fabric, fabric_collection, order_id',
+    q => q.not('fabric', 'is', null)
+  );
 
-  if (fabItems?.length) {
+  if (fabItems.length) {
     const map: Record<string, { collection: string; orders: Set<string> }> = {};
     for (const i of fabItems) {
       if (!i.fabric) continue;
@@ -249,4 +249,22 @@ async function rebuildDimTables() {
       await getSupabaseAdmin().from('dim_fabrics').upsert(rows.slice(j, j + 500), { onConflict: 'fabric_name' });
     }
   }
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function fetchAllFrom(table: string, select: string, apply?: (q: any) => any): Promise<any[]> {
+  const out: unknown[] = [];
+  let offset = 0;
+  while (true) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let q: any = getSupabaseAdmin().from(table).select(select).range(offset, offset + PAGE_SIZE - 1);
+    if (apply) q = apply(q);
+    const { data, error } = await q;
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    out.push(...data);
+    if (data.length < PAGE_SIZE) break;
+    offset += PAGE_SIZE;
+  }
+  return out as any[];
 }
