@@ -19,6 +19,9 @@ const PAGE_SIZE = 1000;
  */
 export async function GET(request: NextRequest) {
   try {
+    const { searchParams } = new URL(request.url);
+    const mode = searchParams.get('mode') || 'manual';
+
     // Auth check — Vercel Cron sends this header, or manual trigger via secret
     const authHeader = request.headers.get('authorization');
     const cronSecret = process.env.ETL_CRON_SECRET;
@@ -30,13 +33,37 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    const db = getSupabaseAdmin();
+
+    // For poll mode (every 10 min): run only when there is a queued manual request.
+    let queuedRequestId: number | null = null;
+    if (mode === 'poll') {
+      const { data: queued } = await db
+        .from('etl_log')
+        .select('id')
+        .eq('source', 'gdrive_csv_manual')
+        .eq('status', 'queued')
+        .order('started_at', { ascending: true })
+        .limit(1)
+        .maybeSingle();
+
+      if (!queued) {
+        return NextResponse.json({ skipped: true, reason: 'No queued manual request' });
+      }
+
+      queuedRequestId = queued.id as number;
+      await db.from('etl_log')
+        .update({ status: 'running' })
+        .eq('id', queuedRequestId);
+    }
+
     const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
     if (!folderId) {
       return NextResponse.json({ error: 'GOOGLE_DRIVE_FOLDER_ID not configured' }, { status: 500 });
     }
 
     // Create ETL log
-    const { data: etlLog } = await getSupabaseAdmin()
+    const { data: etlLog } = await db
       .from('etl_log')
       .insert({
         source: 'gdrive_csv',
@@ -57,7 +84,7 @@ export async function GET(request: NextRequest) {
 
       const latestFile = files[0];
       if (etlLogId) {
-        await getSupabaseAdmin().from('etl_log').update({ csv_filename: latestFile.name }).eq('id', etlLogId);
+        await db.from('etl_log').update({ csv_filename: latestFile.name }).eq('id', etlLogId);
       }
 
       // Step 2: Download
@@ -84,10 +111,10 @@ export async function GET(request: NextRequest) {
         if (existing.length > 0) {
           const ids = existing.map(o => o.order_id as string);
           for (let i = 0; i < ids.length; i += 500) {
-            await getSupabaseAdmin().from('fact_order_items').delete().in('order_id', ids.slice(i, i + 500));
+            await db.from('fact_order_items').delete().in('order_id', ids.slice(i, i + 500));
           }
           for (let i = 0; i < ids.length; i += 500) {
-            await getSupabaseAdmin().from('fact_orders').delete().in('order_id', ids.slice(i, i + 500));
+            await db.from('fact_orders').delete().in('order_id', ids.slice(i, i + 500));
           }
         }
       }
@@ -96,7 +123,7 @@ export async function GET(request: NextRequest) {
       let ordersInserted = 0;
       for (let i = 0; i < orders.length; i += 200) {
         const batch = orders.slice(i, i + 200);
-        const { error } = await getSupabaseAdmin().from('fact_orders').upsert(batch, { onConflict: 'order_id' });
+        const { error } = await db.from('fact_orders').upsert(batch, { onConflict: 'order_id' });
         if (!error) ordersInserted += batch.length;
       }
 
@@ -104,7 +131,7 @@ export async function GET(request: NextRequest) {
       let itemsInserted = 0;
       for (let i = 0; i < items.length; i += 500) {
         const batch = items.slice(i, i + 500);
-        const { error } = await getSupabaseAdmin().from('fact_order_items').insert(batch);
+        const { error } = await db.from('fact_order_items').insert(batch);
         if (!error) itemsInserted += batch.length;
       }
 
@@ -120,6 +147,18 @@ export async function GET(request: NextRequest) {
         date_range_end: maxDate !== '0000-01-01' ? maxDate : null,
       });
 
+      if (queuedRequestId) {
+        await db.from('etl_log').update({
+          status: 'success',
+          finished_at: new Date().toISOString(),
+          rows_processed: stats.totalRows,
+          rows_inserted: ordersInserted + itemsInserted,
+          csv_filename: latestFile.name,
+          date_range_start: minDate !== '9999-12-31' ? minDate : null,
+          date_range_end: maxDate !== '0000-01-01' ? maxDate : null,
+        }).eq('id', queuedRequestId);
+      }
+
       return NextResponse.json({
         success: true,
         file: latestFile.name,
@@ -128,6 +167,13 @@ export async function GET(request: NextRequest) {
         dateRange: stats.dateRange,
       });
     } catch (err) {
+      if (queuedRequestId) {
+        await db.from('etl_log').update({
+          status: 'error',
+          finished_at: new Date().toISOString(),
+          error_message: String(err),
+        }).eq('id', queuedRequestId);
+      }
       await updateLog(etlLogId, 'error', String(err));
       throw err;
     }

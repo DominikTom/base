@@ -62,15 +62,14 @@ export default function AdminPage() {
     setGdriveSyncing(true);
     setGdriveSyncResult(null);
     try {
-      const res = await fetch('/api/etl/gdrive-sync');
+      const res = await fetch('/api/etl/gdrive-request-sync', { method: 'POST' });
       const json = await safeJson(res);
       if (!res.ok) {
         setGdriveSyncResult({ ok: false, message: String(json.error || `HTTP ${res.status}`) });
       } else {
-        setGdriveSyncResult({
-          ok: true,
-          message: `Sync OK: ${formatNumber((json.orders as number) || 0)} zamówień, ${formatNumber((json.items as number) || 0)} pozycji (${String(json.file || 'CSV')})`,
-        });
+        const msg = String(json.message || 'Manual sync queued.');
+        const req = json.requestId ? ` (#${json.requestId})` : '';
+        setGdriveSyncResult({ ok: true, message: `${msg}${req}` });
         await fetchLogs();
       }
     } catch (err) {
@@ -312,7 +311,7 @@ export default function AdminPage() {
       </div>
 
       {/* Manual GDrive sync */}
-      <ChartCard title="Google Drive Sync — ręczne uruchomienie" subtitle="Pobiera najnowszy CSV z folderu Google Drive bez czekania na cron">
+      <ChartCard title="Google Drive Sync — ręczne uruchomienie" subtitle="Kolejkuje import. Cron poll odpala sync automatycznie (do ~10 min)">
         <div className="flex flex-col gap-3">
           <div className="flex items-center gap-4">
             <button
@@ -323,7 +322,7 @@ export default function AdminPage() {
               {gdriveSyncing ? <RefreshCw size={16} className="animate-spin" /> : <FolderSync size={16} />}
               {gdriveSyncing ? 'Synchronizacja...' : 'Pobierz z Google Drive teraz'}
             </button>
-            <span className="text-xs text-zinc-500">Użyj po wrzuceniu nowego CSV, żeby od razu przeliczyć dashboard.</span>
+            <span className="text-xs text-zinc-500">To omija timeout requestu w UI — ciężki sync wykona się w tle przez cron.</span>
           </div>
           {gdriveSyncResult && (
             <div className={`rounded-lg border px-3 py-2 text-sm ${
