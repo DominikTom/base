@@ -7,23 +7,25 @@ export const maxDuration = 60;
 
 // POST — manual trigger.
 // ?days=N (default 14) or ?since=YYYY-MM-DD&until=YYYY-MM-DD.
-// Ad-level sync jest 3-5× droższy niż campaign-level pod względem rate limitu
-// i ilości wierszy, więc default jest krótszy (14 dni zamiast 90).
+// ?account=act_xxx — opcjonalnie sync tylko jednego konta (per-account).
+//   Bez tego: wszystkie konta sequential (może timeoutować przy 3+ kontach).
+//   Z tym: jedno konto na call, frontend orchestruje per-shop sync.
 export async function POST(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const since = searchParams.get('since');
   const until = searchParams.get('until');
+  const accountFilter = searchParams.get('account');
 
   if (since && until && /^\d{4}-\d{2}-\d{2}$/.test(since) && /^\d{4}-\d{2}-\d{2}$/.test(until)) {
-    return syncAdsRange(since, until);
+    return syncAdsRange(since, until, accountFilter);
   }
 
   const daysParam = parseInt(searchParams.get('days') || '14', 10);
   const days = Number.isFinite(daysParam) && daysParam > 0 && daysParam <= 400 ? daysParam : 14;
-  return syncAdsDays(days);
+  return syncAdsDays(days, accountFilter);
 }
 
-// GET — Vercel Cron daily at 6:00 UTC (po meta-sync campaign-level)
+// GET — Vercel Cron daily at 7:00 UTC
 export async function GET(request: NextRequest) {
   const isVercelCron = request.headers.get('x-vercel-cron') === '1';
   const cronSecret = process.env.ETL_CRON_SECRET;
@@ -31,25 +33,30 @@ export async function GET(request: NextRequest) {
   if (!isVercelCron && cronSecret && authHeader !== `Bearer ${cronSecret}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
-  // 7-dniowe okno — pokrywa attribution delay najnowszych kreacji,
-  // ale nie przesadza z rate limit (ad-level jest drogie).
-  return syncAdsDays(7);
+  return syncAdsDays(7, null);
 }
 
-async function syncAdsDays(daysBack: number) {
+async function syncAdsDays(daysBack: number, accountFilter: string | null) {
   const today = new Date();
   const dateTo = new Date(today);
   dateTo.setDate(dateTo.getDate() - 1);
   const dateFrom = new Date(today);
   dateFrom.setDate(dateFrom.getDate() - daysBack);
   const fmt = (d: Date) => d.toISOString().split('T')[0];
-  return syncAdsRange(fmt(dateFrom), fmt(dateTo));
+  return syncAdsRange(fmt(dateFrom), fmt(dateTo), accountFilter);
 }
 
-async function syncAdsRange(dateFromStr: string, dateToStr: string) {
+async function syncAdsRange(dateFromStr: string, dateToStr: string, accountFilter: string | null) {
   try {
     const db = getSupabaseAdmin();
-    const accountIds = getAdAccountIds();
+    let accountIds = getAdAccountIds();
+
+    if (accountFilter) {
+      accountIds = accountIds.filter(a => a === accountFilter);
+      if (accountIds.length === 0) {
+        return NextResponse.json({ error: `account ${accountFilter} not configured` }, { status: 400 });
+      }
+    }
 
     if (accountIds.length === 0) {
       return NextResponse.json({ error: 'META_AD_ACCOUNTS not configured' }, { status: 500 });

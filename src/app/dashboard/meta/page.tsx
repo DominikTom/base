@@ -12,6 +12,7 @@ import { ViewTabs, CampaignSubTabs, type MetaView, type CampaignSubview } from '
 import { FilterChips, type FilterChipsContext } from '@/components/meta/filter-chips';
 import { HierarchyTable, type HierarchyRow } from '@/components/meta/hierarchy-table';
 import { SyncMenu } from '@/components/meta/sync-menu';
+import { InsightsView } from '@/components/meta/insights-view';
 import {
   DollarSign, Target, TrendingUp, MousePointerClick,
   Sparkles, Film, CheckCircle2, Clock, AlertCircle,
@@ -379,16 +380,8 @@ function MetaPageInner() {
         </>
       )}
 
-      {/* === INSIGHTS === (placeholder — w następnym commit'cie pełna logika) */}
-      {view === 'insights' && (
-        <ChartCard title="Insights" subtitle="Auto-generowane patterns z AI tagów — wkrótce">
-          <p className="text-sm text-zinc-500 py-12 text-center max-w-2xl mx-auto">
-            Tu pojawi się auto-analiza co odróżnia winnery od loserów: które
-            formaty/kąty/style działają najlepiej, gdzie jest największa nisza.
-            Klastrowanie po AI tagach Claude Vision.
-          </p>
-        </ChartCard>
-      )}
+      {/* === INSIGHTS === auto-generowane patterns z AI tagów */}
+      {view === 'insights' && <InsightsView />}
     </div>
   );
 }
