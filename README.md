@@ -34,3 +34,25 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+## Auto commit + push (GitHub/Vercel flow)
+
+If your Vercel project redeploys on every push to GitHub, you can use:
+
+```bash
+AUTOPUSH_REMOTE_URL="git@github.com:<org>/<repo>.git" \
+scripts/auto-commit-push.sh "chore: update dashboard"
+```
+
+What it does:
+
+1. Adds `origin` remote if missing (from `AUTOPUSH_REMOTE_URL`).
+2. Stages all changes.
+3. Creates one commit with your message.
+4. Pushes current branch to GitHub (`git push -u origin HEAD:<branch>`).
+
+Optional env vars:
+
+- `AUTOPUSH_REMOTE_NAME` (default: `origin`)
+- `AUTOPUSH_BRANCH` (default: current branch)
+- `AUTOPUSH_REMOTE_URL` (required only for first-time remote setup)

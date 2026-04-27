@@ -81,7 +81,9 @@ export default function TrafficPage() {
     'mybed.de': 'mybed.de',
     'mittohome.pl': 'mittohome.pl',
   };
-  const hostnameFilter = shopToHostname[filters.shop] || 'all';
+  const hostnameFilter = filters.shop === 'all'
+    ? 'all'
+    : (shopToHostname[filters.shop] || '__none__');
 
   useEffect(() => {
     async function fetchData() {
@@ -170,9 +172,14 @@ export default function TrafficPage() {
       )}
 
       {/* Active filter label */}
-      {hostnameFilter !== 'all' && (
+      {hostnameFilter !== 'all' && hostnameFilter !== '__none__' && (
         <div className="text-sm text-zinc-400">
           Dane dla: <span className="text-zinc-200 font-medium">{hostnameFilter}</span>
+        </div>
+      )}
+      {hostnameFilter === '__none__' && (
+        <div className="text-sm text-amber-400">
+          Brak mapowania sklepu <span className="font-medium">{filters.shop}</span> do GA4 hostname.
         </div>
       )}
 
