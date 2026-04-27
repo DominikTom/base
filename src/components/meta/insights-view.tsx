@@ -116,8 +116,8 @@ export function InsightsView() {
       {data.insights.length === 0 && (
         <ChartCard title="Brak istotnych różnic" subtitle="Reguły szukają >15% różnic między segmentami przy >2 kreacjach każdy">
           <p className="text-sm text-zinc-500 py-12 text-center max-w-xl mx-auto">
-            Nie znaleziono jeszcze istotnych pattern'ów. Wymaga większej liczby
-            otagowanych kreacji (najlepiej >20). Otaguj więcej kreacji albo
+            Nie znaleziono jeszcze istotnych pattern&apos;ów. Wymaga większej liczby
+            otagowanych kreacji (najlepiej {'>'}20). Otaguj więcej kreacji albo
             zwiększ zakres dat.
           </p>
         </ChartCard>
