@@ -178,18 +178,24 @@ function detectSource(orderNumber: string, optionStr: string): { platform: strin
     return { platform: 'manual', shop: 'showroom' };
   }
 
-  // Shoper or numeric — check language of options to distinguish PL vs DE
+  // Shoper / numeric: trailing "-N" identifies the shop in IdeaERP
+  // (1 = mybed.pl, 2 = mybed.de). This is authoritative — the option-language
+  // heuristic below is only a fallback for legacy rows without a suffix.
+  const suffixMatch = num.match(/-(\d+)$/);
+  if (suffixMatch) {
+    const suffix = suffixMatch[1];
+    if (suffix === '2') return { platform: 'shoper', shop: 'mybed.de' };
+    if (suffix === '1') return { platform: 'shoper', shop: 'mybed.pl' };
+  }
+
   const isDE = isGermanOptions(optionStr);
   if (num.startsWith('Shoper')) {
     return { platform: 'shoper', shop: isDE ? 'mybed.de' : 'mybed.pl' };
   }
-
-  // 10-digit numeric
   if (/^\d{10}$/.test(num)) {
     return { platform: 'shoper', shop: isDE ? 'mybed.de' : 'mybed.pl' };
   }
 
-  // Fallback
   return { platform: 'unknown', shop: 'unknown' };
 }
 
@@ -493,14 +499,12 @@ export async function parseErpCsv(rows: RawCsvRow[]): Promise<ParseResult> {
     const allOptions = group.items.map(i => (i['Pozycje zamówienia/Opcja'] || '')).join(' ');
     const { platform, shop } = detectSource(orderId, allOptions);
 
-    // Currency
+    // Currency is determined by source shop (no currency column in CSV).
     const currency = ['mybed.de', 'amazon.de', 'kaufland.de'].includes(shop) ? 'EUR' : 'PLN';
 
-    // Date (needed for exchange rate lookup)
     const orderDateStr = (h['Data zamówienia'] || '').trim();
     const orderDate = orderDateStr || new Date().toISOString();
 
-    // Parse total
     const sumaStr = (h['Suma'] || '').trim();
     const totalGross = parseDecimal(sumaStr);
     const shippingStr = (h['Koszt dostawy'] || '').trim();

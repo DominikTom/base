@@ -124,15 +124,19 @@ export async function GET(request: NextRequest) {
       for (let i = 0; i < orders.length; i += 200) {
         const batch = orders.slice(i, i + 200);
         const { error } = await db.from('fact_orders').upsert(batch, { onConflict: 'order_id' });
-        if (!error) ordersInserted += batch.length;
+        if (error) throw new Error(`fact_orders upsert failed at offset ${i}: ${error.message}`);
+        ordersInserted += batch.length;
       }
 
-      // Step 6: Insert items
+      // Step 6: Insert items. ON DELETE CASCADE on fact_order_items handled the
+      // wipe in Step 4, so a plain insert is safe and any error means real data
+      // would be missing — fail loud instead of silently dropping the batch.
       let itemsInserted = 0;
       for (let i = 0; i < items.length; i += 500) {
         const batch = items.slice(i, i + 500);
         const { error } = await db.from('fact_order_items').insert(batch);
-        if (!error) itemsInserted += batch.length;
+        if (error) throw new Error(`fact_order_items insert failed at offset ${i}: ${error.message}`);
+        itemsInserted += batch.length;
       }
 
       // Step 7: Rebuild aggregations
