@@ -34,21 +34,35 @@ async function refreshThumbnails(limit: number, onlyMissing: boolean) {
   try {
     const db = getSupabaseAdmin();
 
-    let query = db
+    // Strategia: NAJPIERW pobierz kreacje z thumbnail_url IS NULL (priorytet),
+    // potem dopełnij do limitu pozostałymi (sort: najnowsze first).
+    // Wyklucz wykryte DPA (is_dynamic = true) — Meta nie zwraca dla nich
+    // thumbnail i refresh nigdy ich nie naprawi.
+    const { data: nullThumbs, error: e1 } = await db
       .from('dim_creatives')
-      .select('creative_id, account_id, video_id, thumbnail_url')
+      .select('creative_id, account_id, video_id, thumbnail_url, is_dynamic')
+      .is('thumbnail_url', null)
+      .or('is_dynamic.is.null,is_dynamic.eq.false')
       .order('last_seen_at', { ascending: false })
       .limit(limit);
+    if (e1) throw new Error(`fetch nullThumbs: ${e1.message}`);
 
-    if (onlyMissing) {
-      // Opt-in: tylko kreacje bez URL-a
-      query = query.is('thumbnail_url', null);
+    let creatives = nullThumbs || [];
+
+    if (!onlyMissing && creatives.length < limit) {
+      const remaining = limit - creatives.length;
+      const { data: rest, error: e2 } = await db
+        .from('dim_creatives')
+        .select('creative_id, account_id, video_id, thumbnail_url, is_dynamic')
+        .not('thumbnail_url', 'is', null)
+        .or('is_dynamic.is.null,is_dynamic.eq.false')
+        .order('last_seen_at', { ascending: false })
+        .limit(remaining);
+      if (e2) throw new Error(`fetch rest: ${e2.message}`);
+      creatives = [...creatives, ...(rest || [])];
     }
-    // Default: refresh wszystkich — istniejące URL-e mogą być low-res lub expired.
 
-    const { data: creatives, error } = await query;
-    if (error) throw new Error(`fetch creatives: ${error.message}`);
-    if (!creatives || creatives.length === 0) {
+    if (creatives.length === 0) {
       return NextResponse.json({ processed: 0, succeeded: 0, failed: 0, message: 'nothing to refresh' });
     }
 

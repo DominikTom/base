@@ -401,28 +401,34 @@ function DataHealthAlert({
   topCreatives: CreativeCardData[];
   taggingPending: number;
 }) {
-  const missingThumbs = topCreatives.filter(
+  // DPA (format=dynamic) z definicji nie ma thumbnaila — to template.
+  // Wykluczamy z liczenia "broken" thumbs.
+  const fixable = topCreatives.filter(c => c.format !== 'dynamic');
+  const missingThumbs = fixable.filter(
     c => !c.thumbnail_url && !c.image_url
   ).length;
-  const totalShown = topCreatives.length;
-  if (totalShown === 0) return null;
-  const missingPct = totalShown > 0 ? Math.round((missingThumbs / totalShown) * 100) : 0;
+  const totalFixable = fixable.length;
+  if (totalFixable === 0 && taggingPending === 0) return null;
+  const missingPct = totalFixable > 0 ? Math.round((missingThumbs / totalFixable) * 100) : 0;
 
-  // Pokaż tylko gdy >30% kreacji bez podglądu albo >0 w kolejce tagowania
-  if (missingPct < 30 && taggingPending === 0) return null;
+  // Pokaż tylko gdy faktycznie coś do naprawy
+  if (missingThumbs === 0 && taggingPending === 0) return null;
 
   return (
     <div className="rounded-lg bg-amber-500/5 border border-amber-500/20 p-3 flex items-start gap-3">
       <AlertCircle size={16} className="text-amber-400 shrink-0 mt-0.5" />
-      <div className="flex-1 text-xs text-zinc-300 leading-relaxed">
-        {missingPct >= 30 && (
+      <div className="flex-1 text-xs text-zinc-300 leading-relaxed space-y-1">
+        {missingThumbs > 0 && (
           <p>
-            <span className="font-medium text-amber-300">{missingThumbs} z {totalShown} kreacji</span>
-            {' '}bez podglądu. Kliknij <span className="text-zinc-100 font-medium">Synchronizuj → Odśwież podglądy</span> w prawym górnym rogu.
+            <span className="font-medium text-amber-300">{missingThumbs} z {totalFixable} kreacji</span>
+            {' '}bez podglądu (pomijam DPA — te z natury nie mają thumbnaila).
+            {missingPct >= 30 && ' Kliknij '}
+            {missingPct >= 30 && <span className="text-zinc-100 font-medium">Synchronizuj → Odśwież podglądy</span>}
+            {missingPct >= 30 && '.'}
           </p>
         )}
         {taggingPending > 0 && (
-          <p className={missingPct >= 30 ? 'mt-1' : ''}>
+          <p>
             <span className="font-medium text-amber-300">{formatNumber(taggingPending)} kreacji</span>
             {' '}czeka na otagowanie AI. Kliknij <span className="text-zinc-100 font-medium">Synchronizuj → Otaguj AI</span> żeby uzupełnić tagi i analizę.
           </p>

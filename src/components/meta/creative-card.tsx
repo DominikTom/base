@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { formatCurrency, formatNumber } from '@/lib/utils';
-import { Play, Image as ImageIcon, Layers, HelpCircle } from 'lucide-react';
+import { Play, Image as ImageIcon, Layers, HelpCircle, Wand2, Package } from 'lucide-react';
 
 export interface VideoRetention {
   p25: number;
@@ -42,7 +42,7 @@ function FormatBadge({ format }: { format: string }) {
     video: { icon: <Play size={10} />, cls: 'bg-purple-500/20 text-purple-300', label: 'Video' },
     image: { icon: <ImageIcon size={10} />, cls: 'bg-blue-500/20 text-blue-300', label: 'Image' },
     carousel: { icon: <Layers size={10} />, cls: 'bg-amber-500/20 text-amber-300', label: 'Carousel' },
-    dynamic: { icon: <Layers size={10} />, cls: 'bg-emerald-500/20 text-emerald-300', label: 'Dynamic' },
+    dynamic: { icon: <Wand2 size={10} />, cls: 'bg-fuchsia-500/20 text-fuchsia-300', label: 'DPA' },
     unknown: { icon: <HelpCircle size={10} />, cls: 'bg-zinc-700 text-zinc-400', label: '?' },
   };
   const c = cfg[format] || cfg.unknown;
@@ -92,6 +92,15 @@ export function CreativeCard({ data, onClick }: { data: CreativeCardData; onClic
             onError={() => setImgError(true)}
             className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform"
           />
+        ) : data.format === 'dynamic' ? (
+          // DPA = template, Meta nie zwraca thumbnail. Fioletowy placeholder z info.
+          <div className="w-full h-full flex flex-col items-center justify-center gap-2 bg-gradient-to-br from-fuchsia-950/40 to-zinc-950 text-fuchsia-300/70">
+            <Package size={32} />
+            <span className="text-[10px] font-medium tracking-wide">SZABLON KATALOGOWY</span>
+            <span className="text-[10px] text-zinc-500 px-3 text-center leading-snug">
+              Meta renderuje produkty<br />dynamicznie z katalogu
+            </span>
+          </div>
         ) : (
           <div className="w-full h-full flex items-center justify-center text-zinc-700">
             <ImageIcon size={32} />
