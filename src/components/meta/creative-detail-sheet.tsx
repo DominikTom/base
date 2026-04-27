@@ -184,34 +184,35 @@ export function CreativeDetailSheet({
             </div>
           )}
 
-          {/* Large preview — oficjalny Meta embed (FB Post Plugin / IG embed).
-              Renderuje reklamę z tekstem, CTA, video playerem, dokładnie jak
-              w feedzie. Działa publicznie — bez logowania. Fallback na HD
-              thumbnail (scontent.xx.fbcdn.net) gdyby permalink nie pasował. */}
-          <div className="bg-zinc-900 rounded-xl overflow-hidden border border-zinc-800">
-            {embedUrl ? (
-              <iframe
-                src={embedUrl.url}
-                title={creative.title || 'Creative preview'}
-                className="w-full border-0 bg-white"
-                style={{ height: embedUrl.platform === 'ig' ? 720 : 680 }}
-                scrolling="no"
-                allow="autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share"
-                allowFullScreen
-              />
-            ) : previewUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={previewUrl}
-                alt={creative.title || 'Creative'}
-                className="w-full max-h-[600px] object-contain bg-zinc-950"
-              />
-            ) : (
-              <div className="aspect-[4/5] flex items-center justify-center text-zinc-700">
-                <ImageIcon size={48} />
-              </div>
-            )}
-          </div>
+          {/* Large preview — dla DPA pomijamy całkowicie (pokazałby rozmazany template).
+              Dla zwykłych: oficjalny Meta embed (FB Post Plugin / IG embed)
+              z fallbackiem na HD static thumbnail. */}
+          {!isDynamic && (
+            <div className="bg-zinc-900 rounded-xl overflow-hidden border border-zinc-800">
+              {embedUrl ? (
+                <iframe
+                  src={embedUrl.url}
+                  title={creative.title || 'Creative preview'}
+                  className="w-full border-0 bg-white"
+                  style={{ height: embedUrl.platform === 'ig' ? 720 : 680 }}
+                  scrolling="no"
+                  allow="autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share"
+                  allowFullScreen
+                />
+              ) : previewUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={previewUrl}
+                  alt={creative.title || 'Creative'}
+                  className="w-full max-h-[600px] object-contain bg-zinc-950"
+                />
+              ) : (
+                <div className="aspect-[4/5] flex items-center justify-center text-zinc-700">
+                  <ImageIcon size={48} />
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Body copy */}
           {creative.body && (

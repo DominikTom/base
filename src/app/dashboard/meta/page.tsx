@@ -360,7 +360,7 @@ function MetaPageInner() {
           {subview === 'campaigns' && data.campaigns && (
             <ChartCard title="Kampanie" subtitle={`${data.campaigns.length} kampanii · klik w wiersz → zestawy`}>
               {data.campaigns.length === 0 ? (
-                <p className="text-sm text-zinc-500 py-12 text-center">Brak kampanii w wybranym okresie.</p>
+                <EmptyHierarchyState shop={filters.shop} kind="campaigns" />
               ) : (
                 <HierarchyTable rows={data.campaigns} variant="campaign" onRowClick={onCampaignClick} />
               )}
@@ -370,7 +370,7 @@ function MetaPageInner() {
           {subview === 'adsets' && data.adsets && (
             <ChartCard title="Zestawy reklam" subtitle={`${data.adsets.length} zestawów · klik w wiersz → kreacje`}>
               {data.adsets.length === 0 ? (
-                <p className="text-sm text-zinc-500 py-12 text-center">Brak zestawów w wybranym zakresie/filtrze.</p>
+                <EmptyHierarchyState shop={filters.shop} kind="adsets" />
               ) : (
                 <HierarchyTable rows={data.adsets} variant="adset" onRowClick={onAdsetClick} />
               )}
@@ -394,6 +394,25 @@ function MetaPageInner() {
 }
 
 // === Sub-components ===
+
+function EmptyHierarchyState({ shop, kind }: { shop: string; kind: 'campaigns' | 'adsets' }) {
+  const shopLabel = shop === 'all' ? 'wybranych sklepów' : shop;
+  return (
+    <div className="py-12 px-4 text-center max-w-xl mx-auto space-y-3">
+      <AlertCircle size={32} className="text-amber-400/60 mx-auto" />
+      <p className="text-sm text-zinc-300">
+        Brak {kind === 'campaigns' ? 'kampanii' : 'zestawów reklam'} dla{' '}
+        <span className="font-medium text-zinc-100">{shopLabel}</span> w wybranym okresie.
+      </p>
+      <p className="text-xs text-zinc-500 leading-relaxed">
+        Możliwe przyczyny:<br />
+        • To konto nie miało aktywnych kampanii w tym zakresie dat — zmień zakres na większy<br />
+        • Sync ad-level nie obejmuje jeszcze tego sklepu — kliknij <span className="text-zinc-300 font-medium">Synchronizuj → Pobierz dane</span><br />
+        • Filtr cross (kampania/zestaw) zawęża wynik — kliknij ✕ na chipie powyżej
+      </p>
+    </div>
+  );
+}
 
 function DataHealthAlert({
   topCreatives, taggingPending,
