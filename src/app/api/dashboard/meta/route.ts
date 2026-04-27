@@ -128,16 +128,39 @@ export async function GET(request: NextRequest) {
       campaignId, adsetId,
     });
 
-    // KPIs — agregacja po wszystkich wierszach w zakresie
-    const totals = { spend: 0, impressions: 0, clicks: 0, conversions: 0, conversionValue: 0, videoPlay3s: 0 };
-    for (const r of adRows) {
-      totals.spend += Number(r.spend) || 0;
-      totals.impressions += Number(r.impressions) || 0;
-      totals.clicks += Number(r.clicks) || 0;
-      totals.conversions += Number(r.conversions) || 0;
-      totals.conversionValue += Number(r.conversion_value) || 0;
-      totals.videoPlay3s += Number(r.video_play_3s) || 0;
+    // Poprzedni okres tej samej długości — do obliczania deltów WoW.
+    // Jeśli okres = 7 dni, prevDateFrom = today-14, prevDateTo = today-7.
+    const dateFromMs = new Date(dateFrom).getTime();
+    const dateToMs = new Date(dateTo).getTime();
+    const periodMs = dateToMs - dateFromMs + 86_400_000; // +1 dzień (inclusive)
+    const prevDateFrom = new Date(dateFromMs - periodMs).toISOString().split('T')[0];
+    const prevDateTo = new Date(dateFromMs - 86_400_000).toISOString().split('T')[0];
+    const prevRows = await fetchAllAdPerf({
+      dateFrom: prevDateFrom, dateTo: prevDateTo,
+      accountId: accountIdFilter,
+      campaignId, adsetId,
+    });
+
+    function aggregateTotals(rows: Array<Record<string, unknown>>) {
+      const t = { spend: 0, impressions: 0, clicks: 0, conversions: 0, conversionValue: 0, videoPlay3s: 0 };
+      for (const r of rows) {
+        t.spend += Number(r.spend) || 0;
+        t.impressions += Number(r.impressions) || 0;
+        t.clicks += Number(r.clicks) || 0;
+        t.conversions += Number(r.conversions) || 0;
+        t.conversionValue += Number(r.conversion_value) || 0;
+        t.videoPlay3s += Number(r.video_play_3s) || 0;
+      }
+      return t;
     }
+
+    function delta(curr: number, prev: number): number | null {
+      if (prev <= 0) return null;
+      return Math.round(((curr - prev) / prev) * 1000) / 10;  // % z 1 miejscem po przecinku
+    }
+
+    const totals = aggregateTotals(adRows);
+    const prevTotals = aggregateTotals(prevRows);
 
     const activeCreatives = new Set(adRows.map(r => r.creative_id).filter(Boolean)).size;
 
@@ -150,6 +173,22 @@ export async function GET(request: NextRequest) {
       ctr: totals.impressions > 0 ? Math.round((totals.clicks / totals.impressions) * 10000) / 100 : 0,
       hookRate: totals.impressions > 0 ? Math.round((totals.videoPlay3s / totals.impressions) * 10000) / 100 : 0,
       activeCreatives,
+    };
+
+    // Delty vs poprzedni okres (do badge'ów ↑/↓ w Pulse)
+    const prevRoas = prevTotals.spend > 0 ? prevTotals.conversionValue / prevTotals.spend : 0;
+    const prevCpa = prevTotals.conversions > 0 ? prevTotals.spend / prevTotals.conversions : 0;
+    const prevCtr = prevTotals.impressions > 0 ? (prevTotals.clicks / prevTotals.impressions) * 100 : 0;
+    const prevHookRate = prevTotals.impressions > 0 ? (prevTotals.videoPlay3s / prevTotals.impressions) * 100 : 0;
+    const kpiDeltas = {
+      spend: delta(totals.spend, prevTotals.spend),
+      conversions: delta(totals.conversions, prevTotals.conversions),
+      conversionValue: delta(totals.conversionValue, prevTotals.conversionValue),
+      roas: delta(totals.spend > 0 ? totals.conversionValue / totals.spend : 0, prevRoas),
+      cpa: delta(totals.conversions > 0 ? totals.spend / totals.conversions : 0, prevCpa),
+      ctr: delta(totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : 0, prevCtr),
+      hookRate: delta(totals.impressions > 0 ? (totals.videoPlay3s / totals.impressions) * 100 : 0, prevHookRate),
+      periodLabel: `${prevDateFrom} → ${prevDateTo}`,
     };
 
     // Agregacja per creative_id
@@ -192,14 +231,32 @@ export async function GET(request: NextRequest) {
       byCreative.set(cid, cur);
     }
 
-    // Top 24 creatives by spend (min spend > 50 PLN żeby odciąć szum)
-    const topByCrea = Array.from(byCreative.values())
-      .filter(c => c.spend > 50)
-      .sort((a, b) => b.spend - a.spend)
-      .slice(0, 24);
+    // Build byCreative też dla poprzedniego okresu — do klasyfikacji
+    // (scalable/burning/stable) musimy porównać CTR i ROAS WoW per kreacja.
+    const byCreativePrev = new Map<string, CreativeAgg>();
+    for (const r of prevRows) {
+      const cid = r.creative_id as string | null;
+      if (!cid) continue;
+      const cur = byCreativePrev.get(cid) || {
+        creative_id: cid, spend: 0, impressions: 0, clicks: 0,
+        conversions: 0, conversion_value: 0, video_play_3s: 0,
+        video_p25: 0, video_p50: 0, video_p75: 0, video_p95: 0, video_p100: 0, thruplays: 0,
+      };
+      cur.spend += Number(r.spend) || 0;
+      cur.impressions += Number(r.impressions) || 0;
+      cur.clicks += Number(r.clicks) || 0;
+      cur.conversions += Number(r.conversions) || 0;
+      cur.conversion_value += Number(r.conversion_value) || 0;
+      byCreativePrev.set(cid, cur);
+    }
 
-    // Pobierz metadane dla top creatives jednym zapytaniem
-    const topIds = topByCrea.map(c => c.creative_id);
+    // Wszystkie kreacje aktywne w okresie (min 50 zł żeby odciąć kompletny szum,
+    // ale zostawić więcej niż top 24 — bo Library powinno mieć też mniejsze)
+    const allCreatives = Array.from(byCreative.values())
+      .filter(c => c.spend > 30)
+      .sort((a, b) => b.spend - a.spend);
+
+    const topIds = allCreatives.map(c => c.creative_id);
     const metaRes = topIds.length > 0
       ? await db.from('dim_creatives')
           .select('creative_id, title, body, thumbnail_url, image_url, permalink_url, format, ai_tags, ai_insights, first_seen_at, account_id, video_id')
@@ -209,10 +266,22 @@ export async function GET(request: NextRequest) {
       (metaRes.data || []).map((m) => [m.creative_id as string, m as Record<string, unknown>])
     );
 
-    const topCreatives = topByCrea.map(c => {
+    const NOW = Date.now();
+    type EnrichedCreative = ReturnType<typeof enrich>;
+    function enrich(c: CreativeAgg) {
       const m = metaMap.get(c.creative_id) || {};
       const insights = m.ai_insights as Record<string, unknown> | null | undefined;
       const videoViews = c.video_play_3s || 0;
+      const prev = byCreativePrev.get(c.creative_id);
+      const ctrCurr = c.impressions > 0 ? (c.clicks / c.impressions) * 100 : 0;
+      const ctrPrev = prev && prev.impressions > 0 ? (prev.clicks / prev.impressions) * 100 : 0;
+      const roasCurr = c.spend > 0 ? c.conversion_value / c.spend : 0;
+      const roasPrev = prev && prev.spend > 0 ? prev.conversion_value / prev.spend : 0;
+      const ctrDelta = ctrPrev > 0 ? Math.round(((ctrCurr - ctrPrev) / ctrPrev) * 1000) / 10 : null;
+      const roasDelta = roasPrev > 0 ? Math.round(((roasCurr - roasPrev) / roasPrev) * 1000) / 10 : null;
+      const spendDelta = prev && prev.spend > 0 ? Math.round(((c.spend - prev.spend) / prev.spend) * 1000) / 10 : null;
+      const firstSeenAt = m.first_seen_at as string | null;
+      const ageDays = firstSeenAt ? Math.floor((NOW - new Date(firstSeenAt).getTime()) / 86_400_000) : null;
       return {
         creative_id: c.creative_id,
         title: (m.title as string) || null,
@@ -224,17 +293,21 @@ export async function GET(request: NextRequest) {
         format: (m.format as string) || 'unknown',
         ai_tags: (m.ai_tags as string[]) || [],
         ai_insights: insights || null,
-        first_seen_at: (m.first_seen_at as string) || null,
+        first_seen_at: firstSeenAt,
+        age_days: ageDays,
         account_id: (m.account_id as string) || null,
         spend: Math.round(c.spend),
         impressions: c.impressions,
         clicks: c.clicks,
         conversions: c.conversions,
         conversion_value: Math.round(c.conversion_value),
-        roas: c.spend > 0 ? Math.round((c.conversion_value / c.spend) * 100) / 100 : 0,
-        ctr: c.impressions > 0 ? Math.round((c.clicks / c.impressions) * 10000) / 100 : 0,
+        roas: Math.round(roasCurr * 100) / 100,
+        ctr: Math.round(ctrCurr * 100) / 100,
         hook_rate: c.impressions > 0 ? Math.round((c.video_play_3s / c.impressions) * 10000) / 100 : 0,
         cpa: c.conversions > 0 ? Math.round((c.spend / c.conversions) * 100) / 100 : 0,
+        ctr_delta: ctrDelta,
+        roas_delta: roasDelta,
+        spend_delta: spendDelta,
         video_retention: videoViews > 0 ? {
           p25: Math.round((c.video_p25 / videoViews) * 1000) / 10,
           p50: Math.round((c.video_p50 / videoViews) * 1000) / 10,
@@ -243,7 +316,77 @@ export async function GET(request: NextRequest) {
           p100: Math.round((c.video_p100 / videoViews) * 1000) / 10,
         } : null,
       };
-    });
+    }
+
+    const enrichedAll = allCreatives.map(enrich);
+    const topCreatives = enrichedAll.slice(0, 24);
+
+    // Klasyfikacja kreacji do segmentów. Każda kreacja idzie do JEDNEGO segmentu
+    // (priorytet: burning > scalable > stable > fresh).
+    // Reguły dla zespołu mybed.pl/de — można dostroić po feedbacku.
+    const buckets: {
+      scalable: EnrichedCreative[];
+      burning: EnrichedCreative[];
+      fresh: EnrichedCreative[];
+      stable: EnrichedCreative[];
+    } = { scalable: [], burning: [], fresh: [], stable: [] };
+
+    for (const c of enrichedAll) {
+      const isFresh = c.age_days !== null && c.age_days <= 14;
+
+      // BURNING — CTR spadł >25% WoW przy spendzie >150 zł i wieku >7d
+      if (c.ctr_delta !== null && c.ctr_delta < -25 && c.spend > 150 && (c.age_days ?? 0) > 7) {
+        buckets.burning.push(c);
+        continue;
+      }
+      // SCALABLE — ROAS ≥3, spend stabilny lub rosnący, dojrzała (>7d)
+      if (c.roas >= 3 && c.spend > 200 && (c.age_days ?? 0) > 7
+          && (c.spend_delta === null || c.spend_delta >= -10)) {
+        buckets.scalable.push(c);
+        continue;
+      }
+      // STABLE — ROAS ≥2, dojrzała >30d, bez znaczących wahań CTR
+      if (c.roas >= 2 && (c.age_days ?? 0) >= 30
+          && (c.ctr_delta === null || Math.abs(c.ctr_delta) < 20)) {
+        buckets.stable.push(c);
+        continue;
+      }
+      // FRESH — niezależnie od wyników, młoda kreacja na watch list
+      if (isFresh) {
+        buckets.fresh.push(c);
+        continue;
+      }
+      // Reszta nie trafia do żadnego segmentu — pokażemy w "Wszystkie kreacje"
+    }
+
+    // Sort buckets — scalable wg ROAS DESC, burning wg ctr_delta ASC (najgorsze najpierw)
+    buckets.scalable.sort((a, b) => b.roas - a.roas);
+    buckets.burning.sort((a, b) => (a.ctr_delta ?? 0) - (b.ctr_delta ?? 0));
+    buckets.fresh.sort((a, b) => (b.spend) - (a.spend));
+    buckets.stable.sort((a, b) => b.roas - a.roas);
+
+    // Limit per bucket — 12 sztuk wystarcza, reszta dostępna w pełnej Library
+    const trimBucket = (arr: EnrichedCreative[]) => arr.slice(0, 12);
+    const creativeBuckets = {
+      scalable: trimBucket(buckets.scalable),
+      burning: trimBucket(buckets.burning),
+      fresh: trimBucket(buckets.fresh),
+      stable: trimBucket(buckets.stable),
+    };
+
+    // Pulse winners/losers — top 5 po roas_delta (winners) i ctr_delta (losers)
+    const winners = [...enrichedAll]
+      .filter(c => c.roas_delta !== null && c.spend > 100)
+      .sort((a, b) => (b.roas_delta ?? 0) - (a.roas_delta ?? 0))
+      .slice(0, 5);
+    const losers = [...enrichedAll]
+      .filter(c => c.ctr_delta !== null && c.spend > 100)
+      .sort((a, b) => (a.ctr_delta ?? 0) - (b.ctr_delta ?? 0))
+      .slice(0, 5);
+    const freshWatch = [...enrichedAll]
+      .filter(c => c.age_days !== null && c.age_days <= 7)
+      .sort((a, b) => b.spend - a.spend)
+      .slice(0, 5);
 
     // Recently launched — kreacje z pierwszym pokazaniem w ostatnich 14 dniach
     // FILTRUJE po account_id tak samo jak fact query, żeby przełącznik sklepu działał.
@@ -346,8 +489,11 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       level,
       kpis,
+      kpiDeltas,
       topCreatives,
       recentlyLaunched,
+      creativeBuckets,
+      pulse: { winners, losers, freshWatch },
       campaigns,
       adsets,
       filterContext,
