@@ -184,12 +184,26 @@ export function CreativeDetailSheet({
             </div>
           )}
 
-          {/* Large preview — dla DPA pomijamy całkowicie (pokazałby rozmazany template).
-              Dla zwykłych: oficjalny Meta embed (FB Post Plugin / IG embed)
-              z fallbackiem na HD static thumbnail. */}
+          {/* Large preview — strategia per typ kreacji:
+              VIDEO: native <video> przez nasz proxy /api/meta/video/{id}
+                     (Meta CDN ma restrykcyjne CORS, native tag nie zagra
+                     bezpośrednio; proxy server-to-server omija to).
+              IMAGE/CAROUSEL: oficjalny Meta embed (FB Post Plugin / IG embed)
+              FALLBACK: HD static image
+              DPA: pomijamy (info box już mówi czemu) */}
           {!isDynamic && (
             <div className="bg-zinc-900 rounded-xl overflow-hidden border border-zinc-800">
-              {embedUrl ? (
+              {creative.video_id ? (
+                // eslint-disable-next-line jsx-a11y/media-has-caption
+                <video
+                  src={`/api/meta/video/${creative.video_id}`}
+                  poster={previewUrl || undefined}
+                  controls
+                  playsInline
+                  preload="metadata"
+                  className="w-full max-h-[600px] bg-black"
+                />
+              ) : embedUrl ? (
                 <iframe
                   src={embedUrl.url}
                   title={creative.title || 'Creative preview'}
