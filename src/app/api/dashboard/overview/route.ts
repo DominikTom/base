@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabase';
+import { fetchAllPaginated } from '@/lib/db-pagination';
 
 export async function GET(request: NextRequest) {
   try {
@@ -8,28 +9,30 @@ export async function GET(request: NextRequest) {
     const dateTo = searchParams.get('date_to') || new Date().toISOString().split('T')[0];
     const shop = searchParams.get('shop') || 'all';
 
-    // Build shop filter
-    let shopFilter = {};
-    if (shop !== 'all') {
-      shopFilter = { source_shop: shop };
-    }
-
-    // Fetch daily revenue data
-    let revenueQuery = getSupabaseAdmin()
-      .from('fact_daily_revenue')
-      .select('*')
-      .gte('date', dateFrom)
-      .lte('date', dateTo)
-      .order('date', { ascending: true });
-
-    if (shop !== 'all') {
-      revenueQuery = revenueQuery.eq('source_shop', shop);
-    }
-
-    const { data: dailyRevenue, error: revError } = await revenueQuery.limit(50000);
-
-    if (revError) {
-      return NextResponse.json({ error: revError.message }, { status: 500 });
+    // Fetch daily revenue data — paginated to defeat PostgREST's 1000-row cap.
+    type RevenueRow = {
+      date: string;
+      source_shop: string;
+      orders_count: number | null;
+      orders_paid: number | null;
+      orders_cancelled: number | null;
+      revenue_gross_pln: number | null;
+      shipping_revenue_pln: number | null;
+    };
+    let dailyRevenue: RevenueRow[] = [];
+    try {
+      dailyRevenue = await fetchAllPaginated<RevenueRow>(() => {
+        let q = getSupabaseAdmin()
+          .from('fact_daily_revenue')
+          .select('*')
+          .gte('date', dateFrom)
+          .lte('date', dateTo)
+          .order('date', { ascending: true });
+        if (shop !== 'all') q = q.eq('source_shop', shop);
+        return q;
+      });
+    } catch (err) {
+      return NextResponse.json({ error: String(err) }, { status: 500 });
     }
 
     // Aggregate KPIs
@@ -90,19 +93,22 @@ export async function GET(request: NextRequest) {
       .map(([, v]) => v);
     const ordersSparkline = ordersDailyTotals.slice(-30);
 
-    // Top products
-    let productsQuery = getSupabaseAdmin()
-      .from('fact_order_items')
-      .select('product_name, product_category, quantity, order_id, fact_orders!inner(order_date, source_shop, total_gross_pln)')
-      .gte('fact_orders.order_date', dateFrom)
-      .lte('fact_orders.order_date', dateTo + 'T23:59:59')
-      .not('item_type', 'in', '("shipping","service","surcharge")');
-
-    if (shop !== 'all') {
-      productsQuery = productsQuery.eq('fact_orders.source_shop', shop);
-    }
-
-    const { data: productItems } = await productsQuery.limit(50000);
+    // Top products — paginated to defeat 1000-row cap.
+    const productItems = await fetchAllPaginated<{
+      product_name: string;
+      product_category: string;
+      quantity: number | null;
+      order_id: string;
+    }>(() => {
+      let q = getSupabaseAdmin()
+        .from('fact_order_items')
+        .select('product_name, product_category, quantity, order_id, fact_orders!inner(order_date, source_shop, total_gross_pln)')
+        .gte('fact_orders.order_date', dateFrom)
+        .lte('fact_orders.order_date', dateTo + 'T23:59:59')
+        .not('item_type', 'in', '("shipping","service","surcharge")');
+      if (shop !== 'all') q = q.eq('fact_orders.source_shop', shop);
+      return q;
+    });
 
     // Aggregate top products by order count
     const productMap: Record<string, { count: number; quantity: number; category: string }> = {};

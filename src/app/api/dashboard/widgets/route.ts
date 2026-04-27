@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabase';
+import { fetchAllPaginated } from '@/lib/db-pagination';
 
 export async function POST(request: NextRequest) {
   try {
@@ -122,11 +123,13 @@ export async function POST(request: NextRequest) {
       const grossField = isEurShop ? 'total_gross' : 'total_gross_pln';
 
       if (!hasItemCrossFilters && crossFilters.length === 0) {
-        let q = db.from('fact_daily_revenue').select('*')
-          .gte('date', dateFrom).lte('date', dateTo);
-        if (shop !== 'all') q = q.eq('source_shop', shop);
-        const { data } = await q.limit(50000);
-        return (data || []).reduce((a: typeof init, r: Record<string, number | null>) => ({
+        const data = await fetchAllPaginated<Record<string, number | null>>(() => {
+          let q = db.from('fact_daily_revenue').select('*')
+            .gte('date', dateFrom).lte('date', dateTo);
+          if (shop !== 'all') q = q.eq('source_shop', shop);
+          return q;
+        });
+        return data.reduce((a: typeof init, r) => ({
           revenue: a.revenue + (r[revField] || r.revenue_gross_pln || 0),
           paid: a.paid + (r.revenue_paid_pln || 0),
           orders: a.orders + (r.orders_count || 0),
@@ -136,13 +139,13 @@ export async function POST(request: NextRequest) {
       }
 
       const filteredIds = await getFilteredOrderIds();
-      let q = orderQuery(`${grossField}, total_gross_pln, is_paid, status`);
-      if (filteredIds !== null) {
-        if (filteredIds.length === 0) return init;
-        q = q.in('order_id', filteredIds.slice(0, 5000));
-      }
-      const { data } = await q.limit(50000);
-      return (data || []).reduce((a: typeof init, r: Record<string, unknown>) => ({
+      if (filteredIds !== null && filteredIds.length === 0) return init;
+      const data = await fetchAllPaginated<Record<string, unknown>>(() => {
+        let q = orderQuery(`${grossField}, total_gross_pln, is_paid, status`);
+        if (filteredIds !== null) q = q.in('order_id', filteredIds.slice(0, 5000));
+        return q;
+      });
+      return data.reduce((a: typeof init, r) => ({
         revenue: a.revenue + ((r[grossField] as number) || (r.total_gross_pln as number) || 0),
         paid: a.paid + (r.is_paid ? ((r.total_gross_pln as number) || 0) : 0),
         orders: a.orders + 1,
@@ -242,26 +245,32 @@ export async function POST(request: NextRequest) {
       }
 
       case 'ranking_cities': {
-        const { data } = await orderQuery('delivery_city').not('delivery_city', 'is', null).limit(50000);
+        const data = await fetchAllPaginated<{ delivery_city: string | null }>(() =>
+          orderQuery('delivery_city').not('delivery_city', 'is', null),
+        );
         const map: Record<string, number> = {};
-        for (const o of data || []) if (o.delivery_city) map[o.delivery_city] = (map[o.delivery_city] || 0) + 1;
+        for (const o of data) if (o.delivery_city) map[o.delivery_city] = (map[o.delivery_city] || 0) + 1;
         const ranked = Object.entries(map).sort(([,a],[,b]) => b - a).slice(0, limit);
         return NextResponse.json({ type: 'ranking', data: ranked.map(([name, value]) => ({ name, value })), total: ranked.reduce((s,[,v]) => s + v, 0), debug: { ...debug, query: 'COUNT grouped by delivery_city from fact_orders' } });
       }
 
       case 'ranking_suppliers': {
         const grossCol = isEurShop ? 'total_gross' : 'total_gross_pln';
-        const { data } = await orderQuery(`supplier, ${grossCol}`).not('supplier', 'is', null).limit(50000);
+        const data = await fetchAllPaginated<Record<string, number | string | null>>(() =>
+          orderQuery(`supplier, ${grossCol}`).not('supplier', 'is', null),
+        );
         const map: Record<string, number> = {};
-        for (const o of data || []) if (o.supplier) map[o.supplier] = (map[o.supplier] || 0) + (o[grossCol] || 0);
+        for (const o of data) if (o.supplier) map[o.supplier as string] = (map[o.supplier as string] || 0) + ((o[grossCol] as number) || 0);
         const ranked = Object.entries(map).sort(([,a],[,b]) => b - a).slice(0, limit);
         return NextResponse.json({ type: 'ranking', data: ranked.map(([name, value]) => ({ name, value: Math.round(value) })), total: ranked.reduce((s,[,v]) => s + v, 0), format: 'currency', currency, debug: { ...debug, query: `SUM(${grossCol}) grouped by supplier` } });
       }
 
       case 'ranking_coupons': {
-        const { data } = await orderQuery('coupon_code').not('coupon_code', 'is', null).limit(50000);
+        const data = await fetchAllPaginated<{ coupon_code: string | null }>(() =>
+          orderQuery('coupon_code').not('coupon_code', 'is', null),
+        );
         const map: Record<string, number> = {};
-        for (const o of data || []) if (o.coupon_code) { const c = o.coupon_code.trim().toUpperCase(); map[c] = (map[c] || 0) + 1; }
+        for (const o of data) if (o.coupon_code) { const c = o.coupon_code.trim().toUpperCase(); map[c] = (map[c] || 0) + 1; }
         const ranked = Object.entries(map).sort(([,a],[,b]) => b - a).slice(0, limit);
         return NextResponse.json({ type: 'ranking', data: ranked.map(([name, value]) => ({ name, value })), total: ranked.reduce((s,[,v]) => s + v, 0), debug: { ...debug, query: 'COUNT grouped by coupon_code' } });
       }
@@ -296,22 +305,24 @@ export async function POST(request: NextRequest) {
         let chartData: Array<{ name: string; value: number }>;
         if (hasItemCrossFilters || crossFilters.length > 0) {
           const filteredIds = await getFilteredOrderIds();
-          let q = orderQuery('order_date');
-          if (filteredIds !== null) {
-            if (filteredIds.length === 0) return NextResponse.json({ type: widget === 'chart_daily_orders' ? 'bar' : 'line', data: [], debug });
-            q = q.in('order_id', filteredIds.slice(0, 5000));
-          }
-          const { data } = await q.limit(50000);
+          if (filteredIds !== null && filteredIds.length === 0) return NextResponse.json({ type: widget === 'chart_daily_orders' ? 'bar' : 'line', data: [], debug });
+          const data = await fetchAllPaginated<{ order_date: string }>(() => {
+            let q = orderQuery('order_date');
+            if (filteredIds !== null) q = q.in('order_id', filteredIds.slice(0, 5000));
+            return q;
+          });
           const byDate: Record<string, number> = {};
-          for (const r of data || []) { const d = (r.order_date as string).substring(0, 10); byDate[d] = (byDate[d] || 0) + 1; }
+          for (const r of data) { const d = r.order_date.substring(0, 10); byDate[d] = (byDate[d] || 0) + 1; }
           chartData = Object.entries(byDate).sort(([a],[b]) => a.localeCompare(b)).map(([name, value]) => ({ name, value }));
         } else {
-          let q = db.from('fact_daily_revenue').select('date, orders_count')
-            .gte('date', dateFrom).lte('date', dateTo).order('date');
-          if (shop !== 'all') q = q.eq('source_shop', shop);
-          const { data } = await q.limit(50000);
+          const data = await fetchAllPaginated<{ date: string; orders_count: number | null }>(() => {
+            let q = db.from('fact_daily_revenue').select('date, orders_count')
+              .gte('date', dateFrom).lte('date', dateTo).order('date');
+            if (shop !== 'all') q = q.eq('source_shop', shop);
+            return q;
+          });
           const byDate: Record<string, number> = {};
-          for (const r of data || []) byDate[r.date] = (byDate[r.date] || 0) + (r.orders_count || 0);
+          for (const r of data) byDate[r.date] = (byDate[r.date] || 0) + (r.orders_count || 0);
           chartData = Object.entries(byDate).sort(([a],[b]) => a.localeCompare(b)).map(([name, value]) => ({ name, value }));
         }
         return NextResponse.json({ type: widget === 'chart_daily_orders' ? 'bar' : 'line', data: chartData, debug });
@@ -320,16 +331,16 @@ export async function POST(request: NextRequest) {
       case 'chart_revenue_timeline': {
         if (hasItemCrossFilters || crossFilters.length > 0) {
           const filteredIds = await getFilteredOrderIds();
-          let q = orderQuery('order_date, source_shop, total_gross_pln');
-          if (filteredIds !== null) {
-            if (filteredIds.length === 0) return NextResponse.json({ type: 'area', data: [], shops: [], debug });
-            q = q.in('order_id', filteredIds.slice(0, 5000));
-          }
-          const { data } = await q.limit(50000);
+          if (filteredIds !== null && filteredIds.length === 0) return NextResponse.json({ type: 'area', data: [], shops: [], debug });
+          const data = await fetchAllPaginated<{ order_date: string; source_shop: string; total_gross_pln: number | null }>(() => {
+            let q = orderQuery('order_date, source_shop, total_gross_pln');
+            if (filteredIds !== null) q = q.in('order_id', filteredIds.slice(0, 5000));
+            return q;
+          });
           const shopSet = new Set<string>();
           const byDate: Record<string, Record<string, number>> = {};
-          for (const r of data || []) {
-            const d = (r.order_date as string).substring(0, 10);
+          for (const r of data) {
+            const d = r.order_date.substring(0, 10);
             if (!byDate[d]) byDate[d] = {};
             byDate[d][r.source_shop] = (byDate[d][r.source_shop] || 0) + (r.total_gross_pln || 0);
             shopSet.add(r.source_shop);
@@ -339,13 +350,15 @@ export async function POST(request: NextRequest) {
             .map(([date, vals]) => ({ date, ...Object.fromEntries(shops.map(s => [s, Math.round(vals[s] || 0)])) }));
           return NextResponse.json({ type: 'area', data: chartData, shops, debug });
         }
-        let q = db.from('fact_daily_revenue').select('date, source_shop, revenue_gross_pln')
-          .gte('date', dateFrom).lte('date', dateTo).order('date');
-        if (shop !== 'all') q = q.eq('source_shop', shop);
-        const { data } = await q.limit(50000);
+        const data = await fetchAllPaginated<{ date: string; source_shop: string; revenue_gross_pln: number | null }>(() => {
+          let q = db.from('fact_daily_revenue').select('date, source_shop, revenue_gross_pln')
+            .gte('date', dateFrom).lte('date', dateTo).order('date');
+          if (shop !== 'all') q = q.eq('source_shop', shop);
+          return q;
+        });
         const shopSet = new Set<string>();
         const byDate: Record<string, Record<string, number>> = {};
-        for (const r of data || []) {
+        for (const r of data) {
           if (!byDate[r.date]) byDate[r.date] = {};
           byDate[r.date][r.source_shop] = (byDate[r.date][r.source_shop] || 0) + (r.revenue_gross_pln || 0);
           shopSet.add(r.source_shop);
@@ -359,22 +372,24 @@ export async function POST(request: NextRequest) {
       case 'chart_payment_status': {
         if (hasItemCrossFilters || crossFilters.length > 0) {
           const filteredIds = await getFilteredOrderIds();
-          let q = orderQuery('total_gross_pln, is_paid');
-          if (filteredIds !== null) {
-            if (filteredIds.length === 0) return NextResponse.json({ type: 'pie', data: [{ name: 'Zapłacone', value: 0 }, { name: 'Nieopłacone', value: 0 }], debug });
-            q = q.in('order_id', filteredIds.slice(0, 5000));
-          }
-          const { data } = await q.limit(50000);
+          if (filteredIds !== null && filteredIds.length === 0) return NextResponse.json({ type: 'pie', data: [{ name: 'Zapłacone', value: 0 }, { name: 'Nieopłacone', value: 0 }], debug });
+          const data = await fetchAllPaginated<{ total_gross_pln: number | null; is_paid: boolean | null }>(() => {
+            let q = orderQuery('total_gross_pln, is_paid');
+            if (filteredIds !== null) q = q.in('order_id', filteredIds.slice(0, 5000));
+            return q;
+          });
           let paid = 0, total = 0;
-          for (const r of data || []) { total += (r.total_gross_pln || 0); if (r.is_paid) paid += (r.total_gross_pln || 0); }
+          for (const r of data) { total += (r.total_gross_pln || 0); if (r.is_paid) paid += (r.total_gross_pln || 0); }
           return NextResponse.json({ type: 'pie', data: [{ name: 'Zapłacone', value: Math.round(paid) }, { name: 'Nieopłacone', value: Math.round(total - paid) }], debug });
         }
-        let q = db.from('fact_daily_revenue').select('revenue_paid_pln, revenue_gross_pln')
-          .gte('date', dateFrom).lte('date', dateTo);
-        if (shop !== 'all') q = q.eq('source_shop', shop);
-        const { data } = await q.limit(50000);
+        const data = await fetchAllPaginated<{ revenue_paid_pln: number | null; revenue_gross_pln: number | null }>(() => {
+          let q = db.from('fact_daily_revenue').select('revenue_paid_pln, revenue_gross_pln')
+            .gte('date', dateFrom).lte('date', dateTo);
+          if (shop !== 'all') q = q.eq('source_shop', shop);
+          return q;
+        });
         let paid = 0, total = 0;
-        for (const r of data || []) { paid += r.revenue_paid_pln || 0; total += r.revenue_gross_pln || 0; }
+        for (const r of data) { paid += r.revenue_paid_pln || 0; total += r.revenue_gross_pln || 0; }
         return NextResponse.json({ type: 'pie', data: [
           { name: 'Zapłacone', value: Math.round(paid) },
           { name: 'Nieopłacone', value: Math.round(total - paid) },
@@ -382,9 +397,11 @@ export async function POST(request: NextRequest) {
       }
 
       case 'chart_suppliers': {
-        const { data } = await orderQuery('supplier, total_gross_pln').not('supplier', 'is', null).limit(50000);
+        const data = await fetchAllPaginated<{ supplier: string | null; total_gross_pln: number | null }>(() =>
+          orderQuery('supplier, total_gross_pln').not('supplier', 'is', null),
+        );
         const map: Record<string, number> = {};
-        for (const o of data || []) if (o.supplier) map[o.supplier] = (map[o.supplier] || 0) + (o.total_gross_pln || 0);
+        for (const o of data) if (o.supplier) map[o.supplier] = (map[o.supplier] || 0) + (o.total_gross_pln || 0);
         const sorted = Object.entries(map).sort(([,a],[,b]) => b - a);
         const top = sorted.slice(0, 8);
         const other = sorted.slice(8).reduce((s,[,v]) => s + v, 0);
@@ -403,12 +420,14 @@ export async function POST(request: NextRequest) {
 
       // ── Tables ──
       case 'table_payment_status': {
-        let q = db.from('fact_daily_revenue').select('orders_paid, orders_count, revenue_paid_pln, revenue_gross_pln')
-          .gte('date', dateFrom).lte('date', dateTo);
-        if (shop !== 'all') q = q.eq('source_shop', shop);
-        const { data } = await q.limit(50000);
+        const data = await fetchAllPaginated<{ orders_paid: number | null; orders_count: number | null; revenue_paid_pln: number | null; revenue_gross_pln: number | null }>(() => {
+          let q = db.from('fact_daily_revenue').select('orders_paid, orders_count, revenue_paid_pln, revenue_gross_pln')
+            .gte('date', dateFrom).lte('date', dateTo);
+          if (shop !== 'all') q = q.eq('source_shop', shop);
+          return q;
+        });
         let paid = 0, unpaidRev = 0, paidCount = 0, unpaidCount = 0;
-        for (const r of data || []) {
+        for (const r of data) {
           paid += r.revenue_paid_pln || 0;
           unpaidRev += (r.revenue_gross_pln || 0) - (r.revenue_paid_pln || 0);
           paidCount += r.orders_paid || 0;
@@ -424,11 +443,12 @@ export async function POST(request: NextRequest) {
       case 'kpi_sessions':
       case 'kpi_users':
       case 'kpi_conversion_rate': {
-        const q = db.from('fact_daily_traffic').select('sessions, users, transactions')
-          .gte('date', dateFrom).lte('date', dateTo);
-        const { data } = await q.limit(50000);
+        const data = await fetchAllPaginated<{ sessions: number | null; users: number | null; transactions: number | null }>(() =>
+          db.from('fact_daily_traffic').select('sessions, users, transactions')
+            .gte('date', dateFrom).lte('date', dateTo),
+        );
         let sessions = 0, users = 0, transactions = 0;
-        for (const r of data || []) { sessions += r.sessions || 0; users += r.users || 0; transactions += r.transactions || 0; }
+        for (const r of data) { sessions += r.sessions || 0; users += r.users || 0; transactions += r.transactions || 0; }
         const convRate = sessions > 0 ? (transactions / sessions) * 100 : 0;
         const valMap: Record<string, { value: number; format: string }> = {
           kpi_sessions: { value: sessions, format: 'number' },
@@ -439,11 +459,12 @@ export async function POST(request: NextRequest) {
       }
 
       case 'ranking_traffic_sources': {
-        const q = db.from('fact_daily_traffic').select('source, medium, sessions')
-          .gte('date', dateFrom).lte('date', dateTo);
-        const { data } = await q.limit(50000);
+        const data = await fetchAllPaginated<{ source: string; medium: string; sessions: number | null }>(() =>
+          db.from('fact_daily_traffic').select('source, medium, sessions')
+            .gte('date', dateFrom).lte('date', dateTo),
+        );
         const map: Record<string, number> = {};
-        for (const r of data || []) {
+        for (const r of data) {
           const key = `${r.source} / ${r.medium}`;
           map[key] = (map[key] || 0) + (r.sessions || 0);
         }
@@ -452,12 +473,13 @@ export async function POST(request: NextRequest) {
       }
 
       case 'chart_sessions_timeline': {
-        const q = db.from('fact_daily_traffic').select('date, hostname, sessions')
-          .gte('date', dateFrom).lte('date', dateTo).order('date');
-        const { data } = await q.limit(50000);
+        const data = await fetchAllPaginated<{ date: string; hostname: string; sessions: number | null }>(() =>
+          db.from('fact_daily_traffic').select('date, hostname, sessions')
+            .gte('date', dateFrom).lte('date', dateTo).order('date'),
+        );
         const hostSet = new Set<string>();
         const byDate: Record<string, Record<string, number>> = {};
-        for (const r of data || []) {
+        for (const r of data) {
           if (!byDate[r.date]) byDate[r.date] = {};
           byDate[r.date][r.hostname] = (byDate[r.date][r.hostname] || 0) + (r.sessions || 0);
           hostSet.add(r.hostname);
@@ -473,19 +495,25 @@ export async function POST(request: NextRequest) {
       case 'kpi_total_marketing_cost':
       case 'kpi_meta_spend':
       case 'kpi_google_spend': {
-        let revQ = db.from('fact_daily_revenue').select('revenue_gross_pln')
-          .gte('date', dateFrom).lte('date', dateTo);
-        if (shop !== 'all') revQ = revQ.eq('source_shop', shop);
-        const { data: revData } = await revQ.limit(50000);
-        const totalRevenue = (revData || []).reduce((s, r) => s + (r.revenue_gross_pln || 0), 0);
+        const revData = await fetchAllPaginated<{ revenue_gross_pln: number | null }>(() => {
+          let q = db.from('fact_daily_revenue').select('revenue_gross_pln')
+            .gte('date', dateFrom).lte('date', dateTo);
+          if (shop !== 'all') q = q.eq('source_shop', shop);
+          return q;
+        });
+        const totalRevenue = revData.reduce((s, r) => s + (r.revenue_gross_pln || 0), 0);
 
-        const { data: metaData } = await db.from('fact_daily_adspend').select('spend')
-          .eq('platform', 'meta').gte('date', dateFrom).lte('date', dateTo).limit(50000);
-        const metaSpend = (metaData || []).reduce((s, r) => s + (r.spend || 0), 0);
+        const metaData = await fetchAllPaginated<{ spend: number | null }>(() =>
+          db.from('fact_daily_adspend').select('spend')
+            .eq('platform', 'meta').gte('date', dateFrom).lte('date', dateTo),
+        );
+        const metaSpend = metaData.reduce((s, r) => s + (r.spend || 0), 0);
 
-        const { data: googleData } = await db.from('fact_daily_traffic').select('ad_cost')
-          .eq('source', '__total__').gte('date', dateFrom).lte('date', dateTo).limit(50000);
-        const googleSpend = (googleData || []).reduce((s, r) => s + (r.ad_cost || 0), 0);
+        const googleData = await fetchAllPaginated<{ ad_cost: number | null }>(() =>
+          db.from('fact_daily_traffic').select('ad_cost')
+            .eq('source', '__total__').gte('date', dateFrom).lte('date', dateTo),
+        );
+        const googleSpend = googleData.reduce((s, r) => s + (r.ad_cost || 0), 0);
 
         const { data: agencyData } = await db.from('fact_agency_costs').select('month, amount_pln').limit(500);
         let agencyCost = 0;

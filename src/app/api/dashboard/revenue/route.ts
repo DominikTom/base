@@ -1,5 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabase';
+import { fetchAllPaginated } from '@/lib/db-pagination';
+
+type DailyRevRow = {
+  date: string;
+  source_shop: string;
+  orders_count: number | null;
+  revenue_gross_pln: number | null;
+  avg_order_value_pln: number | null;
+};
 
 export async function GET(request: NextRequest) {
   try {
@@ -9,20 +18,22 @@ export async function GET(request: NextRequest) {
     const shop = searchParams.get('shop') || 'all';
     const granularity = searchParams.get('granularity') || 'day';
 
-    // Fetch daily revenue
-    let query = getSupabaseAdmin()
-      .from('fact_daily_revenue')
-      .select('*')
-      .gte('date', dateFrom)
-      .lte('date', dateTo)
-      .order('date', { ascending: true });
-
-    if (shop !== 'all') {
-      query = query.eq('source_shop', shop);
+    // Fetch daily revenue — paginated to defeat PostgREST's 1000-row cap.
+    let dailyRevenue: DailyRevRow[] = [];
+    try {
+      dailyRevenue = await fetchAllPaginated<DailyRevRow>(() => {
+        let q = getSupabaseAdmin()
+          .from('fact_daily_revenue')
+          .select('*')
+          .gte('date', dateFrom)
+          .lte('date', dateTo)
+          .order('date', { ascending: true });
+        if (shop !== 'all') q = q.eq('source_shop', shop);
+        return q;
+      });
+    } catch (err) {
+      return NextResponse.json({ error: String(err) }, { status: 500 });
     }
-
-    const { data: dailyRevenue, error } = await query.limit(50000);
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
     // Group by granularity
     function getGranularityKey(date: string): string {
@@ -61,19 +72,20 @@ export async function GET(request: NextRequest) {
         ...Object.fromEntries(shops.map(s => [s, Math.round(values[s] || 0)])),
       }));
 
-    // Supplier revenue ranking
-    let supplierQuery = getSupabaseAdmin()
-      .from('fact_orders')
-      .select('supplier, total_gross_pln')
-      .gte('order_date', dateFrom)
-      .lte('order_date', dateTo + 'T23:59:59')
-      .not('supplier', 'is', null);
-
-    if (shop !== 'all') {
-      supplierQuery = supplierQuery.eq('source_shop', shop);
-    }
-
-    const { data: supplierData } = await supplierQuery.limit(50000);
+    // Supplier revenue ranking — paginated.
+    const supplierData = await fetchAllPaginated<{
+      supplier: string | null;
+      total_gross_pln: number | null;
+    }>(() => {
+      let q = getSupabaseAdmin()
+        .from('fact_orders')
+        .select('supplier, total_gross_pln')
+        .gte('order_date', dateFrom)
+        .lte('order_date', dateTo + 'T23:59:59')
+        .not('supplier', 'is', null);
+      if (shop !== 'all') q = q.eq('source_shop', shop);
+      return q;
+    });
     const supplierMap: Record<string, number> = {};
     for (const o of supplierData || []) {
       if (o.supplier) {
@@ -84,18 +96,19 @@ export async function GET(request: NextRequest) {
       .sort(([, a], [, b]) => b - a)
       .map(([name, value]) => ({ name, value: Math.round(value) }));
 
-    // Order status funnel
-    let statusQuery = getSupabaseAdmin()
-      .from('fact_orders')
-      .select('status, is_paid')
-      .gte('order_date', dateFrom)
-      .lte('order_date', dateTo + 'T23:59:59');
-
-    if (shop !== 'all') {
-      statusQuery = statusQuery.eq('source_shop', shop);
-    }
-
-    const { data: statusData } = await statusQuery.limit(50000);
+    // Order status funnel — paginated.
+    const statusData = await fetchAllPaginated<{
+      status: string;
+      is_paid: boolean | null;
+    }>(() => {
+      let q = getSupabaseAdmin()
+        .from('fact_orders')
+        .select('status, is_paid')
+        .gte('order_date', dateFrom)
+        .lte('order_date', dateTo + 'T23:59:59');
+      if (shop !== 'all') q = q.eq('source_shop', shop);
+      return q;
+    });
     const statusCounts: Record<string, number> = {};
     let paidCount = 0;
     for (const o of statusData || []) {
@@ -121,19 +134,20 @@ export async function GET(request: NextRequest) {
         value: v.count > 0 ? Math.round(v.revenue / v.count) : 0,
       }));
 
-    // Coupon analysis
-    let couponQuery = getSupabaseAdmin()
-      .from('fact_orders')
-      .select('coupon_code, total_gross_pln')
-      .gte('order_date', dateFrom)
-      .lte('order_date', dateTo + 'T23:59:59')
-      .not('coupon_code', 'is', null);
-
-    if (shop !== 'all') {
-      couponQuery = couponQuery.eq('source_shop', shop);
-    }
-
-    const { data: couponData } = await couponQuery.limit(50000);
+    // Coupon analysis — paginated.
+    const couponData = await fetchAllPaginated<{
+      coupon_code: string | null;
+      total_gross_pln: number | null;
+    }>(() => {
+      let q = getSupabaseAdmin()
+        .from('fact_orders')
+        .select('coupon_code, total_gross_pln')
+        .gte('order_date', dateFrom)
+        .lte('order_date', dateTo + 'T23:59:59')
+        .not('coupon_code', 'is', null);
+      if (shop !== 'all') q = q.eq('source_shop', shop);
+      return q;
+    });
     const couponMap: Record<string, { count: number; revenue: number }> = {};
     for (const o of couponData || []) {
       if (o.coupon_code) {

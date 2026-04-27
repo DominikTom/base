@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabase';
+import { fetchAllPaginated } from '@/lib/db-pagination';
 
 // Whitelist of allowed columns for security
 const ALLOWED_X_AXES = ['date', 'source_shop', 'product_category', 'fabric_collection', 'supplier', 'source_platform'];
@@ -49,19 +50,28 @@ async function handleRevenueExplorer(params: {
   date_from: string; date_to: string; filters: Record<string, string[]>;
   granularity: string;
 }) {
-  let query = getSupabaseAdmin()
-    .from('fact_daily_revenue')
-    .select('*')
-    .gte('date', params.date_from)
-    .lte('date', params.date_to)
-    .order('date', { ascending: true });
-
-  if (params.filters.shop?.length) {
-    query = query.in('source_shop', params.filters.shop);
+  let data: Array<{
+    date: string;
+    source_shop: string;
+    revenue_gross_pln: number | null;
+    orders_count: number | null;
+    avg_order_value_pln: number | null;
+    [key: string]: unknown;
+  }> = [];
+  try {
+    data = await fetchAllPaginated(() => {
+      let q = getSupabaseAdmin()
+        .from('fact_daily_revenue')
+        .select('*')
+        .gte('date', params.date_from)
+        .lte('date', params.date_to)
+        .order('date', { ascending: true });
+      if (params.filters.shop?.length) q = q.in('source_shop', params.filters.shop);
+      return q;
+    });
+  } catch (err) {
+    return NextResponse.json({ error: String(err) }, { status: 500 });
   }
-
-  const { data, error } = await query.limit(50000);
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   // Group by granularity
   function getKey(date: string): string {
@@ -143,36 +153,48 @@ async function handleOrderExplorer(params: {
   date_from: string; date_to: string; filters: Record<string, string[]>;
   granularity: string;
 }) {
-  let query = getSupabaseAdmin()
-    .from('fact_orders')
-    .select('order_id, order_date, source_shop, source_platform, supplier, total_gross_pln, status')
-    .gte('order_date', params.date_from)
-    .lte('order_date', params.date_to + 'T23:59:59');
-
-  if (params.filters.shop?.length) {
-    query = query.in('source_shop', params.filters.shop);
+  let orders: Array<{
+    order_id: string;
+    order_date: string;
+    source_shop: string;
+    source_platform: string;
+    supplier: string | null;
+    total_gross_pln: number | null;
+    status: string;
+  }> = [];
+  try {
+    orders = await fetchAllPaginated(() => {
+      let q = getSupabaseAdmin()
+        .from('fact_orders')
+        .select('order_id, order_date, source_shop, source_platform, supplier, total_gross_pln, status')
+        .gte('order_date', params.date_from)
+        .lte('order_date', params.date_to + 'T23:59:59');
+      if (params.filters.shop?.length) q = q.in('source_shop', params.filters.shop);
+      if (params.filters.supplier?.length) q = q.in('supplier', params.filters.supplier);
+      if (params.filters.status?.length) q = q.in('status', params.filters.status);
+      return q;
+    });
+  } catch (err) {
+    return NextResponse.json({ error: String(err) }, { status: 500 });
   }
-  if (params.filters.supplier?.length) {
-    query = query.in('supplier', params.filters.supplier);
-  }
-  if (params.filters.status?.length) {
-    query = query.in('status', params.filters.status);
-  }
 
-  const { data: orders, error } = await query.limit(50000);
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-
-  // For product-level x_axis, we need items too
+  // For product-level x_axis, we need items too — paginated and chunked by order_id.
   let items: Array<Record<string, unknown>> = [];
   if (['product_category', 'fabric_collection'].includes(params.x_axis) ||
       ['product_category', 'fabric_collection'].includes(params.group_by || '')) {
-    const { data: itemData } = await getSupabaseAdmin()
-      .from('fact_order_items')
-      .select('order_id, product_category, fabric_collection, quantity')
-      .in('order_id', (orders || []).map(o => o.order_id))
-      .not('item_type', 'in', '("shipping","service","surcharge")')
-      .limit(50000);
-    items = itemData || [];
+    const orderIds = orders.map(o => o.order_id);
+    const CHUNK = 500;
+    for (let i = 0; i < orderIds.length; i += CHUNK) {
+      const chunk = orderIds.slice(i, i + CHUNK);
+      const chunkData = await fetchAllPaginated<Record<string, unknown>>(() =>
+        getSupabaseAdmin()
+          .from('fact_order_items')
+          .select('order_id, product_category, fabric_collection, quantity')
+          .in('order_id', chunk)
+          .not('item_type', 'in', '("shipping","service","surcharge")'),
+      );
+      items.push(...chunkData);
+    }
   }
 
   // Build grouped data

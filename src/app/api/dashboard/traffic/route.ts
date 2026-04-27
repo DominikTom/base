@@ -1,5 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabase';
+import { fetchAllPaginated } from '@/lib/db-pagination';
+
+type TrafficRow = {
+  date: string;
+  source: string;
+  medium: string;
+  hostname: string;
+  sessions: number | null;
+  users: number | null;
+  new_users: number | null;
+  pageviews: number | null;
+  transactions: number | null;
+  ga_revenue: number | null;
+  ad_cost: number | null;
+  ad_clicks: number | null;
+  ad_impressions: number | null;
+};
 
 export async function GET(request: NextRequest) {
   try {
@@ -8,22 +25,24 @@ export async function GET(request: NextRequest) {
     const dateTo = searchParams.get('date_to') || new Date().toISOString().split('T')[0];
     const hostname = searchParams.get('hostname') || 'all';
 
-    let query = getSupabaseAdmin()
-      .from('fact_daily_traffic')
-      .select('*')
-      .gte('date', dateFrom)
-      .lte('date', dateTo)
-      .order('date', { ascending: true });
-
-    if (hostname !== 'all') {
-      query = query.eq('hostname', hostname);
+    let trafficData: TrafficRow[] = [];
+    try {
+      trafficData = await fetchAllPaginated<TrafficRow>(() => {
+        let q = getSupabaseAdmin()
+          .from('fact_daily_traffic')
+          .select('*')
+          .gte('date', dateFrom)
+          .lte('date', dateTo)
+          .order('date', { ascending: true });
+        if (hostname !== 'all') q = q.eq('hostname', hostname);
+        return q;
+      });
+    } catch (err) {
+      return NextResponse.json({ error: String(err) }, { status: 500 });
     }
 
-    const { data: trafficData, error } = await query.limit(50000);
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-
     // KPIs from __total__ rows (accurate, matches GA4 native)
-    const allRows = trafficData || [];
+    const allRows = trafficData;
     const totalRows = allRows.filter(r => r.source === '__total__');
     const detailRows = allRows.filter(r => r.source !== '__total__');
 

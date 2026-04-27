@@ -1,5 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabase';
+import { fetchAllPaginated } from '@/lib/db-pagination';
+
+type ItemRow = {
+  product_name: string;
+  product_category: string;
+  quantity: number | null;
+  fabric: string | null;
+  fabric_collection: string | null;
+  bed_size: string | null;
+  mattress_type: string | null;
+  headboard_height: string | null;
+  order_id: string;
+};
 
 export async function GET(request: NextRequest) {
   try {
@@ -8,20 +21,22 @@ export async function GET(request: NextRequest) {
     const dateTo = searchParams.get('date_to') || new Date().toISOString().split('T')[0];
     const shop = searchParams.get('shop') || 'all';
 
-    // Fetch product items with order data
-    let query = getSupabaseAdmin()
-      .from('fact_order_items')
-      .select('product_name, product_category, quantity, fabric, fabric_collection, bed_size, mattress_type, headboard_height, order_id, fact_orders!inner(order_date, source_shop, total_gross_pln, status)')
-      .gte('fact_orders.order_date', dateFrom)
-      .lte('fact_orders.order_date', dateTo + 'T23:59:59')
-      .neq('fact_orders.status', 'anulowane');
-
-    if (shop !== 'all') {
-      query = query.eq('fact_orders.source_shop', shop);
+    // Fetch product items with order data — paginated to defeat 1000-row cap.
+    let items: ItemRow[] = [];
+    try {
+      items = await fetchAllPaginated<ItemRow>(() => {
+        let q = getSupabaseAdmin()
+          .from('fact_order_items')
+          .select('product_name, product_category, quantity, fabric, fabric_collection, bed_size, mattress_type, headboard_height, order_id, fact_orders!inner(order_date, source_shop, total_gross_pln, status)')
+          .gte('fact_orders.order_date', dateFrom)
+          .lte('fact_orders.order_date', dateTo + 'T23:59:59')
+          .neq('fact_orders.status', 'anulowane');
+        if (shop !== 'all') q = q.eq('fact_orders.source_shop', shop);
+        return q;
+      });
+    } catch (err) {
+      return NextResponse.json({ error: String(err) }, { status: 500 });
     }
-
-    const { data: items, error } = await query.limit(50000);
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
     // Filter out non-products
     const productItems = (items || []).filter(i =>
