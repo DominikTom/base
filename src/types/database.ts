@@ -28,6 +28,8 @@ export interface FactOrder {
   invoice_mattress: string | null;
   invoice_transport: string | null;
   notes: string | null;
+  // Idempotency / change tracking — set by parser, used by upsert RPC.
+  row_hash?: string;
 }
 
 export interface FactOrderItem {

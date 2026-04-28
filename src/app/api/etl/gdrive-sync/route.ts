@@ -3,30 +3,36 @@ import Papa from 'papaparse';
 import { parseErpCsv, type RawCsvRow } from '@/lib/erp-parser';
 import { listCsvFiles, downloadFileAsText } from '@/lib/google-drive';
 import { getSupabaseAdmin } from '@/lib/supabase';
+import {
+  ETL_PIPELINE,
+  ETL_VERSION,
+  insertQuarantine,
+  insertRawRows,
+  releaseGdriveLock,
+  runSanityChecks,
+  tryAcquireGdriveLock,
+  upsertItemsRpc,
+  upsertOrdersRpc,
+} from '@/lib/erp-etl';
 
-export const maxDuration = 300; // 5 min for large CSV processing
+export const maxDuration = 300;
 const PAGE_SIZE = 1000;
+const RAW_CHUNK = 500;
+const ORDERS_CHUNK = 200;
+const ITEMS_CHUNK = 500;
 
 /**
  * Google Drive auto-import endpoint.
- * Triggered by Vercel Cron daily at 6:00 UTC.
- *
- * Flow:
- * 1. Authenticate with Google Drive via service account
- * 2. Find newest CSV in configured folder
- * 3. Download + parse + insert into Supabase
- * 4. Rebuild aggregations
+ * Triggered by Vercel Cron daily (mode=daily) and every 10 min (mode=poll).
  */
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const mode = searchParams.get('mode') || 'manual';
 
-    // Auth check — Vercel Cron sends this header, or manual trigger via secret
+    // Auth — Vercel Cron sends x-vercel-cron header; manual triggers use bearer.
     const authHeader = request.headers.get('authorization');
     const cronSecret = process.env.ETL_CRON_SECRET;
-
-    // Vercel Cron sets CRON_SECRET automatically for cron invocations
     const isVercelCron = request.headers.get('x-vercel-cron') === '1';
 
     if (!isVercelCron && cronSecret && authHeader !== `Bearer ${cronSecret}`) {
@@ -35,7 +41,7 @@ export async function GET(request: NextRequest) {
 
     const db = getSupabaseAdmin();
 
-    // For poll mode (every 10 min): run only when there is a queued manual request.
+    // Poll mode runs only when there's a queued manual request.
     let queuedRequestId: number | null = null;
     if (mode === 'poll') {
       const { data: queued } = await db
@@ -50,132 +56,151 @@ export async function GET(request: NextRequest) {
       if (!queued) {
         return NextResponse.json({ skipped: true, reason: 'No queued manual request' });
       }
-
       queuedRequestId = queued.id as number;
-      await db.from('etl_log')
-        .update({ status: 'running' })
-        .eq('id', queuedRequestId);
+      await db.from('etl_log').update({ status: 'running' }).eq('id', queuedRequestId);
+    }
+
+    // Acquire advisory lock so daily + poll never overlap.
+    const locked = await tryAcquireGdriveLock(db);
+    if (!locked) {
+      if (queuedRequestId) {
+        await db.from('etl_log').update({ status: 'queued' }).eq('id', queuedRequestId);
+      }
+      return NextResponse.json({ skipped: true, reason: 'GDrive sync already running' });
     }
 
     const folderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
     if (!folderId) {
+      await releaseGdriveLock(db);
       return NextResponse.json({ error: 'GOOGLE_DRIVE_FOLDER_ID not configured' }, { status: 500 });
     }
 
-    // Create ETL log
-    const { data: etlLog } = await db
-      .from('etl_log')
-      .insert({
-        source: 'gdrive_csv',
-        started_at: new Date().toISOString(),
-        status: 'running',
-      })
-      .select('id')
-      .single();
-    const etlLogId = etlLog?.id;
+    const etlRunId = crypto.randomUUID();
+    const startedAt = new Date().toISOString();
+
+    // Use the queued log row when available; otherwise create a new one.
+    let etlLogId: number | undefined;
+    if (queuedRequestId) {
+      etlLogId = queuedRequestId;
+      await db.from('etl_log').update({
+        pipeline: ETL_PIPELINE,
+        version: ETL_VERSION,
+        details: { etl_run_id: etlRunId, mode },
+      }).eq('id', queuedRequestId);
+    } else {
+      const { data: etlLog } = await db
+        .from('etl_log')
+        .insert({
+          source: 'gdrive_csv',
+          pipeline: ETL_PIPELINE,
+          version: ETL_VERSION,
+          started_at: startedAt,
+          status: 'running',
+          details: { etl_run_id: etlRunId, mode },
+        })
+        .select('id')
+        .single();
+      etlLogId = etlLog?.id;
+    }
 
     try {
-      // Step 1: Find newest CSV
+      // Step 1: pick newest CSV
       const files = await listCsvFiles(folderId);
       if (files.length === 0) {
-        await updateLog(etlLogId, 'error', 'No CSV files found in Google Drive folder');
+        await finishLog(db, etlLogId, 'error', 'No CSV files found in Google Drive folder');
         return NextResponse.json({ error: 'No CSV files found' }, { status: 404 });
       }
-
       const latestFile = files[0];
       if (etlLogId) {
         await db.from('etl_log').update({ csv_filename: latestFile.name }).eq('id', etlLogId);
       }
 
-      // Step 2: Download
+      // Step 2: download + parse
       const csvText = await downloadFileAsText(latestFile.id);
-
-      // Step 3: Parse
-      const parseResult = Papa.parse(csvText, {
+      const parsed = Papa.parse(csvText, {
         header: true,
         skipEmptyLines: true,
       }) as Papa.ParseResult<RawCsvRow>;
 
-      const result = await parseErpCsv(parseResult.data);
-      const { orders, items, stats } = result;
+      const csvRows = parsed.data;
+      const result = await parseErpCsv(csvRows);
+      const { orders, items, quarantine, warnings, stats } = result;
       const { min: minDate, max: maxDate } = stats.dateRange;
 
-      // Step 4: Delete old data in range
-      if (minDate && maxDate && minDate !== '9999-12-31') {
-        const existing = await fetchAllFrom(
-          'fact_orders',
-          'order_id',
-          q => q.gte('order_date', minDate).lte('order_date', maxDate + 'T23:59:59')
-        );
-
-        if (existing.length > 0) {
-          const ids = existing.map(o => o.order_id as string);
-          for (let i = 0; i < ids.length; i += 500) {
-            await db.from('fact_order_items').delete().in('order_id', ids.slice(i, i + 500));
-          }
-          for (let i = 0; i < ids.length; i += 500) {
-            await db.from('fact_orders').delete().in('order_id', ids.slice(i, i + 500));
-          }
-        }
+      // Step 3: append raw rows (audit trail)
+      let rawInserted = 0;
+      for (let i = 0; i < csvRows.length; i += RAW_CHUNK) {
+        const chunk = csvRows.slice(i, i + RAW_CHUNK);
+        rawInserted += await insertRawRows(db, chunk, {
+          etlRunId,
+          sourceFile: latestFile.name,
+          startRowNumber: i + 2, // +1 zero-index, +1 header
+        });
       }
 
-      // Step 5: Insert orders
-      let ordersInserted = 0;
-      for (let i = 0; i < orders.length; i += 200) {
-        const batch = orders.slice(i, i + 200);
-        const { error } = await db.from('fact_orders').upsert(batch, { onConflict: 'order_id' });
-        if (!error) ordersInserted += batch.length;
+      // Step 4: clear daily_revenue for affected date range (will re-aggregate)
+      if (minDate && minDate !== '9999-12-31' && maxDate && maxDate !== '0000-01-01') {
+        await db.from('fact_daily_revenue').delete().gte('date', minDate).lte('date', maxDate);
       }
 
-      // Step 6: Insert items
-      let itemsInserted = 0;
-      for (let i = 0; i < items.length; i += 500) {
-        const batch = items.slice(i, i + 500);
-        const { error } = await db.from('fact_order_items').insert(batch);
-        if (!error) itemsInserted += batch.length;
+      // Step 5: idempotent upserts via RPC (fact_orders.row_hash drives change detection)
+      let ordersUpserted = 0;
+      for (let i = 0; i < orders.length; i += ORDERS_CHUNK) {
+        ordersUpserted += await upsertOrdersRpc(db, orders.slice(i, i + ORDERS_CHUNK));
       }
 
-      // Step 7: Rebuild aggregations
+      let itemsUpserted = 0;
+      for (let i = 0; i < items.length; i += ITEMS_CHUNK) {
+        itemsUpserted += await upsertItemsRpc(db, items.slice(i, i + ITEMS_CHUNK));
+      }
+
+      // Step 6: quarantine
+      let quarantined = 0;
+      if (quarantine.length) {
+        quarantined = await insertQuarantine(db, quarantine, {
+          etlRunId,
+          sourceFile: latestFile.name,
+        });
+      }
+
+      // Step 7: rebuild aggregations (daily_revenue + dim_*)
       await rebuildDailyRevenue(minDate, maxDate);
       await rebuildDimTables();
 
-      // Step 8: Log success
-      await updateLog(etlLogId, 'success', null, {
-        rows_processed: stats.totalRows,
-        rows_inserted: ordersInserted + itemsInserted,
-        date_range_start: minDate !== '9999-12-31' ? minDate : null,
-        date_range_end: maxDate !== '0000-01-01' ? maxDate : null,
+      // Step 8: sanity + finish log
+      const sanity = await runSanityChecks(db, {
+        from: minDate !== '9999-12-31' ? minDate : undefined,
+        to: maxDate !== '0000-01-01' ? maxDate : undefined,
       });
 
-      if (queuedRequestId) {
-        await db.from('etl_log').update({
-          status: 'success',
-          finished_at: new Date().toISOString(),
-          rows_processed: stats.totalRows,
-          rows_inserted: ordersInserted + itemsInserted,
-          csv_filename: latestFile.name,
-          date_range_start: minDate !== '9999-12-31' ? minDate : null,
-          date_range_end: maxDate !== '0000-01-01' ? maxDate : null,
-        }).eq('id', queuedRequestId);
-      }
+      const totalRows = stats.totalRows;
+      const status = totalRows > 0 && quarantined / totalRows > 0.01 ? 'partial' : 'success';
+
+      await finishLog(db, etlLogId, status, null, {
+        rows_processed: totalRows,
+        rows_inserted: ordersUpserted + itemsUpserted,
+        rows_quarantined: quarantined,
+        date_range_start: minDate !== '9999-12-31' ? minDate : null,
+        date_range_end: maxDate !== '0000-01-01' ? maxDate : null,
+        details: { etl_run_id: etlRunId, mode, warnings, sanity, raw_rows_inserted: rawInserted },
+      });
 
       return NextResponse.json({
         success: true,
+        status,
         file: latestFile.name,
-        orders: ordersInserted,
-        items: itemsInserted,
+        orders: ordersUpserted,
+        items: itemsUpserted,
+        rawRows: rawInserted,
+        quarantined,
+        warnings: warnings.length,
         dateRange: stats.dateRange,
       });
     } catch (err) {
-      if (queuedRequestId) {
-        await db.from('etl_log').update({
-          status: 'error',
-          finished_at: new Date().toISOString(),
-          error_message: String(err),
-        }).eq('id', queuedRequestId);
-      }
-      await updateLog(etlLogId, 'error', String(err));
+      await finishLog(db, etlLogId, 'error', String(err));
       throw err;
+    } finally {
+      await releaseGdriveLock(db);
     }
   } catch (err) {
     console.error('GDrive sync error:', err);
@@ -185,14 +210,15 @@ export async function GET(request: NextRequest) {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-async function updateLog(
+async function finishLog(
+  db: ReturnType<typeof getSupabaseAdmin>,
   id: number | undefined,
   status: string,
   error_message: string | null,
   extra?: Record<string, unknown>
 ) {
   if (!id) return;
-  await getSupabaseAdmin().from('etl_log').update({
+  await db.from('etl_log').update({
     status,
     error_message,
     finished_at: new Date().toISOString(),
@@ -202,8 +228,6 @@ async function updateLog(
 
 async function rebuildDailyRevenue(minDate: string, maxDate: string) {
   if (!minDate || minDate === '9999-12-31') return;
-
-  await getSupabaseAdmin().from('fact_daily_revenue').delete().gte('date', minDate).lte('date', maxDate);
 
   const orders = await fetchAllFrom(
     'fact_orders',
@@ -253,9 +277,7 @@ async function rebuildDailyRevenue(minDate: string, maxDate: string) {
 }
 
 async function rebuildDimTables() {
-  // Products
   const items = await fetchAllFrom('fact_order_items', 'product_name, product_category, quantity, order_id');
-
   if (items.length) {
     const map: Record<string, { category: string; orders: Set<string>; qty: number }> = {};
     for (const i of items) {
@@ -273,13 +295,11 @@ async function rebuildDimTables() {
     }
   }
 
-  // Fabrics
   const fabItems = await fetchAllFrom(
     'fact_order_items',
     'fabric, fabric_collection, order_id',
     q => q.not('fabric', 'is', null)
   );
-
   if (fabItems.length) {
     const map: Record<string, { collection: string; orders: Set<string> }> = {};
     for (const i of fabItems) {

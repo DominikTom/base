@@ -13,10 +13,11 @@ import { getEurPlnRate } from '@/lib/currency';
 // Constants
 // ---------------------------------------------------------------------------
 
-const KNOWN_SUPPLIERS = [
-  'Comfy', 'Hekiert', 'Bedtime', 'Tobi One', 'Włodex', 'VONGAI', 'Panicz',
-  'AG', 'Profoam', 'MOBLER', 'Mazur', 'Woodstol', 'Brewus', 'Panek', 'MZ',
-  'Bruma', 'H24', 'Łabuda',
+// Producer whitelist — used both for fact_orders.supplier and v_orders_with_producer.
+// Tags that match this list get promoted to `supplier`. All other tags stay in
+// operational_tags.
+const PRODUCER_WHITELIST = [
+  'Comfy', 'Profoam', 'MOBLER', 'Mazur', 'RELAX', 'Tobi One', 'VONGAI', 'Włodex',
 ];
 
 const KNOWN_MARKETPLACES = ['Allegro', 'Amazon', 'Kaufland DE'];
@@ -181,7 +182,10 @@ function detectSource(orderNumber: string, optionStr: string): { platform: strin
   // Shoper or numeric — check language of options to distinguish PL vs DE
   const isDE = isGermanOptions(optionStr);
   if (num.startsWith('Shoper')) {
-    return { platform: 'shoper', shop: isDE ? 'mybed.de' : 'mybed.pl' };
+    if (num.endsWith('-1')) return { platform: 'shoper', shop: 'mybed.pl' };
+    if (num.endsWith('-2')) return { platform: 'shoper', shop: 'mybed.de' };
+    // Shoper without -1/-2 suffix is an anomaly per ERP spec — flag it.
+    return { platform: 'shoper', shop: 'shoper_unknown' };
   }
 
   // 10-digit numeric
@@ -197,6 +201,126 @@ function isGermanOptions(optionStr: string): boolean {
   if (!optionStr) return false;
   const lower = optionStr.toLowerCase();
   return DE_OPTION_KEYS.some(key => lower.includes(key.toLowerCase()));
+}
+
+// ---------------------------------------------------------------------------
+// Normalization helpers (TZ, postal codes, phones, hashing)
+// ---------------------------------------------------------------------------
+
+/** Strip a trailing ".0" left over from spreadsheet float coercion. */
+export function stripFloatSuffix(value: string | null | undefined): string {
+  if (value == null) return '';
+  return String(value).trim().replace(/\.0+$/, '');
+}
+
+/** Normalize a postal code: trim, drop ".0" suffix from German numeric codes. */
+export function normalizePostalCode(value: string | null | undefined): string | null {
+  const cleaned = stripFloatSuffix(value);
+  return cleaned || null;
+}
+
+/** Normalize a phone number: trim, drop ".0" suffix from spreadsheet artifacts. */
+export function normalizePhone(value: string | null | undefined): string | null {
+  const cleaned = stripFloatSuffix(value);
+  return cleaned || null;
+}
+
+/**
+ * Convert a naive Europe/Warsaw datetime string to UTC ISO-8601.
+ * Handles ISO ("2026-04-28T14:30:00"), space-separated ("2026-04-28 14:30:00"),
+ * and date-only ("2026-04-28") variants. Returns null for unparseable input.
+ *
+ * Strategy: parse components, treat them AS IF they were UTC, then ask
+ * Intl.DateTimeFormat what the same instant would look like in Europe/Warsaw,
+ * compute the offset, and apply it.
+ */
+export function warsawNaiveToUtcIso(naive: string | null | undefined): string | null {
+  if (naive == null) return null;
+  const s = String(naive).trim();
+  if (!s) return null;
+
+  // Already an ISO string with explicit timezone? Pass through.
+  if (/[zZ]|[+-]\d{2}:?\d{2}$/.test(s)) {
+    const d = new Date(s);
+    return Number.isNaN(d.getTime()) ? null : d.toISOString();
+  }
+
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2}))?(?:\.\d+)?)?/);
+  if (!m) {
+    // Last-ditch: native parse. Returns Date in local-server-time which on Vercel is UTC.
+    const d = new Date(s);
+    return Number.isNaN(d.getTime()) ? null : d.toISOString();
+  }
+  const [, Y, M, D, h, mi, sec] = m;
+  const year = +Y, month = +M, day = +D;
+  const hour = h ? +h : 0, minute = mi ? +mi : 0, second = sec ? +sec : 0;
+
+  const asIfUtc = Date.UTC(year, month - 1, day, hour, minute, second);
+  const fmt = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Europe/Warsaw',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+  });
+  const parts = fmt.formatToParts(new Date(asIfUtc));
+  const map: Record<string, string> = {};
+  for (const p of parts) map[p.type] = p.value;
+  const wallHour = map.hour === '24' ? 0 : +map.hour;
+  const warsawAsUtc = Date.UTC(+map.year, +map.month - 1, +map.day, wallHour, +map.minute, +map.second);
+  const offsetMs = warsawAsUtc - asIfUtc;
+  return new Date(asIfUtc - offsetMs).toISOString();
+}
+
+/** Convert a Warsaw-naive date to a UTC ISO date-only string (YYYY-MM-DD). */
+export function warsawDateToUtcDateOnly(naive: string | null | undefined): string | null {
+  const iso = warsawNaiveToUtcIso(naive);
+  return iso ? iso.substring(0, 10) : null;
+}
+
+/** SHA-256 hash truncated to 32 hex chars — works in browser and Node (Web Crypto). */
+async function sha256Hex32(input: string): Promise<string> {
+  if (typeof crypto !== 'undefined' && crypto.subtle) {
+    const data = new TextEncoder().encode(input);
+    const buf = await crypto.subtle.digest('SHA-256', data);
+    const arr = Array.from(new Uint8Array(buf));
+    return arr.map(b => b.toString(16).padStart(2, '0')).join('').substring(0, 32);
+  }
+  // Should never happen in supported runtimes (Node 20+, all modern browsers).
+  let hash = 0;
+  for (let i = 0; i < input.length; i++) hash = (hash * 31 + input.charCodeAt(i)) | 0;
+  return Math.abs(hash).toString(16).padStart(32, '0');
+}
+
+/** Compute deterministic row_hash from business fields of a FactOrder. */
+export async function computeOrderRowHash(o: Omit<FactOrder, 'row_hash'>): Promise<string> {
+  const parts = [
+    o.source_shop ?? '',
+    o.source_platform ?? '',
+    o.status ?? '',
+    o.is_paid ? '1' : '0',
+    o.currency ?? '',
+    o.total_gross != null ? o.total_gross.toFixed(2) : '',
+    o.shipping_cost != null ? o.shipping_cost.toFixed(2) : '',
+    o.exchange_rate != null ? o.exchange_rate.toFixed(4) : '',
+    o.supplier ?? '',
+    o.production_batch ?? '',
+    o.sales_person ?? '',
+    o.marketplace_tag ?? '',
+    [...(o.operational_tags ?? [])].sort().join('|'),
+    o.invoice_production ?? '',
+    o.invoice_mattress ?? '',
+    o.invoice_transport ?? '',
+    (o.notes ?? '').trim(),
+    o.delivery_method ?? '',
+    o.delivery_city ?? '',
+    o.delivery_zip ?? '',
+    o.customer_name ?? '',
+    o.customer_email_hash ?? '',
+    o.coupon_code ?? '',
+    o.order_date ?? '',
+    o.expected_date ?? '',
+    o.fulfillment_date ?? '',
+  ];
+  return sha256Hex32(parts.join('§'));
 }
 
 // ---------------------------------------------------------------------------
@@ -309,18 +433,21 @@ function classifyTags(tags: string[]): ClassifiedTags {
 
   for (const tag of tags) {
     const t = tag.trim();
-    if (!t || t === 'False') continue; // Bug in ERP — ignore "False"
+    if (!t || t === 'False') continue; // ERP bug — literal "False" is not a tag
 
     if (BATCH_PATTERN.test(t)) {
       result.production_batch = result.production_batch || t;
       continue;
     }
 
-    const supplierMatch = KNOWN_SUPPLIERS.find(
+    // Producer whitelist: only canonical producers populate `supplier`.
+    // All other manufacturer-like tags stay in operational_tags so dashboards
+    // see the full picture without misattribution.
+    const producerMatch = PRODUCER_WHITELIST.find(
       s => s.toLowerCase() === t.toLowerCase()
     );
-    if (supplierMatch) {
-      result.supplier = result.supplier || supplierMatch;
+    if (producerMatch) {
+      result.supplier = result.supplier || producerMatch;
       continue;
     }
 
@@ -423,15 +550,25 @@ interface OrderGroup {
 // Main parse function
 // ---------------------------------------------------------------------------
 
+export interface QuarantineEntry {
+  csv_row_number: number;     // 1-based, matches user-visible CSV row (header is row 1)
+  raw_data: Record<string, unknown>;
+  error_message: string;
+  error_kind: 'parse' | 'validation' | 'mapping' | 'db';
+}
+
 export interface ParseResult {
   orders: FactOrder[];
   items: FactOrderItem[];
+  quarantine: QuarantineEntry[];
+  warnings: string[];
   stats: {
     totalRows: number;
     ordersCount: number;
     itemsCount: number;
     tagOnlyRows: number;
     skippedRows: number;
+    quarantinedRows: number;
     byShop: Record<string, number>;
     byStatus: Record<string, number>;
     dateRange: { min: string; max: string };
@@ -440,32 +577,33 @@ export interface ParseResult {
 
 export async function parseErpCsv(rows: RawCsvRow[]): Promise<ParseResult> {
   // Step 1: Group rows into orders
-  const groups: OrderGroup[] = [];
-  let current: OrderGroup | null = null;
+  const groups: Array<OrderGroup & { headerCsvRow: number; itemCsvRows: number[] }> = [];
+  let current: (OrderGroup & { headerCsvRow: number; itemCsvRows: number[] }) | null = null;
   let skippedRows = 0;
   let tagOnlyCount = 0;
+  const quarantine: QuarantineEntry[] = [];
+  const warnings: string[] = [];
 
-  for (const row of rows) {
+  rows.forEach((row, idx) => {
+    const csvRowNumber = idx + 2; // +1 for 0-index, +1 for header line
     const numer = (row['Numer'] || '').trim();
     const produktNazwa = (row['Pozycje zamówienia/Produkt/Nazwa'] || '').trim();
     const tagi = (row['Tagi'] || '').trim();
 
     if (numer) {
       // New order header
-      current = { header: row, items: [], tagOnlyRows: [] };
+      current = { header: row, items: [], tagOnlyRows: [], headerCsvRow: csvRowNumber, itemCsvRows: [] };
       groups.push(current);
 
-      // If the header row also has a product, it's the first item
       if (produktNazwa) {
         current.items.push(row);
+        current.itemCsvRows.push(csvRowNumber);
       }
     } else if (current) {
-      // Sub-row of current order
       if (produktNazwa) {
-        // Product/service line
         current.items.push(row);
+        current.itemCsvRows.push(csvRowNumber);
       } else if (tagi && tagi !== 'False') {
-        // Tag-only row
         current.tagOnlyRows.push(row);
         tagOnlyCount++;
       } else {
@@ -474,7 +612,7 @@ export async function parseErpCsv(rows: RawCsvRow[]): Promise<ParseResult> {
     } else {
       skippedRows++;
     }
-  }
+  });
 
   // Step 2: Convert groups into FactOrder + FactOrderItem
   const orders: FactOrder[] = [];
@@ -489,145 +627,182 @@ export async function parseErpCsv(rows: RawCsvRow[]): Promise<ParseResult> {
     const orderId = (h['Numer'] || '').trim();
     if (!orderId) continue;
 
-    // Collect all options from all items for source detection
-    const allOptions = group.items.map(i => (i['Pozycje zamówienia/Opcja'] || '')).join(' ');
-    const { platform, shop } = detectSource(orderId, allOptions);
+    try {
+      // Collect all options from all items for source detection
+      const allOptions = group.items.map(i => (i['Pozycje zamówienia/Opcja'] || '')).join(' ');
+      const { platform, shop } = detectSource(orderId, allOptions);
 
-    // Currency
-    const currency = ['mybed.de', 'amazon.de', 'kaufland.de'].includes(shop) ? 'EUR' : 'PLN';
-
-    // Date (needed for exchange rate lookup)
-    const orderDateStr = (h['Data zamówienia'] || '').trim();
-    const orderDate = orderDateStr || new Date().toISOString();
-
-    // Parse total
-    const sumaStr = (h['Suma'] || '').trim();
-    const totalGross = parseDecimal(sumaStr);
-    const shippingStr = (h['Koszt dostawy'] || '').trim();
-    const shippingCost = parseDecimal(shippingStr);
-
-    const exchangeRate = currency === 'EUR' ? await getEurPlnRate(orderDate.substring(0, 10)) : 1;
-    const totalGrossPln = currency === 'PLN' ? totalGross : (totalGross != null ? totalGross * exchangeRate : null);
-    const shippingCostPln = currency === 'PLN' ? shippingCost : (shippingCost != null ? shippingCost * exchangeRate : null);
-
-    // Status
-    const status = normalizeStatus(h['Status'] || '');
-
-    // Collect ALL tags: from header + from tag-only sub-rows
-    const allTags: string[] = [];
-    const headerTag = (h['Tagi'] || '').trim();
-    if (headerTag && headerTag !== 'False') {
-      allTags.push(...headerTag.split(',').map(t => t.trim()).filter(Boolean));
-    }
-    for (const tagRow of group.tagOnlyRows) {
-      const t = (tagRow['Tagi'] || '').trim();
-      if (t && t !== 'False') {
-        allTags.push(...t.split(',').map(s => s.trim()).filter(Boolean));
+      if (shop === 'shoper_unknown') {
+        warnings.push(`Shoper order without -1/-2 suffix: ${orderId} (csv row ${group.headerCsvRow})`);
       }
-    }
 
-    const classified = classifyTags(allTags);
+      // Currency
+      const currency = ['mybed.de', 'amazon.de', 'kaufland.de'].includes(shop) ? 'EUR' : 'PLN';
 
-    // Hash email
-    const emailHash = await hashEmail(h['Klient/E-mail'] || '');
+      // Date — convert ERP local time (Europe/Warsaw) to UTC. Fall back to now()
+      // only if ERP did not provide a date at all (shouldn't happen for header row).
+      const orderDateRaw = (h['Data zamówienia'] || '').trim();
+      const orderDate = warsawNaiveToUtcIso(orderDateRaw) || new Date().toISOString();
+      const expectedDate = warsawNaiveToUtcIso((h['Przewidywana data'] || '').trim());
+      const fulfillmentDate = warsawDateToUtcDateOnly((h['Data realizacji'] || '').trim());
 
-    // Date tracking
-    const dateOnly = orderDate.substring(0, 10);
-    if (dateOnly < minDate) minDate = dateOnly;
-    if (dateOnly > maxDate) maxDate = dateOnly;
+      // Parse total
+      const totalGross = parseDecimal((h['Suma'] || '').trim());
+      const shippingCost = parseDecimal((h['Koszt dostawy'] || '').trim());
 
-    // Build order record
-    const order: FactOrder = {
-      order_id: orderId,
-      order_date: orderDate,
-      expected_date: (h['Przewidywana data'] || '').trim() || null,
-      fulfillment_date: (h['Data realizacji'] || '').trim() || null,
-      source_platform: platform,
-      source_shop: shop,
-      currency,
-      total_gross: totalGross,
-      shipping_cost: shippingCost,
-      exchange_rate: exchangeRate,
-      total_gross_pln: totalGrossPln,
-      shipping_cost_pln: shippingCostPln,
-      is_paid: (h['Zapłacone'] || '').trim().toLowerCase() === 'true',
-      coupon_code: (h['Kupon rabatowy'] || '').trim() || null,
-      status,
-      customer_name: (h['Klient/Nazwa'] || '').trim() || null,
-      customer_email_hash: emailHash,
-      delivery_city: (h['Miasto'] || '').trim() || null,
-      delivery_zip: (h['Kod pocztowy'] || '').trim() || null,
-      delivery_method: (h['Metoda dostawy'] || '').trim() || null,
-      supplier: classified.supplier,
-      production_batch: classified.production_batch,
-      sales_person: classified.sales_person,
-      marketplace_tag: classified.marketplace_tag,
-      operational_tags: classified.operational_tags,
-      invoice_production: (h['Faktura produkcyjna'] || '').trim() || null,
-      invoice_mattress: (h['Faktura materac'] || '').trim() || null,
-      invoice_transport: (h['Faktura transportowa'] || '').trim() || null,
-      notes: (h['Uwagi'] || '').trim() || null,
-    };
+      const exchangeRate = currency === 'EUR' ? await getEurPlnRate(orderDate.substring(0, 10)) : 1;
+      const totalGrossPln = currency === 'PLN' ? totalGross : (totalGross != null ? totalGross * exchangeRate : null);
+      const shippingCostPln = currency === 'PLN' ? shippingCost : (shippingCost != null ? shippingCost * exchangeRate : null);
 
-    orders.push(order);
+      // Status
+      const status = normalizeStatus(h['Status'] || '');
 
-    // Stats
-    byShop[shop] = (byShop[shop] || 0) + 1;
-    byStatus[status] = (byStatus[status] || 0) + 1;
+      // Collect ALL tags: from header + from tag-only sub-rows
+      const allTags: string[] = [];
+      const headerTag = (h['Tagi'] || '').trim();
+      if (headerTag && headerTag !== 'False') {
+        allTags.push(...headerTag.split(',').map(t => t.trim()).filter(Boolean));
+      }
+      for (const tagRow of group.tagOnlyRows) {
+        const t = (tagRow['Tagi'] || '').trim();
+        if (t && t !== 'False') {
+          allTags.push(...t.split(',').map(s => s.trim()).filter(Boolean));
+        }
+      }
 
-    // Step 3: Parse items
-    let lineNumber = 0;
-    for (const itemRow of group.items) {
-      const productName = (itemRow['Pozycje zamówienia/Produkt/Nazwa'] || '').trim();
-      if (!productName) continue;
+      const classified = classifyTags(allTags);
 
-      lineNumber++;
-      const { category, item_type } = categorizeProduct(productName);
-      const quantityStr = (itemRow['Pozycje zamówienia/Ilość'] || '1').trim();
-      const quantity = parseDecimal(quantityStr) || 1;
+      // Hash email
+      const emailHash = await hashEmail(h['Klient/E-mail'] || '');
 
-      const optionStr = (itemRow['Pozycje zamówienia/Opcja'] || '').trim();
-      const { parsed, language } = parseOptions(optionStr);
+      // Date tracking (UTC date-only — already converted from Warsaw)
+      const dateOnly = orderDate.substring(0, 10);
+      if (dateOnly < minDate) minDate = dateOnly;
+      if (dateOnly > maxDate) maxDate = dateOnly;
 
-      const fabricCollection = extractFabricCollection(parsed.fabric);
-
-      const item: FactOrderItem = {
+      // Build order record
+      const orderBase: Omit<FactOrder, 'row_hash'> = {
         order_id: orderId,
-        line_number: lineNumber,
-        product_name: productName,
-        product_category: category,
-        quantity,
-        item_type,
-        bed_size: parsed.bed_size || null,
-        mattress_type: parsed.mattress_type || null,
-        fabric: parsed.fabric || null,
-        fabric_collection: fabricCollection,
-        headboard_height: parsed.headboard_height || null,
-        storage_type: parsed.storage_type || null,
-        headboard_type: parsed.headboard_type || null,
-        bed_side: parsed.bed_side || null,
-        storage_opening: parsed.storage_opening || null,
-        mattress_hardness: parsed.mattress_hardness || null,
-        pillows_choice: parsed.pillows_choice || null,
-        duvet_choice: parsed.duvet_choice || null,
-        legs_type: parsed.legs_type || null,
-        raw_options: optionStr || null,
-        options_language: language,
+        order_date: orderDate,
+        expected_date: expectedDate,
+        fulfillment_date: fulfillmentDate,
+        source_platform: platform,
+        source_shop: shop,
+        currency,
+        total_gross: totalGross,
+        shipping_cost: shippingCost,
+        exchange_rate: exchangeRate,
+        total_gross_pln: totalGrossPln,
+        shipping_cost_pln: shippingCostPln,
+        is_paid: (h['Zapłacone'] || '').trim().toLowerCase() === 'true',
+        coupon_code: (h['Kupon rabatowy'] || '').trim() || null,
+        status,
+        customer_name: (h['Klient/Nazwa'] || '').trim() || null,
+        customer_email_hash: emailHash,
+        delivery_city: (h['Miasto'] || '').trim() || null,
+        delivery_zip: normalizePostalCode(h['Kod pocztowy']),
+        delivery_method: (h['Metoda dostawy'] || '').trim() || null,
+        supplier: classified.supplier,
+        production_batch: classified.production_batch,
+        sales_person: classified.sales_person,
+        marketplace_tag: classified.marketplace_tag,
+        operational_tags: classified.operational_tags,
+        invoice_production: (h['Faktura produkcyjna'] || '').trim() || null,
+        invoice_mattress: (h['Faktura materac'] || '').trim() || null,
+        invoice_transport: (h['Faktura transportowa'] || '').trim() || null,
+        notes: (h['Uwagi'] || '').trim() || null,
       };
 
-      items.push(item);
+      const order: FactOrder = {
+        ...orderBase,
+        row_hash: await computeOrderRowHash(orderBase),
+      };
+
+      orders.push(order);
+
+      // Stats
+      byShop[shop] = (byShop[shop] || 0) + 1;
+      byStatus[status] = (byStatus[status] || 0) + 1;
+
+      // Step 3: Parse items
+      let lineNumber = 0;
+      for (let i = 0; i < group.items.length; i++) {
+        const itemRow = group.items[i];
+        const itemCsvRow = group.itemCsvRows[i];
+        const productName = (itemRow['Pozycje zamówienia/Produkt/Nazwa'] || '').trim();
+        if (!productName) continue;
+
+        lineNumber++;
+        try {
+          const { category, item_type } = categorizeProduct(productName);
+          const quantityStr = (itemRow['Pozycje zamówienia/Ilość'] || '1').trim();
+          const quantity = parseDecimal(quantityStr) || 1;
+
+          const optionStr = (itemRow['Pozycje zamówienia/Opcja'] || '').trim();
+          const { parsed, language } = parseOptions(optionStr);
+
+          const fabricCollection = extractFabricCollection(parsed.fabric);
+
+          const item: FactOrderItem = {
+            order_id: orderId,
+            line_number: lineNumber,
+            product_name: productName,
+            product_category: category,
+            quantity,
+            item_type,
+            bed_size: parsed.bed_size || null,
+            mattress_type: parsed.mattress_type || null,
+            fabric: parsed.fabric || null,
+            fabric_collection: fabricCollection,
+            headboard_height: parsed.headboard_height || null,
+            storage_type: parsed.storage_type || null,
+            headboard_type: parsed.headboard_type || null,
+            bed_side: parsed.bed_side || null,
+            storage_opening: parsed.storage_opening || null,
+            mattress_hardness: parsed.mattress_hardness || null,
+            pillows_choice: parsed.pillows_choice || null,
+            duvet_choice: parsed.duvet_choice || null,
+            legs_type: parsed.legs_type || null,
+            raw_options: optionStr || null,
+            options_language: language,
+          };
+
+          items.push(item);
+        } catch (itemErr) {
+          quarantine.push({
+            csv_row_number: itemCsvRow,
+            raw_data: itemRow as unknown as Record<string, unknown>,
+            error_message: itemErr instanceof Error ? itemErr.message : String(itemErr),
+            error_kind: 'parse',
+          });
+        }
+      }
+    } catch (orderErr) {
+      quarantine.push({
+        csv_row_number: group.headerCsvRow,
+        raw_data: h as unknown as Record<string, unknown>,
+        error_message: orderErr instanceof Error ? orderErr.message : String(orderErr),
+        error_kind: 'parse',
+      });
     }
   }
+
+  // Telephone normalization is intentionally not stored on fact_orders today
+  // (no `customer_phone` column) — but `Klient/Telefon` is included in
+  // raw_erp_orders, where stripFloatSuffix() is applied at insert time.
 
   return {
     orders,
     items,
+    quarantine,
+    warnings,
     stats: {
       totalRows: rows.length,
       ordersCount: orders.length,
       itemsCount: items.length,
       tagOnlyRows: tagOnlyCount,
       skippedRows,
+      quarantinedRows: quarantine.length,
       byShop,
       byStatus,
       dateRange: { min: minDate, max: maxDate },

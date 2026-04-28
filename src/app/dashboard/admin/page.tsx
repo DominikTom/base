@@ -101,7 +101,8 @@ export default function AdminPage() {
       }
 
       const result = await parseErpCsv(parseResult.data);
-      const { orders, items, stats } = result;
+      const { orders, items, stats, quarantine, warnings } = result;
+      const rawRows = parseResult.data;
 
       // ── Compute daily revenue aggregation in browser ──────────────────
       const dailyRevMap: Record<string, {
@@ -162,8 +163,35 @@ export default function AdminPage() {
       const startData = await safeJson(startRes);
       if (!startRes.ok) throw new Error(String(startData.error) || 'Start failed');
       const etlLogId = startData.etlLogId;
+      const etlRunId = String(startData.etlRunId);
 
       if (abortRef.current) throw new Error('Anulowano');
+
+      // ── Phase 2.5: Raw landing append (audit trail) ───────────────────
+      const RAW_BATCH = 500;
+      for (let i = 0; i < rawRows.length; i += RAW_BATCH) {
+        if (abortRef.current) throw new Error('Anulowano');
+        const batch = rawRows.slice(i, i + RAW_BATCH);
+        setProgress({
+          current: Math.min(i + RAW_BATCH, rawRows.length),
+          total: rawRows.length,
+          label: `Raw landing: ${formatNumber(Math.min(i + RAW_BATCH, rawRows.length))} / ${formatNumber(rawRows.length)}`,
+        });
+        const res = await fetch('/api/etl/upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'batch_raw',
+            etlLogId,
+            etlRunId,
+            filename: file.name,
+            startRowNumber: i + 2, // +1 zero-index, +1 header
+            rows: batch,
+          }),
+        });
+        const data = await safeJson(res);
+        if (!res.ok) throw new Error(String(data.error) || 'Batch raw failed');
+      }
 
       // ── Phase 3: Upload orders in batches ─────────────────────────────
       setPhase('uploading_orders');
@@ -235,8 +263,30 @@ export default function AdminPage() {
         if (!res.ok) throw new Error(String(data.error) || 'Batch daily revenue failed');
       }
 
-      // ── Phase 6: Finalize (just update ETL log, no heavy processing) ──
-      setProgress({ current: 0, total: 0, label: 'Finalizacja...' });
+      // ── Phase 5.5: Quarantine batch (fail-soft rows) ──────────────────
+      if (quarantine.length) {
+        const QUARANTINE_BATCH = 500;
+        for (let i = 0; i < quarantine.length; i += QUARANTINE_BATCH) {
+          if (abortRef.current) throw new Error('Anulowano');
+          const batch = quarantine.slice(i, i + QUARANTINE_BATCH);
+          const res = await fetch('/api/etl/upload', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'batch_quarantine',
+              etlLogId,
+              etlRunId,
+              filename: file.name,
+              entries: batch,
+            }),
+          });
+          const data = await safeJson(res);
+          if (!res.ok) throw new Error(String(data.error) || 'Batch quarantine failed');
+        }
+      }
+
+      // ── Phase 6: Finalize (sanity checks + update ETL log) ────────────
+      setProgress({ current: 0, total: 0, label: 'Finalizacja + sanity check...' });
 
       const finRes = await fetch('/api/etl/upload', {
         method: 'POST',
@@ -244,7 +294,14 @@ export default function AdminPage() {
         body: JSON.stringify({
           action: 'finalize',
           etlLogId,
-          stats: { totalRows: stats.totalRows, ordersCount: ordersInserted, itemsCount: itemsInserted },
+          etlRunId,
+          stats: {
+            totalRows: stats.totalRows,
+            ordersCount: ordersInserted,
+            itemsCount: itemsInserted,
+            quarantinedRows: stats.quarantinedRows,
+          },
+          warnings,
           dateRange: stats.dateRange,
         }),
       });
@@ -258,7 +315,10 @@ export default function AdminPage() {
           ...stats,
           ordersInserted,
           itemsInserted,
+          warnings: warnings.length,
+          quarantinedRows: stats.quarantinedRows,
         },
+        finalize: finData,
       });
       setFile(null);
       fetchLogs();
@@ -306,7 +366,7 @@ export default function AdminPage() {
           title="Google Drive Sync"
           value={freshness['gdrive_csv'] ? new Date(freshness['gdrive_csv']).toLocaleDateString('pl-PL') : 'Nie skonfigurowano'}
           icon={<FolderSync size={18} />}
-          changeLabel="Auto-import codziennie o 6:00"
+          changeLabel="Auto-import codziennie 06:00 PL (CEST) / 05:00 PL (CET)"
         />
       </div>
 
