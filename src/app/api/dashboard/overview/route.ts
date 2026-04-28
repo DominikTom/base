@@ -23,11 +23,7 @@ export async function GET(request: NextRequest) {
       ordersQuery = ordersQuery.eq('source_shop', shop);
     }
 
-    const { data: ordersData, error: revError } = await ordersQuery.limit(50000);
-
-    if (revError) {
-      return NextResponse.json({ error: revError.message }, { status: 500 });
-    }
+    const ordersData = await fetchAllRows(ordersQuery);
 
     const totals = { revenue: 0, orders: 0, ordersPaid: 0, ordersCancelled: 0, shipping: 0 };
 
@@ -94,7 +90,7 @@ export async function GET(request: NextRequest) {
       productsQuery = productsQuery.eq('fact_orders.source_shop', shop);
     }
 
-    const { data: productItems } = await productsQuery.limit(50000);
+    const productItems = await fetchAllRows(productsQuery);
 
     // Aggregate top products by order count
     const productMap: Record<string, { count: number; quantity: number; category: string }> = {};
@@ -150,3 +146,20 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: String(err) }, { status: 500 });
   }
 }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    async function fetchAllRows(baseQuery: any): Promise<any[]> {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const out: any[] = [];
+      const PAGE = 1000;
+      let offset = 0;
+      while (true) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data, error }: { data: any[] | null; error: { message: string } | null } = await baseQuery.range(offset, offset + PAGE - 1);
+        if (error) throw new Error(error.message);
+        if (!data || data.length === 0) break;
+        out.push(...data);
+        if (data.length < PAGE) break;
+        offset += PAGE;
+      }
+      return out;
+    }

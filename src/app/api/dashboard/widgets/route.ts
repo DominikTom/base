@@ -59,6 +59,23 @@ export async function POST(request: NextRequest) {
     // NOTE: Supabase caps responses at 1000 rows — must paginate with .range()
     const PAGE = 1000;
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    async function fetchAllRows(baseQuery: any): Promise<any[]> {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const out: any[] = [];
+      let offset = 0;
+      while (true) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data, error }: { data: any[] | null; error: { message: string } | null } = await baseQuery.range(offset, offset + PAGE - 1);
+        if (error) throw new Error(error.message);
+        if (!data || data.length === 0) break;
+        out.push(...data);
+        if (data.length < PAGE) break;
+        offset += PAGE;
+      }
+      return out;
+    }
+
     let _validOrderIds: string[] | null = null;
     async function getValidOrderIds(): Promise<string[]> {
       if (_validOrderIds !== null) return _validOrderIds;
@@ -147,7 +164,7 @@ export async function POST(request: NextRequest) {
         if (filteredIds.length === 0) return init;
         q = q.in('order_id', filteredIds.slice(0, 5000));
       }
-      const { data } = await q.limit(50000);
+      const data = await fetchAllRows(q);
       const scoped = scopeOrdersByWarsawDate(data);
       const totals = scoped.reduce((a: typeof init, r: Record<string, unknown>) => ({
         revenue: a.revenue + ((r[grossField] as number) || (r.total_gross_pln as number) || 0),
@@ -162,7 +179,7 @@ export async function POST(request: NextRequest) {
         if (filteredIds.length === 0) return totals;
         cq = cq.in('order_id', filteredIds.slice(0, 5000));
       }
-      const { data: cancelledRows } = await cq.eq('status', CANCELLED_STATUS).limit(50000);
+      const cancelledRows = await fetchAllRows(cq.eq('status', CANCELLED_STATUS));
       totals.cancelled = scopeOrdersByWarsawDate(cancelledRows).length;
 
       return totals;
@@ -259,7 +276,7 @@ export async function POST(request: NextRequest) {
       }
 
       case 'ranking_cities': {
-        const { data } = await orderQuery('delivery_city').not('delivery_city', 'is', null).limit(50000);
+        const data = await fetchAllRows(orderQuery('delivery_city').not('delivery_city', 'is', null));
         const scoped = scopeOrdersByWarsawDate(data);
         const map: Record<string, number> = {};
         for (const o of scoped) if (o.delivery_city) map[o.delivery_city] = (map[o.delivery_city] || 0) + 1;
@@ -269,7 +286,7 @@ export async function POST(request: NextRequest) {
 
       case 'ranking_suppliers': {
         const grossCol = isEurShop ? 'total_gross' : 'total_gross_pln';
-        const { data } = await orderQuery(`supplier, ${grossCol}`).not('supplier', 'is', null).limit(50000);
+        const data = await fetchAllRows(orderQuery(`supplier, ${grossCol}`).not('supplier', 'is', null));
         const scoped = scopeOrdersByWarsawDate(data);
         const map: Record<string, number> = {};
         for (const o of scoped) if (o.supplier) map[o.supplier] = (map[o.supplier] || 0) + (o[grossCol] || 0);
@@ -278,7 +295,7 @@ export async function POST(request: NextRequest) {
       }
 
       case 'ranking_coupons': {
-        const { data } = await orderQuery('coupon_code').not('coupon_code', 'is', null).limit(50000);
+        const data = await fetchAllRows(orderQuery('coupon_code').not('coupon_code', 'is', null));
         const scoped = scopeOrdersByWarsawDate(data);
         const map: Record<string, number> = {};
         for (const o of scoped) if (o.coupon_code) { const c = o.coupon_code.trim().toUpperCase(); map[c] = (map[c] || 0) + 1; }
@@ -319,7 +336,7 @@ export async function POST(request: NextRequest) {
           if (filteredIds.length === 0) return NextResponse.json({ type: widget === 'chart_daily_orders' ? 'bar' : 'line', data: [], debug });
           q = q.in('order_id', filteredIds.slice(0, 5000));
         }
-        const { data } = await q.limit(50000);
+        const data = await fetchAllRows(q);
         const scoped = scopeOrdersByWarsawDate(data);
         const byDate: Record<string, number> = {};
         for (const r of scoped) {
@@ -338,7 +355,7 @@ export async function POST(request: NextRequest) {
           if (filteredIds.length === 0) return NextResponse.json({ type: 'area', data: [], shops: [], debug });
           q = q.in('order_id', filteredIds.slice(0, 5000));
         }
-        const { data } = await q.limit(50000);
+        const data = await fetchAllRows(q);
         const scoped = scopeOrdersByWarsawDate(data);
         const shopSet = new Set<string>();
         const byDate: Record<string, Record<string, number>> = {};
@@ -362,7 +379,7 @@ export async function POST(request: NextRequest) {
           if (filteredIds.length === 0) return NextResponse.json({ type: 'pie', data: [{ name: 'Zapłacone', value: 0 }, { name: 'Nieopłacone', value: 0 }], debug });
           q = q.in('order_id', filteredIds.slice(0, 5000));
         }
-        const { data } = await q.limit(50000);
+        const data = await fetchAllRows(q);
         const scoped = scopeOrdersByWarsawDate(data);
         let paid = 0, total = 0;
         for (const r of scoped) { total += (r.total_gross_pln || 0); if (r.is_paid) paid += (r.total_gross_pln || 0); }
@@ -373,7 +390,7 @@ export async function POST(request: NextRequest) {
       }
 
       case 'chart_suppliers': {
-        const { data } = await orderQuery('supplier, total_gross_pln').not('supplier', 'is', null).limit(50000);
+        const data = await fetchAllRows(orderQuery('supplier, total_gross_pln').not('supplier', 'is', null));
         const scoped = scopeOrdersByWarsawDate(data);
         const map: Record<string, number> = {};
         for (const o of scoped) if (o.supplier) map[o.supplier] = (map[o.supplier] || 0) + (o.total_gross_pln || 0);
@@ -401,7 +418,7 @@ export async function POST(request: NextRequest) {
           if (filteredIds.length === 0) return NextResponse.json({ type: 'table', columns: ['Status', 'Zamówienia', 'Kwota'], data: [], debug });
           q = q.in('order_id', filteredIds.slice(0, 5000));
         }
-        const { data } = await q.limit(50000);
+        const data = await fetchAllRows(q);
         const scoped = scopeOrdersByWarsawDate(data);
         let paid = 0, unpaidRev = 0, paidCount = 0, unpaidCount = 0;
         for (const r of scoped) {
@@ -426,7 +443,7 @@ export async function POST(request: NextRequest) {
       case 'kpi_conversion_rate': {
         const q = db.from('fact_daily_traffic').select('sessions, users, transactions')
           .gte('date', dateFrom).lte('date', dateTo);
-        const { data } = await q.limit(50000);
+        const data = await fetchAllRows(q);
         let sessions = 0, users = 0, transactions = 0;
         for (const r of data || []) { sessions += r.sessions || 0; users += r.users || 0; transactions += r.transactions || 0; }
         const convRate = sessions > 0 ? (transactions / sessions) * 100 : 0;
@@ -441,7 +458,7 @@ export async function POST(request: NextRequest) {
       case 'ranking_traffic_sources': {
         const q = db.from('fact_daily_traffic').select('source, medium, sessions')
           .gte('date', dateFrom).lte('date', dateTo);
-        const { data } = await q.limit(50000);
+        const data = await fetchAllRows(q);
         const map: Record<string, number> = {};
         for (const r of data || []) {
           const key = `${r.source} / ${r.medium}`;
@@ -454,7 +471,7 @@ export async function POST(request: NextRequest) {
       case 'chart_sessions_timeline': {
         const q = db.from('fact_daily_traffic').select('date, hostname, sessions')
           .gte('date', dateFrom).lte('date', dateTo).order('date');
-        const { data } = await q.limit(50000);
+        const data = await fetchAllRows(q);
         const hostSet = new Set<string>();
         const byDate: Record<string, Record<string, number>> = {};
         for (const r of data || []) {
@@ -473,15 +490,19 @@ export async function POST(request: NextRequest) {
       case 'kpi_total_marketing_cost':
       case 'kpi_meta_spend':
       case 'kpi_google_spend': {
-        const { data: revData } = await orderQuery('total_gross_pln').limit(50000);
+        const revData = await fetchAllRows(orderQuery('total_gross_pln'));
         const totalRevenue = scopeOrdersByWarsawDate(revData).reduce((s, r) => s + (r.total_gross_pln || 0), 0);
 
-        const { data: metaData } = await db.from('fact_daily_adspend').select('spend')
-          .eq('platform', 'meta').gte('date', dateFrom).lte('date', dateTo).limit(50000);
+        const metaData = await fetchAllRows(
+          db.from('fact_daily_adspend').select('spend')
+            .eq('platform', 'meta').gte('date', dateFrom).lte('date', dateTo)
+        );
         const metaSpend = (metaData || []).reduce((s, r) => s + (r.spend || 0), 0);
 
-        const { data: googleData } = await db.from('fact_daily_traffic').select('ad_cost')
-          .eq('source', '__total__').gte('date', dateFrom).lte('date', dateTo).limit(50000);
+        const googleData = await fetchAllRows(
+          db.from('fact_daily_traffic').select('ad_cost')
+            .eq('source', '__total__').gte('date', dateFrom).lte('date', dateTo)
+        );
         const googleSpend = (googleData || []).reduce((s, r) => s + (r.ad_cost || 0), 0);
 
         const { data: agencyData } = await db.from('fact_agency_costs').select('month, amount_pln').limit(500);

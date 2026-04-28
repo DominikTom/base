@@ -21,8 +21,7 @@ export async function GET(request: NextRequest) {
       query = query.eq('source_shop', shop);
     }
 
-    const { data: ordersData, error } = await query.limit(50000);
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    const ordersData = await fetchAllRows(query);
 
     // Group by granularity
     function getGranularityKey(date: string): string {
@@ -76,7 +75,7 @@ export async function GET(request: NextRequest) {
       producerQuery = producerQuery.eq('source_shop', shop);
     }
 
-    const { data: producerData } = await producerQuery.limit(50000);
+    const producerData = await fetchAllRows(producerQuery);
     const supplierMap: Record<string, number> = {};
     for (const o of producerData || []) {
       if (o.producer) {
@@ -98,7 +97,7 @@ export async function GET(request: NextRequest) {
       statusQuery = statusQuery.eq('source_shop', shop);
     }
 
-    const { data: statusData } = await statusQuery.limit(50000);
+    const statusData = await fetchAllRows(statusQuery);
     const statusCounts: Record<string, number> = {};
     let paidCount = 0;
     for (const o of statusData || []) {
@@ -138,7 +137,7 @@ export async function GET(request: NextRequest) {
       couponQuery = couponQuery.eq('source_shop', shop);
     }
 
-    const { data: couponData } = await couponQuery.limit(50000);
+    const couponData = await fetchAllRows(couponQuery);
     const couponMap: Record<string, { count: number; revenue: number }> = {};
     for (const o of couponData || []) {
       if (o.coupon_code) {
@@ -168,3 +167,20 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: String(err) }, { status: 500 });
   }
 }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    async function fetchAllRows(baseQuery: any): Promise<any[]> {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const out: any[] = [];
+      const PAGE = 1000;
+      let offset = 0;
+      while (true) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data, error }: { data: any[] | null; error: { message: string } | null } = await baseQuery.range(offset, offset + PAGE - 1);
+        if (error) throw new Error(error.message);
+        if (!data || data.length === 0) break;
+        out.push(...data);
+        if (data.length < PAGE) break;
+        offset += PAGE;
+      }
+      return out;
+    }
