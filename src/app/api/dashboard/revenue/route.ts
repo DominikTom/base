@@ -8,20 +8,22 @@ export async function GET(request: NextRequest) {
     const dateTo = searchParams.get('date_to') || new Date().toISOString().split('T')[0];
     const shop = searchParams.get('shop') || 'all';
     const granularity = searchParams.get('granularity') || 'day';
+    const BILLABLE_STATUSES = ['zamówienie', 'zrealizowane'];
 
-    // Fetch daily revenue
+    // Fetch billable orders directly (instead of relying on pre-aggregated daily table).
     let query = getSupabaseAdmin()
-      .from('fact_daily_revenue')
-      .select('*')
-      .gte('date', dateFrom)
-      .lte('date', dateTo)
-      .order('date', { ascending: true });
+      .from('fact_orders')
+      .select('order_date, source_shop, total_gross_pln, status, is_paid, coupon_code')
+      .in('status', BILLABLE_STATUSES)
+      .gte('order_date', dateFrom)
+      .lte('order_date', dateTo + 'T23:59:59')
+      .order('order_date', { ascending: true });
 
     if (shop !== 'all') {
       query = query.eq('source_shop', shop);
     }
 
-    const { data: dailyRevenue, error } = await query.limit(50000);
+    const { data: ordersData, error } = await query.limit(50000);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
     // Group by granularity
@@ -47,10 +49,11 @@ export async function GET(request: NextRequest) {
     // Revenue per shop over time (stacked)
     const timeSeriesMap: Record<string, Record<string, number>> = {};
     const shopSet = new Set<string>();
-    for (const row of dailyRevenue || []) {
-      const key = getGranularityKey(row.date);
+    for (const row of ordersData || []) {
+      const date = (row.order_date as string).substring(0, 10);
+      const key = getGranularityKey(date);
       if (!timeSeriesMap[key]) timeSeriesMap[key] = {};
-      timeSeriesMap[key][row.source_shop] = (timeSeriesMap[key][row.source_shop] || 0) + (row.revenue_gross_pln || 0);
+      timeSeriesMap[key][row.source_shop] = (timeSeriesMap[key][row.source_shop] || 0) + (row.total_gross_pln || 0);
       shopSet.add(row.source_shop);
     }
     const shops = [...shopSet];
@@ -109,11 +112,12 @@ export async function GET(request: NextRequest) {
 
     // AOV trend
     const aovTrend: Record<string, { revenue: number; count: number }> = {};
-    for (const row of dailyRevenue || []) {
-      const key = getGranularityKey(row.date);
+    for (const row of ordersData || []) {
+      const date = (row.order_date as string).substring(0, 10);
+      const key = getGranularityKey(date);
       if (!aovTrend[key]) aovTrend[key] = { revenue: 0, count: 0 };
-      aovTrend[key].revenue += row.revenue_gross_pln || 0;
-      aovTrend[key].count += row.orders_count || 0;
+      aovTrend[key].revenue += row.total_gross_pln || 0;
+      aovTrend[key].count += 1;
     }
     const aovChart = Object.entries(aovTrend)
       .sort(([a], [b]) => a.localeCompare(b))
