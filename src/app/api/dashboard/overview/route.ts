@@ -8,61 +8,62 @@ export async function GET(request: NextRequest) {
     const dateTo = searchParams.get('date_to') || new Date().toISOString().split('T')[0];
     const shop = searchParams.get('shop') || 'all';
 
-    // Build shop filter
-    let shopFilter = {};
-    if (shop !== 'all') {
-      shopFilter = { source_shop: shop };
-    }
+    const BILLABLE_STATUSES = ['zamówienie', 'zrealizowane'];
+    const CANCELLED_STATUS = 'anulowane';
 
-    // Fetch daily revenue data
-    let revenueQuery = getSupabaseAdmin()
-      .from('fact_daily_revenue')
-      .select('*')
-      .gte('date', dateFrom)
-      .lte('date', dateTo)
-      .order('date', { ascending: true });
+    // Fetch order-level data directly to avoid stale / over-inclusive daily aggregates.
+    // Revenue KPI should include only billable statuses: zamówienie + zrealizowane.
+    let ordersQuery = getSupabaseAdmin()
+      .from('fact_orders')
+      .select('order_date, source_shop, total_gross_pln, shipping_cost_pln, is_paid, status')
+      .gte('order_date', dateFrom)
+      .lte('order_date', dateTo + 'T23:59:59')
+      .order('order_date', { ascending: true });
 
     if (shop !== 'all') {
-      revenueQuery = revenueQuery.eq('source_shop', shop);
+      ordersQuery = ordersQuery.eq('source_shop', shop);
     }
 
-    const { data: dailyRevenue, error: revError } = await revenueQuery.limit(50000);
+    const { data: ordersData, error: revError } = await ordersQuery.limit(50000);
 
     if (revError) {
       return NextResponse.json({ error: revError.message }, { status: 500 });
     }
 
-    // Aggregate KPIs
-    const totals = (dailyRevenue || []).reduce(
-      (acc, row) => {
-        acc.revenue += row.revenue_gross_pln || 0;
-        acc.orders += row.orders_count || 0;
-        acc.ordersPaid += row.orders_paid || 0;
-        acc.ordersCancelled += row.orders_cancelled || 0;
-        acc.shipping += row.shipping_revenue_pln || 0;
-        return acc;
-      },
-      { revenue: 0, orders: 0, ordersPaid: 0, ordersCancelled: 0, shipping: 0 }
-    );
+    const totals = { revenue: 0, orders: 0, ordersPaid: 0, ordersCancelled: 0, shipping: 0 };
+
+    const revenueByShop: Record<string, number> = {};
+    const revenueTimeSeries: Record<string, Record<string, number>> = {};
+    const ordersTimeSeries: Record<string, number> = {};
+
+    for (const row of ordersData || []) {
+      const status = row.status || '';
+      const date = (row.order_date as string).substring(0, 10);
+
+      if (status === CANCELLED_STATUS) {
+        totals.ordersCancelled += 1;
+      }
+
+      if (!BILLABLE_STATUSES.includes(status)) {
+        continue;
+      }
+
+      const gross = row.total_gross_pln || 0;
+      totals.revenue += gross;
+      totals.orders += 1;
+      totals.shipping += row.shipping_cost_pln || 0;
+      if (row.is_paid) totals.ordersPaid += 1;
+
+      revenueByShop[row.source_shop] = (revenueByShop[row.source_shop] || 0) + gross;
+      if (!revenueTimeSeries[date]) {
+        revenueTimeSeries[date] = {};
+      }
+      revenueTimeSeries[date][row.source_shop] = (revenueTimeSeries[date][row.source_shop] || 0) + gross;
+      ordersTimeSeries[date] = (ordersTimeSeries[date] || 0) + 1;
+    }
 
     const aov = totals.orders > 0 ? totals.revenue / totals.orders : 0;
-
-    // Revenue by shop (for pie chart)
-    const revenueByShop: Record<string, number> = {};
-    for (const row of dailyRevenue || []) {
-      revenueByShop[row.source_shop] = (revenueByShop[row.source_shop] || 0) + (row.revenue_gross_pln || 0);
-    }
-
-    // Revenue time series (grouped by date, split by shop)
-    const revenueTimeSeries: Record<string, Record<string, number>> = {};
-    for (const row of dailyRevenue || []) {
-      if (!revenueTimeSeries[row.date]) {
-        revenueTimeSeries[row.date] = {};
-      }
-      revenueTimeSeries[row.date][row.source_shop] = (revenueTimeSeries[row.date][row.source_shop] || 0) + (row.revenue_gross_pln || 0);
-    }
-
-    const shops = [...new Set((dailyRevenue || []).map(r => r.source_shop))];
+    const shops = [...new Set(Object.values(revenueTimeSeries).flatMap(v => Object.keys(v)))];
     const revenueChart = Object.entries(revenueTimeSeries)
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([date, values]) => ({
@@ -70,11 +71,6 @@ export async function GET(request: NextRequest) {
         ...Object.fromEntries(shops.map(s => [s, values[s] || 0])),
       }));
 
-    // Orders time series
-    const ordersTimeSeries: Record<string, number> = {};
-    for (const row of dailyRevenue || []) {
-      ordersTimeSeries[row.date] = (ordersTimeSeries[row.date] || 0) + (row.orders_count || 0);
-    }
     const ordersChart = Object.entries(ordersTimeSeries)
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([date, count]) => ({ name: date, value: count }));
@@ -93,9 +89,10 @@ export async function GET(request: NextRequest) {
     // Top products
     let productsQuery = getSupabaseAdmin()
       .from('fact_order_items')
-      .select('product_name, product_category, quantity, order_id, fact_orders!inner(order_date, source_shop, total_gross_pln)')
+      .select('product_name, product_category, quantity, order_id, fact_orders!inner(order_date, source_shop, total_gross_pln, status)')
       .gte('fact_orders.order_date', dateFrom)
       .lte('fact_orders.order_date', dateTo + 'T23:59:59')
+      .in('fact_orders.status', BILLABLE_STATUSES)
       .not('item_type', 'in', '("shipping","service","surcharge")');
 
     if (shop !== 'all') {
