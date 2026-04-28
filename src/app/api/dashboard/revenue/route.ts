@@ -122,9 +122,9 @@ export async function GET(request: NextRequest) {
         value: v.count > 0 ? Math.round(v.revenue / v.count) : 0,
       }));
 
-    // Coupon analysis
+    // Coupon analysis — billable view excludes cancelled orders
     let couponQuery = getSupabaseAdmin()
-      .from('fact_orders')
+      .from('v_orders_billable')
       .select('coupon_code, total_gross_pln')
       .gte('order_date', dateFrom)
       .lte('order_date', dateTo + 'T23:59:59')
