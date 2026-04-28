@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabase';
+import { isInWarsawDateRange, shiftDate, warsawDateKey } from '@/lib/warsaw-date';
 
 export async function POST(request: NextRequest) {
   try {
     const { widget, dateFrom, dateTo, shop = 'all', limit = 20, crossFilters = [] } = await request.json();
     const db = getSupabaseAdmin();
+    const fetchFrom = shiftDate(dateFrom, -1);
+    const fetchTo = shiftDate(dateTo, 1);
     const BILLABLE_STATUSES = ['zamówienie', 'zrealizowane'];
     const CANCELLED_STATUS = 'anulowane';
 
@@ -25,8 +28,9 @@ export async function POST(request: NextRequest) {
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     function orderQuery(select: string): any {
-      let q = db.from('fact_orders').select(select)
-        .gte('order_date', dateFrom).lte('order_date', dateTo + 'T23:59:59')
+      const withDate = select.includes('order_date') ? select : `${select}, order_date`;
+      let q = db.from('fact_orders').select(withDate)
+        .gte('order_date', fetchFrom).lte('order_date', fetchTo + 'T23:59:59')
         .in('status', BILLABLE_STATUSES);
       if (shop !== 'all') q = q.eq('source_shop', shop);
       q = applyCross(q, orderCrossFields);
@@ -35,11 +39,16 @@ export async function POST(request: NextRequest) {
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     function orderQueryAllStatuses(select: string): any {
-      let q = db.from('fact_orders').select(select)
-        .gte('order_date', dateFrom).lte('order_date', dateTo + 'T23:59:59');
+      const withDate = select.includes('order_date') ? select : `${select}, order_date`;
+      let q = db.from('fact_orders').select(withDate)
+        .gte('order_date', fetchFrom).lte('order_date', fetchTo + 'T23:59:59');
       if (shop !== 'all') q = q.eq('source_shop', shop);
       q = applyCross(q, orderCrossFields);
       return q;
+    }
+
+    function scopeOrdersByWarsawDate<T extends { order_date?: string }>(rows: T[] | null | undefined): T[] {
+      return (rows || []).filter(r => isInWarsawDateRange(r.order_date || null, dateFrom, dateTo));
     }
 
     // ── SAFE items query: two-step approach (replaces broken iq() join) ──
@@ -54,7 +63,7 @@ export async function POST(request: NextRequest) {
 
       function buildQ() {
         let q = db.from('fact_orders').select('order_id')
-          .gte('order_date', dateFrom).lte('order_date', dateTo + 'T23:59:59')
+          .gte('order_date', fetchFrom).lte('order_date', fetchTo + 'T23:59:59')
           .in('status', BILLABLE_STATUSES);
         if (shop !== 'all') q = q.eq('source_shop', shop);
         q = applyCross(q, orderCrossFields);
@@ -138,7 +147,8 @@ export async function POST(request: NextRequest) {
         q = q.in('order_id', filteredIds.slice(0, 5000));
       }
       const { data } = await q.limit(50000);
-      const totals = (data || []).reduce((a: typeof init, r: Record<string, unknown>) => ({
+      const scoped = scopeOrdersByWarsawDate(data);
+      const totals = scoped.reduce((a: typeof init, r: Record<string, unknown>) => ({
         revenue: a.revenue + ((r[grossField] as number) || (r.total_gross_pln as number) || 0),
         paid: a.paid + (r.is_paid ? ((r.total_gross_pln as number) || 0) : 0),
         orders: a.orders + 1,
@@ -152,7 +162,7 @@ export async function POST(request: NextRequest) {
         cq = cq.in('order_id', filteredIds.slice(0, 5000));
       }
       const { data: cancelledRows } = await cq.eq('status', CANCELLED_STATUS).limit(50000);
-      totals.cancelled = (cancelledRows || []).length;
+      totals.cancelled = scopeOrdersByWarsawDate(cancelledRows).length;
 
       return totals;
     }
@@ -249,8 +259,9 @@ export async function POST(request: NextRequest) {
 
       case 'ranking_cities': {
         const { data } = await orderQuery('delivery_city').not('delivery_city', 'is', null).limit(50000);
+        const scoped = scopeOrdersByWarsawDate(data);
         const map: Record<string, number> = {};
-        for (const o of data || []) if (o.delivery_city) map[o.delivery_city] = (map[o.delivery_city] || 0) + 1;
+        for (const o of scoped) if (o.delivery_city) map[o.delivery_city] = (map[o.delivery_city] || 0) + 1;
         const ranked = Object.entries(map).sort(([,a],[,b]) => b - a).slice(0, limit);
         return NextResponse.json({ type: 'ranking', data: ranked.map(([name, value]) => ({ name, value })), total: ranked.reduce((s,[,v]) => s + v, 0), debug: { ...debug, query: 'COUNT grouped by delivery_city from fact_orders' } });
       }
@@ -258,16 +269,18 @@ export async function POST(request: NextRequest) {
       case 'ranking_suppliers': {
         const grossCol = isEurShop ? 'total_gross' : 'total_gross_pln';
         const { data } = await orderQuery(`supplier, ${grossCol}`).not('supplier', 'is', null).limit(50000);
+        const scoped = scopeOrdersByWarsawDate(data);
         const map: Record<string, number> = {};
-        for (const o of data || []) if (o.supplier) map[o.supplier] = (map[o.supplier] || 0) + (o[grossCol] || 0);
+        for (const o of scoped) if (o.supplier) map[o.supplier] = (map[o.supplier] || 0) + (o[grossCol] || 0);
         const ranked = Object.entries(map).sort(([,a],[,b]) => b - a).slice(0, limit);
         return NextResponse.json({ type: 'ranking', data: ranked.map(([name, value]) => ({ name, value: Math.round(value) })), total: ranked.reduce((s,[,v]) => s + v, 0), format: 'currency', currency, debug: { ...debug, query: `SUM(${grossCol}) grouped by supplier` } });
       }
 
       case 'ranking_coupons': {
         const { data } = await orderQuery('coupon_code').not('coupon_code', 'is', null).limit(50000);
+        const scoped = scopeOrdersByWarsawDate(data);
         const map: Record<string, number> = {};
-        for (const o of data || []) if (o.coupon_code) { const c = o.coupon_code.trim().toUpperCase(); map[c] = (map[c] || 0) + 1; }
+        for (const o of scoped) if (o.coupon_code) { const c = o.coupon_code.trim().toUpperCase(); map[c] = (map[c] || 0) + 1; }
         const ranked = Object.entries(map).sort(([,a],[,b]) => b - a).slice(0, limit);
         return NextResponse.json({ type: 'ranking', data: ranked.map(([name, value]) => ({ name, value })), total: ranked.reduce((s,[,v]) => s + v, 0), debug: { ...debug, query: 'COUNT grouped by coupon_code' } });
       }
@@ -306,8 +319,13 @@ export async function POST(request: NextRequest) {
           q = q.in('order_id', filteredIds.slice(0, 5000));
         }
         const { data } = await q.limit(50000);
+        const scoped = scopeOrdersByWarsawDate(data);
         const byDate: Record<string, number> = {};
-        for (const r of data || []) { const d = (r.order_date as string).substring(0, 10); byDate[d] = (byDate[d] || 0) + 1; }
+        for (const r of scoped) {
+          const d = warsawDateKey(r.order_date as string);
+          if (!d) continue;
+          byDate[d] = (byDate[d] || 0) + 1;
+        }
         const chartData = Object.entries(byDate).sort(([a],[b]) => a.localeCompare(b)).map(([name, value]) => ({ name, value }));
         return NextResponse.json({ type: widget === 'chart_daily_orders' ? 'bar' : 'line', data: chartData, debug });
       }
@@ -320,10 +338,12 @@ export async function POST(request: NextRequest) {
           q = q.in('order_id', filteredIds.slice(0, 5000));
         }
         const { data } = await q.limit(50000);
+        const scoped = scopeOrdersByWarsawDate(data);
         const shopSet = new Set<string>();
         const byDate: Record<string, Record<string, number>> = {};
-        for (const r of data || []) {
-          const d = (r.order_date as string).substring(0, 10);
+        for (const r of scoped) {
+          const d = warsawDateKey(r.order_date as string);
+          if (!d) continue;
           if (!byDate[d]) byDate[d] = {};
           byDate[d][r.source_shop] = (byDate[d][r.source_shop] || 0) + (r.total_gross_pln || 0);
           shopSet.add(r.source_shop);
@@ -342,8 +362,9 @@ export async function POST(request: NextRequest) {
           q = q.in('order_id', filteredIds.slice(0, 5000));
         }
         const { data } = await q.limit(50000);
+        const scoped = scopeOrdersByWarsawDate(data);
         let paid = 0, total = 0;
-        for (const r of data || []) { total += (r.total_gross_pln || 0); if (r.is_paid) paid += (r.total_gross_pln || 0); }
+        for (const r of scoped) { total += (r.total_gross_pln || 0); if (r.is_paid) paid += (r.total_gross_pln || 0); }
         return NextResponse.json({ type: 'pie', data: [
           { name: 'Zapłacone', value: Math.round(paid) },
           { name: 'Nieopłacone', value: Math.round(total - paid) },
@@ -352,8 +373,9 @@ export async function POST(request: NextRequest) {
 
       case 'chart_suppliers': {
         const { data } = await orderQuery('supplier, total_gross_pln').not('supplier', 'is', null).limit(50000);
+        const scoped = scopeOrdersByWarsawDate(data);
         const map: Record<string, number> = {};
-        for (const o of data || []) if (o.supplier) map[o.supplier] = (map[o.supplier] || 0) + (o.total_gross_pln || 0);
+        for (const o of scoped) if (o.supplier) map[o.supplier] = (map[o.supplier] || 0) + (o.total_gross_pln || 0);
         const sorted = Object.entries(map).sort(([,a],[,b]) => b - a);
         const top = sorted.slice(0, 8);
         const other = sorted.slice(8).reduce((s,[,v]) => s + v, 0);
@@ -379,8 +401,9 @@ export async function POST(request: NextRequest) {
           q = q.in('order_id', filteredIds.slice(0, 5000));
         }
         const { data } = await q.limit(50000);
+        const scoped = scopeOrdersByWarsawDate(data);
         let paid = 0, unpaidRev = 0, paidCount = 0, unpaidCount = 0;
-        for (const r of data || []) {
+        for (const r of scoped) {
           const gross = r.total_gross_pln || 0;
           if (r.is_paid) {
             paid += gross;
@@ -450,7 +473,7 @@ export async function POST(request: NextRequest) {
       case 'kpi_meta_spend':
       case 'kpi_google_spend': {
         const { data: revData } = await orderQuery('total_gross_pln').limit(50000);
-        const totalRevenue = (revData || []).reduce((s, r) => s + (r.total_gross_pln || 0), 0);
+        const totalRevenue = scopeOrdersByWarsawDate(revData).reduce((s, r) => s + (r.total_gross_pln || 0), 0);
 
         const { data: metaData } = await db.from('fact_daily_adspend').select('spend')
           .eq('platform', 'meta').gte('date', dateFrom).lte('date', dateTo).limit(50000);
