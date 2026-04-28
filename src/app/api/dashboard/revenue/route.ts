@@ -61,23 +61,24 @@ export async function GET(request: NextRequest) {
         ...Object.fromEntries(shops.map(s => [s, Math.round(values[s] || 0)])),
       }));
 
-    // Supplier revenue ranking
-    let supplierQuery = getSupabaseAdmin()
-      .from('fact_orders')
-      .select('supplier, total_gross_pln')
+    // Producer revenue ranking — uses v_orders_with_producer view
+    // (8-tag whitelist with fallback to fact_orders.supplier).
+    let producerQuery = getSupabaseAdmin()
+      .from('v_orders_with_producer')
+      .select('producer, total_gross_pln')
       .gte('order_date', dateFrom)
       .lte('order_date', dateTo + 'T23:59:59')
-      .not('supplier', 'is', null);
+      .not('producer', 'is', null);
 
     if (shop !== 'all') {
-      supplierQuery = supplierQuery.eq('source_shop', shop);
+      producerQuery = producerQuery.eq('source_shop', shop);
     }
 
-    const { data: supplierData } = await supplierQuery.limit(50000);
+    const { data: producerData } = await producerQuery.limit(50000);
     const supplierMap: Record<string, number> = {};
-    for (const o of supplierData || []) {
-      if (o.supplier) {
-        supplierMap[o.supplier] = (supplierMap[o.supplier] || 0) + (o.total_gross_pln || 0);
+    for (const o of producerData || []) {
+      if (o.producer) {
+        supplierMap[o.producer] = (supplierMap[o.producer] || 0) + (o.total_gross_pln || 0);
       }
     }
     const supplierRanking = Object.entries(supplierMap)

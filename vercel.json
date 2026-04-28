@@ -16,7 +16,7 @@
   "crons": [
     {
       "path": "/api/etl/gdrive-sync?mode=daily",
-      "schedule": "0 6 * * *"
+      "schedule": "0 4 * * *"
     },
     {
       "path": "/api/etl/gdrive-sync?mode=poll",
