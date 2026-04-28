@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabase';
-import { isInWarsawDateRange, shiftDate, warsawDateKey } from '@/lib/warsaw-date';
+import { shiftDate, warsawDateKey } from '@/lib/warsaw-date';
 
 export async function POST(request: NextRequest) {
   try {
@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
     // Runtime payloads contain additional selected columns used by widgets.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     function scopeOrdersByWarsawDate(rows: Array<{ order_date?: string }> | null | undefined): any[] {
-      return (rows || []).filter(r => isInWarsawDateRange(r.order_date || null, dateFrom, dateTo));
+      return rows || [];
     }
 
     // ── SAFE items query: two-step approach (replaces broken iq() join) ──

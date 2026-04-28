@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabase';
-import { isInWarsawDateRange, shiftDate, warsawDateKey } from '@/lib/warsaw-date';
 
 export async function GET(request: NextRequest) {
   try {
@@ -13,14 +12,11 @@ export async function GET(request: NextRequest) {
 
     // Fetch order-level data directly to avoid stale / over-inclusive daily aggregates.
     // Revenue KPI should include only billable statuses: zamówienie + zrealizowane.
-    const fetchFrom = shiftDate(dateFrom, -1);
-    const fetchTo = shiftDate(dateTo, 1);
-
     let ordersQuery = getSupabaseAdmin()
       .from('fact_orders')
       .select('order_date, source_shop, total_gross_pln, shipping_cost_pln, is_paid, status')
-      .gte('order_date', fetchFrom)
-      .lte('order_date', fetchTo + 'T23:59:59')
+      .gte('order_date', dateFrom)
+      .lte('order_date', dateTo + 'T23:59:59')
       .order('order_date', { ascending: true });
 
     if (shop !== 'all') {
@@ -40,9 +36,8 @@ export async function GET(request: NextRequest) {
     const ordersTimeSeries: Record<string, number> = {};
 
     for (const row of ordersData || []) {
-      if (!isInWarsawDateRange(row.order_date, dateFrom, dateTo)) continue;
       const status = row.status || '';
-      const date = warsawDateKey(row.order_date) || '';
+      const date = (row.order_date as string).substring(0, 10);
       if (!date) continue;
 
       if (status === CANCELLED_STATUS) {

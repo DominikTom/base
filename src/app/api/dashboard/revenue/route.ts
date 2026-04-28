@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabase';
-import { isInWarsawDateRange, shiftDate, warsawDateKey } from '@/lib/warsaw-date';
 
 export async function GET(request: NextRequest) {
   try {
@@ -11,14 +10,11 @@ export async function GET(request: NextRequest) {
     const granularity = searchParams.get('granularity') || 'day';
 
     // Fetch orders directly (status segmentation is handled in separate analyses).
-    const fetchFrom = shiftDate(dateFrom, -1);
-    const fetchTo = shiftDate(dateTo, 1);
-
     let query = getSupabaseAdmin()
       .from('fact_orders')
       .select('order_date, source_shop, total_gross_pln, status, is_paid, coupon_code')
-      .gte('order_date', fetchFrom)
-      .lte('order_date', fetchTo + 'T23:59:59')
+      .gte('order_date', dateFrom)
+      .lte('order_date', dateTo + 'T23:59:59')
       .order('order_date', { ascending: true });
 
     if (shop !== 'all') {
@@ -52,8 +48,7 @@ export async function GET(request: NextRequest) {
     const timeSeriesMap: Record<string, Record<string, number>> = {};
     const shopSet = new Set<string>();
     for (const row of ordersData || []) {
-      if (!isInWarsawDateRange(row.order_date, dateFrom, dateTo)) continue;
-      const date = warsawDateKey(row.order_date) || '';
+      const date = (row.order_date as string).substring(0, 10);
       if (!date) continue;
       const key = getGranularityKey(date);
       if (!timeSeriesMap[key]) timeSeriesMap[key] = {};
@@ -117,8 +112,7 @@ export async function GET(request: NextRequest) {
     // AOV trend
     const aovTrend: Record<string, { revenue: number; count: number }> = {};
     for (const row of ordersData || []) {
-      if (!isInWarsawDateRange(row.order_date, dateFrom, dateTo)) continue;
-      const date = warsawDateKey(row.order_date) || '';
+      const date = (row.order_date as string).substring(0, 10);
       if (!date) continue;
       const key = getGranularityKey(date);
       if (!aovTrend[key]) aovTrend[key] = { revenue: 0, count: 0 };
