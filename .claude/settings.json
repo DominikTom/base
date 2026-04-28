@@ -67,6 +67,11 @@
             "type": "command",
             "command": "sh -c 'exec node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/auto-memory-hook.mjs\" import'",
             "timeout": 8000
+          },
+          {
+            "type": "command",
+            "command": "sh -c 'exec node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/load-history-context.cjs\"'",
+            "timeout": 5000
           }
         ]
       }
