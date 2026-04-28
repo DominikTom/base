@@ -9,16 +9,14 @@ export async function GET(request: NextRequest) {
     const dateTo = searchParams.get('date_to') || new Date().toISOString().split('T')[0];
     const shop = searchParams.get('shop') || 'all';
     const granularity = searchParams.get('granularity') || 'day';
-    const BILLABLE_STATUSES = ['zamówienie', 'zrealizowane'];
 
-    // Fetch billable orders directly (instead of relying on pre-aggregated daily table).
+    // Fetch orders directly (status segmentation is handled in separate analyses).
     const fetchFrom = shiftDate(dateFrom, -1);
     const fetchTo = shiftDate(dateTo, 1);
 
     let query = getSupabaseAdmin()
       .from('fact_orders')
       .select('order_date, source_shop, total_gross_pln, status, is_paid, coupon_code')
-      .in('status', BILLABLE_STATUSES)
       .gte('order_date', fetchFrom)
       .lte('order_date', fetchTo + 'T23:59:59')
       .order('order_date', { ascending: true });

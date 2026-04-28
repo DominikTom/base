@@ -8,7 +8,6 @@ export async function POST(request: NextRequest) {
     const db = getSupabaseAdmin();
     const fetchFrom = shiftDate(dateFrom, -1);
     const fetchTo = shiftDate(dateTo, 1);
-    const BILLABLE_STATUSES = ['zamówienie', 'zrealizowane'];
     const CANCELLED_STATUS = 'anulowane';
 
     const EUR_SHOPS = ['mybed.de', 'amazon.de', 'kaufland.de'];
@@ -30,8 +29,7 @@ export async function POST(request: NextRequest) {
     function orderQuery(select: string): any {
       const withDate = select.includes('order_date') ? select : `${select}, order_date`;
       let q = db.from('fact_orders').select(withDate)
-        .gte('order_date', fetchFrom).lte('order_date', fetchTo + 'T23:59:59')
-        .in('status', BILLABLE_STATUSES);
+        .gte('order_date', fetchFrom).lte('order_date', fetchTo + 'T23:59:59');
       if (shop !== 'all') q = q.eq('source_shop', shop);
       q = applyCross(q, orderCrossFields);
       return q;
@@ -67,8 +65,7 @@ export async function POST(request: NextRequest) {
 
       function buildQ() {
         let q = db.from('fact_orders').select('order_id')
-          .gte('order_date', fetchFrom).lte('order_date', fetchTo + 'T23:59:59')
-          .in('status', BILLABLE_STATUSES);
+          .gte('order_date', fetchFrom).lte('order_date', fetchTo + 'T23:59:59');
         if (shop !== 'all') q = q.eq('source_shop', shop);
         q = applyCross(q, orderCrossFields);
         return q;
@@ -218,10 +215,10 @@ export async function POST(request: NextRequest) {
         }
 
         const valueMap: Record<string, { value: number; format: string; debugQuery?: string }> = {
-          kpi_revenue: { value: totals.revenue, format: 'currency', debugQuery: 'SUM(total_gross_pln) from fact_orders where status in (zamówienie,zrealizowane)' },
-          kpi_revenue_paid: { value: totals.paid, format: 'currency', debugQuery: 'SUM(total_gross_pln) for paid billable orders' },
+          kpi_revenue: { value: totals.revenue, format: 'currency', debugQuery: 'SUM(total_gross_pln) from fact_orders' },
+          kpi_revenue_paid: { value: totals.paid, format: 'currency', debugQuery: 'SUM(total_gross_pln) for paid orders' },
           kpi_revenue_unpaid: { value: unpaid, format: 'currency', debugQuery: 'revenue - paid' },
-          kpi_orders: { value: totals.orders, format: 'number', debugQuery: 'COUNT(*) from fact_orders where status in (zamówienie,zrealizowane)' },
+          kpi_orders: { value: totals.orders, format: 'number', debugQuery: 'COUNT(*) from fact_orders' },
           kpi_orders_beds: { value: bedOrders, format: 'number', debugQuery: 'COUNT DISTINCT order_id WHERE product_name contains łóżko/bett/boxspring' },
           kpi_qty_beds: { value: bedQty, format: 'number', debugQuery: 'SUM(quantity) WHERE product_name contains łóżko/bett/boxspring' },
           kpi_orders_samples: { value: sampleOrders, format: 'number', debugQuery: 'COUNT DISTINCT order_id WHERE product_name contains próbk/muster/sample' },

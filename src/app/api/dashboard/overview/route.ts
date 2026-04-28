@@ -9,7 +9,6 @@ export async function GET(request: NextRequest) {
     const dateTo = searchParams.get('date_to') || new Date().toISOString().split('T')[0];
     const shop = searchParams.get('shop') || 'all';
 
-    const BILLABLE_STATUSES = ['zamówienie', 'zrealizowane'];
     const CANCELLED_STATUS = 'anulowane';
 
     // Fetch order-level data directly to avoid stale / over-inclusive daily aggregates.
@@ -48,10 +47,6 @@ export async function GET(request: NextRequest) {
 
       if (status === CANCELLED_STATUS) {
         totals.ordersCancelled += 1;
-      }
-
-      if (!BILLABLE_STATUSES.includes(status)) {
-        continue;
       }
 
       const gross = row.total_gross_pln || 0;
@@ -98,7 +93,6 @@ export async function GET(request: NextRequest) {
       .select('product_name, product_category, quantity, order_id, fact_orders!inner(order_date, source_shop, total_gross_pln, status)')
       .gte('fact_orders.order_date', dateFrom)
       .lte('fact_orders.order_date', dateTo + 'T23:59:59')
-      .in('fact_orders.status', BILLABLE_STATUSES)
       .not('item_type', 'in', '("shipping","service","surcharge")');
 
     if (shop !== 'all') {
