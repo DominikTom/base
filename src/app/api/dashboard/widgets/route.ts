@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabase';
-import { shiftDate, warsawDateKey } from '@/lib/warsaw-date';
+import { isInWarsawDateRange, shiftDate, warsawDateKey } from '@/lib/warsaw-date';
 
 export async function POST(request: NextRequest) {
   try {
@@ -45,12 +45,11 @@ export async function POST(request: NextRequest) {
       return q;
     }
 
-    // Keep this intentionally permissive because Supabase infers a very narrow
-    // type for dynamic `.select()` strings (often just `{ order_date?: string }`).
-    // Runtime payloads contain additional selected columns used by widgets.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    function scopeOrdersByWarsawDate(rows: Array<{ order_date?: string }> | null | undefined): any[] {
-      return rows || [];
+    function scopeOrdersByWarsawDate<T extends { order_date?: string | null }>(
+      rows: T[] | null | undefined,
+    ): T[] {
+      if (!rows?.length) return [];
+      return rows.filter(r => isInWarsawDateRange(r.order_date, dateFrom, dateTo));
     }
 
     // ── SAFE items query: two-step approach (replaces broken iq() join) ──
@@ -81,7 +80,7 @@ export async function POST(request: NextRequest) {
       if (_validOrderIds !== null) return _validOrderIds;
 
       function buildQ() {
-        let q = db.from('fact_orders').select('order_id')
+        let q = db.from('fact_orders').select('order_id, order_date')
           .gte('order_date', fetchFrom).lte('order_date', fetchTo + 'T23:59:59');
         if (shop !== 'all') q = q.eq('source_shop', shop);
         q = applyCross(q, orderCrossFields);
@@ -93,7 +92,10 @@ export async function POST(request: NextRequest) {
       while (true) {
         const { data } = await buildQ().range(offset, offset + PAGE - 1);
         if (!data || data.length === 0) break;
-        for (const r of data) allIds.push((r as { order_id: string }).order_id);
+        for (const r of data as Array<{ order_id: string; order_date?: string | null }>) {
+          if (!isInWarsawDateRange(r.order_date, dateFrom, dateTo)) continue;
+          allIds.push(r.order_id);
+        }
         if (data.length < PAGE) break;
         offset += PAGE;
       }
