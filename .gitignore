@@ -40,3 +40,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# claude-flow MCP runtime
+/.swarm/
+/.claude-flow/agents/
+/.claude-flow/swarm/
+/.claude-flow/tasks/
+/ruvector.db
