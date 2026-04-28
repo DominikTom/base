@@ -47,7 +47,11 @@ export async function POST(request: NextRequest) {
       return q;
     }
 
-    function scopeOrdersByWarsawDate<T extends { order_date?: string }>(rows: T[] | null | undefined): T[] {
+    // Keep this intentionally permissive because Supabase infers a very narrow
+    // type for dynamic `.select()` strings (often just `{ order_date?: string }`).
+    // Runtime payloads contain additional selected columns used by widgets.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    function scopeOrdersByWarsawDate(rows: Array<{ order_date?: string }> | null | undefined): any[] {
       return (rows || []).filter(r => isInWarsawDateRange(r.order_date || null, dateFrom, dateTo));
     }
 
