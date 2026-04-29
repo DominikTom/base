@@ -286,7 +286,11 @@ function applySupabaseFilters(query: any, filters: ExplorerFilter[], allowedFiel
       case 'not_contains': query = query.not(f.field, 'ilike', `%${String(f.value || '')}%`); break;
       case 'starts_with': query = query.ilike(f.field, `${String(f.value || '')}%`); break;
       case 'ends_with': query = query.ilike(f.field, `%${String(f.value || '')}`); break;
-      case 'in': if (Array.isArray(f.value) && f.value.length) query = query.in(f.field, f.value); break;
+      case 'in': {
+        const arr = Array.isArray(f.value) ? f.value : String(f.value || '').split(',').map(v => v.trim()).filter(Boolean);
+        if (arr.length) query = query.in(f.field, arr);
+        break;
+      }
       case 'gt': query = query.gt(f.field, f.value); break;
       case 'gte': query = query.gte(f.field, f.value); break;
       case 'lt': query = query.lt(f.field, f.value); break;
@@ -317,7 +321,10 @@ function matchFilter(raw: unknown, filter: ExplorerFilter): boolean {
     case 'not_contains': return !value.toLowerCase().includes(String(fv ?? '').toLowerCase());
     case 'starts_with': return value.toLowerCase().startsWith(String(fv ?? '').toLowerCase());
     case 'ends_with': return value.toLowerCase().endsWith(String(fv ?? '').toLowerCase());
-    case 'in': return Array.isArray(fv) && fv.map(v => String(v)).includes(value);
+    case 'in': {
+      const arr = Array.isArray(fv) ? fv.map(v => String(v)) : String(fv || '').split(',').map(v => v.trim()).filter(Boolean);
+      return arr.includes(value);
+    }
     case 'is_null': return raw == null;
     case 'not_null': return raw != null;
     case 'gt': return Number(raw) > Number(fv);

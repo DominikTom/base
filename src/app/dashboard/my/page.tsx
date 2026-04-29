@@ -428,19 +428,29 @@ export default function MyDashboardPage() {
             {(customWidgetDraft.filters_advanced as AdvancedFilter[]).map((f, idx) => {
               const dim = schemaDimensions.find(d => d.field === f.field) || schemaDimensions[0];
               const operators = dim?.operators || ['eq'];
+              const hideValue = f.operator === 'is_null' || f.operator === 'not_null';
+              const needsTo = f.operator === 'between';
+              const isIn = f.operator === 'in';
               return (
-                <div key={idx} className="grid grid-cols-1 md:grid-cols-4 gap-2">
-                  <select value={f.field} onChange={e => updateAdvancedFilter(idx, { field: e.target.value, operator: (schemaDimensions.find(d => d.field === e.target.value)?.operators?.[0]) || 'eq' })} className="px-3 py-2 rounded bg-zinc-900 border border-zinc-700 text-xs text-zinc-200">
+                <div key={idx} className="grid grid-cols-1 md:grid-cols-12 gap-2 items-center">
+                  <select value={f.field} onChange={e => updateAdvancedFilter(idx, { field: e.target.value, operator: (schemaDimensions.find(d => d.field === e.target.value)?.operators?.[0]) || 'eq', value: '', value_to: '' })} className="md:col-span-3 px-3 py-2 rounded bg-zinc-900 border border-zinc-700 text-xs text-zinc-200">
                     {schemaDimensions.map(d => <option key={d.field} value={d.field}>{d.label}</option>)}
                   </select>
-                  <select value={f.operator} onChange={e => updateAdvancedFilter(idx, { operator: e.target.value })} className="px-3 py-2 rounded bg-zinc-900 border border-zinc-700 text-xs text-zinc-200">
+                  <select value={f.operator} onChange={e => updateAdvancedFilter(idx, { operator: e.target.value })} className="md:col-span-2 px-3 py-2 rounded bg-zinc-900 border border-zinc-700 text-xs text-zinc-200">
                     {operators.map(op => <option key={op} value={op}>{op}</option>)}
                   </select>
-                  <input value={f.value || ''} onChange={e => updateAdvancedFilter(idx, { value: e.target.value })} placeholder="wartość (np. sofa)" className="px-3 py-2 rounded bg-zinc-900 border border-zinc-700 text-xs text-zinc-200" />
-                  <button onClick={() => removeAdvancedFilter(idx)} className="px-3 py-2 rounded bg-red-950/50 border border-red-800 text-xs text-red-300">Usuń</button>
+                  {!hideValue && (
+                    <input value={f.value || ''} onChange={e => updateAdvancedFilter(idx, { value: e.target.value })} placeholder={isIn ? 'np. sofa, łóżko, materac' : 'wartość'} className="md:col-span-3 px-3 py-2 rounded bg-zinc-900 border border-zinc-700 text-xs text-zinc-200" />
+                  )}
+                  {needsTo && (
+                    <input value={f.value_to || ''} onChange={e => updateAdvancedFilter(idx, { value_to: e.target.value })} placeholder="do" className="md:col-span-2 px-3 py-2 rounded bg-zinc-900 border border-zinc-700 text-xs text-zinc-200" />
+                  )}
+                  {hideValue && <div className="md:col-span-5 text-[11px] text-zinc-500">Ten operator nie wymaga wartości.</div>}
+                  <button onClick={() => removeAdvancedFilter(idx)} className="md:col-span-2 px-3 py-2 rounded bg-red-950/50 border border-red-800 text-xs text-red-300">Usuń</button>
                 </div>
               );
             })}
+            <p className="text-[11px] text-zinc-500">Tip: dla operatora "in" podaj wiele wartości oddzielone przecinkiem.</p>
           </div>
           <div className="flex gap-2">
             <button onClick={handleUpdateCustomWidgetConfig} className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded">Zapisz konfigurację</button>
