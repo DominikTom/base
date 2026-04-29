@@ -48,6 +48,7 @@ const OPTION_KEY_MAP: OptionKeyMap = {
   // PL keys
   'powierzchnia spania': 'bed_size',
   'materace': 'mattress_type',
+  'materac': 'mattress_type',
   'tkanina': 'fabric',
   'wysokość wezgłowia': 'headboard_height',
   'wybór pojemnika na pościel i stelaża': 'storage_type',
@@ -70,6 +71,7 @@ const OPTION_KEY_MAP: OptionKeyMap = {
   'kolekcja tkanin': 'fabric',
   'funkcja spania': 'sleep_function',
   'kolor drewna': 'wood_color',
+  'kolor': 'wood_color',
 
   // DE keys
   'liegefläche': 'bed_size',
@@ -85,6 +87,8 @@ const OPTION_KEY_MAP: OptionKeyMap = {
   'bettdeckengröße': 'duvet_size',
   'härte der eingebauten matratze': 'built_in_mattress_hardness',
   'füßen': 'legs_type',
+  'füße': 'legs_type',
+  'farbe': 'wood_color',
   'kolekce látek': 'fabric',
 };
 
@@ -176,7 +180,7 @@ function detectSource(orderNumber: string, optionStr: string): { platform: strin
     return { platform: 'kaufland', shop: 'kaufland.de' };
   }
   if (num.startsWith('ZAM/')) {
-    return { platform: 'manual', shop: 'showroom' };
+    return { platform: 'manual', shop: 'manual' };
   }
 
   // Shoper or numeric — check language of options to distinguish PL vs DE
@@ -352,7 +356,13 @@ function parseOptions(optionStr: string): { parsed: ParsedOptions; language: str
 
     const field = OPTION_KEY_MAP[key];
     if (field) {
-      (parsed as Record<string, string>)[field] = value;
+      let normalizedValue = value;
+      // Mitto-style options can include extra values in one token:
+      // "Kolekcja tkanin: Lincoln | Kolor: Beż".
+      if (field === 'fabric' || field === 'wood_color') {
+        normalizedValue = normalizedValue.split('|')[0].trim();
+      }
+      (parsed as Record<string, string>)[field] = normalizedValue;
     }
   }
 
@@ -431,6 +441,8 @@ function classifyTags(tags: string[]): ClassifiedTags {
     operational_tags: [],
   };
 
+  const seenOperationalTags = new Set<string>();
+
   for (const tag of tags) {
     const t = tag.trim();
     if (!t || t === 'False') continue; // ERP bug — literal "False" is not a tag
@@ -468,7 +480,11 @@ function classifyTags(tags: string[]): ClassifiedTags {
       continue;
     }
 
-    result.operational_tags.push(t);
+    const normalized = t.toLowerCase();
+    if (!seenOperationalTags.has(normalized)) {
+      result.operational_tags.push(t);
+      seenOperationalTags.add(normalized);
+    }
   }
 
   return result;

@@ -9,20 +9,19 @@ export async function GET(request: NextRequest) {
     const shop = searchParams.get('shop') || 'all';
     const granularity = searchParams.get('granularity') || 'day';
 
-    // Fetch daily revenue
+    // Fetch orders directly (status segmentation is handled in separate analyses).
     let query = getSupabaseAdmin()
-      .from('fact_daily_revenue')
-      .select('*')
-      .gte('date', dateFrom)
-      .lte('date', dateTo)
-      .order('date', { ascending: true });
+      .from('fact_orders')
+      .select('order_date, source_shop, total_gross_pln, status, is_paid, coupon_code')
+      .gte('order_date', dateFrom)
+      .lte('order_date', dateTo + 'T23:59:59')
+      .order('order_date', { ascending: true });
 
     if (shop !== 'all') {
       query = query.eq('source_shop', shop);
     }
 
-    const { data: dailyRevenue, error } = await query.limit(50000);
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    const ordersData = await fetchAllRows(query);
 
     // Group by granularity
     function getGranularityKey(date: string): string {
@@ -47,10 +46,12 @@ export async function GET(request: NextRequest) {
     // Revenue per shop over time (stacked)
     const timeSeriesMap: Record<string, Record<string, number>> = {};
     const shopSet = new Set<string>();
-    for (const row of dailyRevenue || []) {
-      const key = getGranularityKey(row.date);
+    for (const row of ordersData || []) {
+      const date = (row.order_date as string).substring(0, 10);
+      if (!date) continue;
+      const key = getGranularityKey(date);
       if (!timeSeriesMap[key]) timeSeriesMap[key] = {};
-      timeSeriesMap[key][row.source_shop] = (timeSeriesMap[key][row.source_shop] || 0) + (row.revenue_gross_pln || 0);
+      timeSeriesMap[key][row.source_shop] = (timeSeriesMap[key][row.source_shop] || 0) + (row.total_gross_pln || 0);
       shopSet.add(row.source_shop);
     }
     const shops = [...shopSet];
@@ -74,7 +75,7 @@ export async function GET(request: NextRequest) {
       producerQuery = producerQuery.eq('source_shop', shop);
     }
 
-    const { data: producerData } = await producerQuery.limit(50000);
+    const producerData = await fetchAllRows(producerQuery);
     const supplierMap: Record<string, number> = {};
     for (const o of producerData || []) {
       if (o.producer) {
@@ -96,7 +97,7 @@ export async function GET(request: NextRequest) {
       statusQuery = statusQuery.eq('source_shop', shop);
     }
 
-    const { data: statusData } = await statusQuery.limit(50000);
+    const statusData = await fetchAllRows(statusQuery);
     const statusCounts: Record<string, number> = {};
     let paidCount = 0;
     for (const o of statusData || []) {
@@ -109,11 +110,13 @@ export async function GET(request: NextRequest) {
 
     // AOV trend
     const aovTrend: Record<string, { revenue: number; count: number }> = {};
-    for (const row of dailyRevenue || []) {
-      const key = getGranularityKey(row.date);
+    for (const row of ordersData || []) {
+      const date = (row.order_date as string).substring(0, 10);
+      if (!date) continue;
+      const key = getGranularityKey(date);
       if (!aovTrend[key]) aovTrend[key] = { revenue: 0, count: 0 };
-      aovTrend[key].revenue += row.revenue_gross_pln || 0;
-      aovTrend[key].count += row.orders_count || 0;
+      aovTrend[key].revenue += row.total_gross_pln || 0;
+      aovTrend[key].count += 1;
     }
     const aovChart = Object.entries(aovTrend)
       .sort(([a], [b]) => a.localeCompare(b))
@@ -134,7 +137,7 @@ export async function GET(request: NextRequest) {
       couponQuery = couponQuery.eq('source_shop', shop);
     }
 
-    const { data: couponData } = await couponQuery.limit(50000);
+    const couponData = await fetchAllRows(couponQuery);
     const couponMap: Record<string, { count: number; revenue: number }> = {};
     for (const o of couponData || []) {
       if (o.coupon_code) {
@@ -164,3 +167,20 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: String(err) }, { status: 500 });
   }
 }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    async function fetchAllRows(baseQuery: any): Promise<any[]> {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const out: any[] = [];
+      const PAGE = 1000;
+      let offset = 0;
+      while (true) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data, error }: { data: any[] | null; error: { message: string } | null } = await baseQuery.range(offset, offset + PAGE - 1);
+        if (error) throw new Error(error.message);
+        if (!data || data.length === 0) break;
+        out.push(...data);
+        if (data.length < PAGE) break;
+        offset += PAGE;
+      }
+      return out;
+    }
