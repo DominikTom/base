@@ -70,6 +70,7 @@ export function WidgetRenderer({ widgetType, widgetConfig, onRemove, onMoveUp, o
               date_from: filters.dateFrom,
               date_to: filters.dateTo,
               filters: { shop: filters.shop !== 'all' ? [filters.shop] : [] },
+              filters_advanced: widgetConfig?.filters_advanced || [],
             }),
           })
           : await fetch('/api/dashboard/widgets', {
