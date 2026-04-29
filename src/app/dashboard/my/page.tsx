@@ -31,6 +31,15 @@ export default function MyDashboardPage() {
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [saveError, setSaveError] = useState<string | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [customWidgetDialogOpen, setCustomWidgetDialogOpen] = useState(false);
+  const [customWidgetDraft, setCustomWidgetDraft] = useState({
+    title: 'Własny widget',
+    chart_type: 'bar',
+    x_axis: 'date',
+    y_axis: 'revenue_gross',
+    group_by: '',
+    granularity: 'day',
+  });
 
   // Load from DB on mount
   useEffect(() => {
@@ -108,13 +117,29 @@ export default function MyDashboardPage() {
       y: Infinity,
       w: def.defaultSize.w,
       h: def.defaultSize.h,
+      config: type === 'custom_explorer' ? { ...customWidgetDraft } : undefined,
     };
     updateLayout({
       ...activeLayout,
       widgets: [...activeLayout.widgets, newWidget],
       updatedAt: new Date().toISOString(),
     });
-  }, [activeLayout, updateLayout]);
+    if (type === 'custom_explorer') {
+      setCustomWidgetDialogOpen(true);
+    }
+  }, [activeLayout, updateLayout, customWidgetDraft]);
+
+  const handleUpdateCustomWidgetConfig = useCallback(() => {
+    if (!activeLayout) return;
+    const lastCustomWidget = [...activeLayout.widgets].reverse().find(w => w.type === 'custom_explorer');
+    if (!lastCustomWidget) return;
+    updateLayout({
+      ...activeLayout,
+      widgets: activeLayout.widgets.map(w => w.id === lastCustomWidget.id ? { ...w, config: { ...customWidgetDraft } } : w),
+      updatedAt: new Date().toISOString(),
+    });
+    setCustomWidgetDialogOpen(false);
+  }, [activeLayout, updateLayout, customWidgetDraft]);
 
   const handleRemoveWidget = useCallback((id: string) => {
     if (!activeLayout) return;
@@ -329,6 +354,35 @@ export default function MyDashboardPage() {
       )}
 
       {/* Save as dialog */}
+      {customWidgetDialogOpen && (
+        <div className="p-3 rounded-lg bg-zinc-800/50 border border-zinc-700 space-y-3">
+          <div className="text-sm font-medium text-zinc-200">Kreator własnego widgetu</div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+            <input value={customWidgetDraft.title} onChange={e => setCustomWidgetDraft(v => ({ ...v, title: e.target.value }))} placeholder="Nazwa widgetu" className="px-3 py-2 rounded bg-zinc-900 border border-zinc-700 text-sm text-zinc-200" />
+            <select value={customWidgetDraft.chart_type} onChange={e => setCustomWidgetDraft(v => ({ ...v, chart_type: e.target.value }))} className="px-3 py-2 rounded bg-zinc-900 border border-zinc-700 text-sm text-zinc-200">
+              <option value="bar">Słupkowy</option><option value="line">Liniowy</option><option value="area">Warstwowy</option><option value="pie">Kołowy</option><option value="table">Tabela</option>
+            </select>
+            <select value={customWidgetDraft.granularity} onChange={e => setCustomWidgetDraft(v => ({ ...v, granularity: e.target.value }))} className="px-3 py-2 rounded bg-zinc-900 border border-zinc-700 text-sm text-zinc-200">
+              <option value="day">Dzień</option><option value="week">Tydzień</option><option value="month">Miesiąc</option><option value="quarter">Kwartał</option>
+            </select>
+            <select value={customWidgetDraft.x_axis} onChange={e => setCustomWidgetDraft(v => ({ ...v, x_axis: e.target.value }))} className="px-3 py-2 rounded bg-zinc-900 border border-zinc-700 text-sm text-zinc-200">
+              <option value="date">Data</option><option value="source_shop">Sklep</option><option value="product_category">Kategoria produktu</option><option value="supplier">Dostawca</option><option value="source_platform">Platforma</option>
+            </select>
+            <select value={customWidgetDraft.y_axis} onChange={e => setCustomWidgetDraft(v => ({ ...v, y_axis: e.target.value }))} className="px-3 py-2 rounded bg-zinc-900 border border-zinc-700 text-sm text-zinc-200">
+              <option value="revenue_gross">Revenue brutto</option><option value="orders_count">Liczba zamówień</option><option value="avg_order_value">Średnia wartość zamówienia</option>
+            </select>
+            <select value={customWidgetDraft.group_by} onChange={e => setCustomWidgetDraft(v => ({ ...v, group_by: e.target.value }))} className="px-3 py-2 rounded bg-zinc-900 border border-zinc-700 text-sm text-zinc-200">
+              <option value="">Bez grupowania</option><option value="source_shop">Sklep</option><option value="product_category">Kategoria</option><option value="supplier">Dostawca</option><option value="source_platform">Platforma</option>
+            </select>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={handleUpdateCustomWidgetConfig} className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded">Zapisz konfigurację</button>
+            <button onClick={() => setCustomWidgetDialogOpen(false)} className="px-3 py-1.5 text-zinc-500 hover:text-zinc-300 text-xs">Anuluj</button>
+          </div>
+        </div>
+      )}
+
+      {/* Save as dialog */}
       {saveDialogOpen && (
         <div className="flex items-center gap-2 p-3 rounded-lg bg-zinc-800/50 border border-zinc-700">
           <Save size={16} className="text-zinc-400" />
@@ -439,6 +493,7 @@ export default function MyDashboardPage() {
             <div key={w.id} className={`${widgetSpan(w.w)} ${widgetHeight(w.h)}`}>
               <WidgetRenderer
                 widgetType={w.type}
+                widgetConfig={w.config}
                 onRemove={() => handleRemoveWidget(w.id)}
                 onMoveUp={i > 0 ? () => handleMove(w.id, -1) : undefined}
                 onMoveDown={i < activeLayout.widgets.length - 1 ? () => handleMove(w.id, 1) : undefined}

@@ -1,13 +1,13 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useDashboard, type CrossFilter } from '@/lib/dashboard-context';
+import { useDashboard } from '@/lib/dashboard-context';
 import { getWidgetDef } from '@/lib/widget-definitions';
 import { formatCurrency, formatNumber, SHOP_COLORS } from '@/lib/utils';
 import { SimpleBarChart } from '@/components/charts/bar-chart';
 import { SimplePieChart } from '@/components/charts/pie-chart';
 import { AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
-import { X, GripVertical, RefreshCw, ArrowUp, ArrowDown, Maximize2, Minimize2, HelpCircle } from 'lucide-react';
+import { X, RefreshCw, ArrowUp, ArrowDown, Maximize2, Minimize2, HelpCircle } from 'lucide-react';
 
 // Map widget types to cross-filter fields they produce when clicked
 const WIDGET_CLICK_FIELD: Record<string, string> = {
@@ -36,13 +36,14 @@ const FIELD_LABELS: Record<string, string> = {
 
 interface WidgetRendererProps {
   widgetType: string;
+  widgetConfig?: Record<string, unknown>;
   onRemove: () => void;
   onMoveUp?: () => void;
   onMoveDown?: () => void;
   onResize?: (delta: number) => void;
 }
 
-export function WidgetRenderer({ widgetType, onRemove, onMoveUp, onMoveDown, onResize }: WidgetRendererProps) {
+export function WidgetRenderer({ widgetType, widgetConfig, onRemove, onMoveUp, onMoveDown, onResize }: WidgetRendererProps) {
   const { filters, crossFilters, addCrossFilter } = useDashboard();
   const def = getWidgetDef(widgetType);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -57,22 +58,50 @@ export function WidgetRenderer({ widgetType, onRemove, onMoveUp, onMoveDown, onR
       setLoading(true);
       setError(null);
       try {
-        const res = await fetch('/api/dashboard/widgets', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            widget: widgetType,
-            dateFrom: filters.dateFrom,
-            dateTo: filters.dateTo,
-            shop: filters.shop,
-            limit: 20,
-            crossFilters,
-          }),
-        });
+        const res = widgetType === 'custom_explorer'
+          ? await fetch('/api/dashboard/explorer', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              x_axis: widgetConfig?.x_axis || 'date',
+              y_axis: widgetConfig?.y_axis || 'revenue_gross',
+              group_by: widgetConfig?.group_by || undefined,
+              granularity: widgetConfig?.granularity || 'day',
+              date_from: filters.dateFrom,
+              date_to: filters.dateTo,
+              filters: { shop: filters.shop !== 'all' ? [filters.shop] : [] },
+            }),
+          })
+          : await fetch('/api/dashboard/widgets', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              widget: widgetType,
+              dateFrom: filters.dateFrom,
+              dateTo: filters.dateTo,
+              shop: filters.shop,
+              limit: 20,
+              crossFilters,
+            }),
+          });
         if (!cancelled) {
           const json = await res.json();
           if (!res.ok) setError(json.error || 'Błąd');
-          else setData(json);
+          else if (widgetType === 'custom_explorer') {
+            setData({
+              type: widgetConfig?.chart_type || 'bar',
+              data: json.data || [],
+              shops: json.groups || [],
+              columns: ['Wymiar', ...(json.groups || [])],
+              dataRows: json.data || [],
+              debug: {
+                dateFrom: filters.dateFrom,
+                dateTo: filters.dateTo,
+                shop: filters.shop,
+                query: '/api/dashboard/explorer',
+              },
+            });
+          } else setData(json);
         }
       } catch (err) {
         if (!cancelled) setError(String(err));
@@ -82,7 +111,7 @@ export function WidgetRenderer({ widgetType, onRemove, onMoveUp, onMoveDown, onR
     }
     fetch_();
     return () => { cancelled = true; };
-  }, [widgetType, filters.dateFrom, filters.dateTo, filters.shop, crossFilters]);
+  }, [widgetType, widgetConfig, filters.dateFrom, filters.dateTo, filters.shop, crossFilters]);
 
   const handleItemClick = (name: string) => {
     const field = WIDGET_CLICK_FIELD[widgetType];
@@ -100,7 +129,7 @@ export function WidgetRenderer({ widgetType, onRemove, onMoveUp, onMoveDown, onR
     <div className="h-full flex flex-col rounded-xl border border-zinc-800 bg-zinc-900/50 overflow-hidden">
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-zinc-800/50 shrink-0">
-        <span className="text-xs font-medium text-zinc-400 truncate">{def.name}</span>
+        <span className="text-xs font-medium text-zinc-400 truncate">{String(widgetConfig?.title || def.name)}</span>
         <div className="flex items-center gap-0.5">
           <button onClick={() => setShowDebug(d => !d)} className={`p-1 ${showDebug ? 'text-blue-400' : 'text-zinc-600'} hover:text-blue-300`} title="Debug info"><HelpCircle size={12} /></button>
           {onMoveUp && <button onClick={onMoveUp} className="p-1 text-zinc-600 hover:text-zinc-300"><ArrowUp size={12} /></button>}
@@ -244,7 +273,7 @@ function WidgetContent({ type, data, onItemClick }: { type: string; data: any; o
 
   // Table
   if (data.type === 'table') {
-    const rows = data.data || [];
+    const rows = data.dataRows || data.data || [];
     return (
       <div className="overflow-auto text-xs">
         <table className="w-full">
@@ -258,7 +287,10 @@ function WidgetContent({ type, data, onItemClick }: { type: string; data: any; o
           <tbody>
             {rows.map((row: Record<string, unknown>, i: number) => (
               <tr key={i} className="border-b border-zinc-800/30">
-                {Object.values(row).map((val, j) => (
+                {(data.columns?.length
+                  ? [row.x, ...(data.columns.slice(1).map((c: string) => row[c]))]
+                  : Object.values(row)
+                ).map((val: unknown, j: number) => (
                   <td key={j} className="py-1.5 px-2 text-zinc-300">
                     {typeof val === 'number' ? formatNumber(val) : String(val)}
                   </td>
