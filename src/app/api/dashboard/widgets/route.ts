@@ -251,12 +251,26 @@ export async function POST(request: NextRequest) {
 
       // ── Rankings ──
       case 'ranking_models': {
-        const items = await iqSafe('product_name, quantity', { eq: { product_category: 'łóżko' } });
+        const items = await iqSafe('product_name, product_category, item_type, quantity');
         const map: Record<string, number> = {};
-        for (const i of items) map[i.product_name] = (map[i.product_name] || 0) + (i.quantity || 1);
+        const samplePattern = /próbk|probk|muster|sample|swatch|tkanin/i;
+        const sampleCategories = new Set(['próbki', 'probki', 'sample']);
+        const excludedItemTypes = new Set(['shipping', 'service', 'surcharge']);
+        for (const i of items) {
+          const name = String(i.product_name || '').trim();
+          if (!name) continue;
+          const category = String(i.product_category || '').trim().toLowerCase();
+          const itemType = String(i.item_type || '').trim().toLowerCase();
+
+          if (excludedItemTypes.has(itemType)) continue;
+          if (sampleCategories.has(category)) continue;
+          if (samplePattern.test(name)) continue;
+
+          map[name] = (map[name] || 0) + (i.quantity || 1);
+        }
         const ranked = Object.entries(map).sort(([,a],[,b]) => b - a).slice(0, limit);
         const total = ranked.reduce((s,[,v]) => s + v, 0);
-        return NextResponse.json({ type: 'ranking', data: ranked.map(([name, value]) => ({ name, value: Math.round(value) })), total, debug: { ...debug, query: 'fact_order_items WHERE product_category=łóżko, grouped by product_name, SUM(quantity)', itemsFound: items.length } });
+        return NextResponse.json({ type: 'ranking', data: ranked.map(([name, value]) => ({ name, value: Math.round(value) })), total, debug: { ...debug, query: 'fact_order_items excluding samples/service/shipping, grouped by product_name, SUM(quantity)', itemsFound: items.length } });
       }
 
       case 'ranking_fabric_collections': {
