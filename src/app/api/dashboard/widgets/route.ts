@@ -157,6 +157,33 @@ export async function POST(request: NextRequest) {
 
     const init = { revenue: 0, paid: 0, orders: 0, ordersPaid: 0, cancelled: 0 };
 
+    function shopTokens(selectedShop: string): string[] {
+      if (selectedShop === 'all') return [];
+      const normalized = selectedShop.toLowerCase();
+      const map: Record<string, string[]> = {
+        'mybed.pl': ['mybed.pl', 'mybed_pl', 'mybedpl'],
+        'mybed.de': ['mybed.de', 'mybed_de', 'mybedde'],
+        'mittohome.pl': ['mittohome.pl', 'mittohome_pl', 'mittohomepl'],
+        'showroom': ['showroom'],
+        'amazon.de': ['amazon.de', 'amazon_de', 'amazonde'],
+        'allegro.pl': ['allegro.pl', 'allegro_pl', 'allegropl'],
+        'kaufland.de': ['kaufland.de', 'kaufland_de', 'kauflandde'],
+      };
+      return map[normalized] || [normalized];
+    }
+
+    function textContainsShop(value: unknown, selectedShop: string): boolean {
+      if (selectedShop === 'all') return true;
+      const text = String(value || '').toLowerCase();
+      if (!text) return false;
+      return shopTokens(selectedShop).some(t => text.includes(t));
+    }
+
+    function filterRowsByShopHint<T extends Record<string, unknown>>(rows: T[], selectedShop: string, fields: string[]): T[] {
+      if (selectedShop === 'all') return rows;
+      return rows.filter(r => fields.some(f => textContainsShop(r[f], selectedShop)));
+    }
+
     async function getKpiTotals() {
       const grossField = isEurShop ? 'total_gross' : 'total_gross_pln';
 
@@ -477,11 +504,12 @@ export async function POST(request: NextRequest) {
       case 'kpi_sessions':
       case 'kpi_users':
       case 'kpi_conversion_rate': {
-        const q = db.from('fact_daily_traffic').select('sessions, users, transactions')
+        const q = db.from('fact_daily_traffic').select('sessions, users, transactions, hostname, campaign')
           .gte('date', dateFrom).lte('date', dateTo);
         const data = await fetchAllRows(q);
+        const scopedTraffic = filterRowsByShopHint(data || [], shop, ['hostname', 'campaign']);
         let sessions = 0, users = 0, transactions = 0;
-        for (const r of data || []) { sessions += r.sessions || 0; users += r.users || 0; transactions += r.transactions || 0; }
+        for (const r of scopedTraffic) { sessions += r.sessions || 0; users += r.users || 0; transactions += r.transactions || 0; }
         const convRate = sessions > 0 ? (transactions / sessions) * 100 : 0;
         const valMap: Record<string, { value: number; format: string }> = {
           kpi_sessions: { value: sessions, format: 'number' },
@@ -492,11 +520,12 @@ export async function POST(request: NextRequest) {
       }
 
       case 'ranking_traffic_sources': {
-        const q = db.from('fact_daily_traffic').select('source, medium, sessions')
+        const q = db.from('fact_daily_traffic').select('source, medium, sessions, hostname, campaign')
           .gte('date', dateFrom).lte('date', dateTo);
         const data = await fetchAllRows(q);
+        const scopedTraffic = filterRowsByShopHint(data || [], shop, ['hostname', 'campaign']);
         const map: Record<string, number> = {};
-        for (const r of data || []) {
+        for (const r of scopedTraffic) {
           const key = `${r.source} / ${r.medium}`;
           map[key] = (map[key] || 0) + (r.sessions || 0);
         }
@@ -505,12 +534,13 @@ export async function POST(request: NextRequest) {
       }
 
       case 'chart_sessions_timeline': {
-        const q = db.from('fact_daily_traffic').select('date, hostname, sessions')
+        const q = db.from('fact_daily_traffic').select('date, hostname, sessions, campaign')
           .gte('date', dateFrom).lte('date', dateTo).order('date');
         const data = await fetchAllRows(q);
+        const scopedTraffic = filterRowsByShopHint(data || [], shop, ['hostname', 'campaign']);
         const hostSet = new Set<string>();
         const byDate: Record<string, Record<string, number>> = {};
-        for (const r of data || []) {
+        for (const r of scopedTraffic) {
           if (!byDate[r.date]) byDate[r.date] = {};
           byDate[r.date][r.hostname] = (byDate[r.date][r.hostname] || 0) + (r.sessions || 0);
           hostSet.add(r.hostname);
@@ -530,16 +560,18 @@ export async function POST(request: NextRequest) {
         const totalRevenue = scopeOrdersByWarsawDate(revData).reduce((s, r) => s + (r.total_gross_pln || 0), 0);
 
         const metaData = await fetchAllRows(
-          db.from('fact_daily_adspend').select('spend')
+          db.from('fact_daily_adspend').select('spend, campaign_name, adset_name, account_id')
             .eq('platform', 'meta').gte('date', dateFrom).lte('date', dateTo)
         );
-        const metaSpend = (metaData || []).reduce((s, r) => s + (r.spend || 0), 0);
+        const metaScoped = filterRowsByShopHint(metaData || [], shop, ['campaign_name', 'adset_name', 'account_id']);
+        const metaSpend = metaScoped.reduce((s, r) => s + (r.spend || 0), 0);
 
         const googleData = await fetchAllRows(
-          db.from('fact_daily_traffic').select('ad_cost')
+          db.from('fact_daily_traffic').select('ad_cost, hostname, campaign, source')
             .eq('source', '__total__').gte('date', dateFrom).lte('date', dateTo)
         );
-        const googleSpend = (googleData || []).reduce((s, r) => s + (r.ad_cost || 0), 0);
+        const googleScoped = filterRowsByShopHint(googleData || [], shop, ['hostname', 'campaign', 'source']);
+        const googleSpend = googleScoped.reduce((s, r) => s + (r.ad_cost || 0), 0);
 
         const { data: agencyData } = await db.from('fact_agency_costs').select('month, amount_pln').limit(500);
         let agencyCost = 0;
