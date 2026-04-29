@@ -258,6 +258,13 @@ export async function POST(request: NextRequest) {
         const modelPattern = /łóżko|lozko|łożko|bett|boxspring|\bbed\b|kontynental/i;
         const bedCategories = new Set(['łóżko', 'lozko', 'lozka', 'bed', 'bett', 'boxspring']);
         const excludedItemTypes = new Set(['shipping', 'service', 'surcharge']);
+        const knownFabricPrefixes = new Set<string>();
+        for (const row of items) {
+          const f = String(row.fabric || '').trim().toLowerCase();
+          const fc = String(row.fabric_collection || '').trim().toLowerCase();
+          if (f) knownFabricPrefixes.add(f.split(/\s+/)[0]);
+          if (fc) knownFabricPrefixes.add(fc.split(/\s+/)[0]);
+        }
         for (const i of items) {
           const name = String(i.product_name || '').trim();
           if (!name) continue;
@@ -267,10 +274,12 @@ export async function POST(request: NextRequest) {
           const fabricCollection = String(i.fabric_collection || '').trim().toLowerCase();
           const normalizedName = name.toLowerCase();
           const looksLikeFabricSwatchName = /^[a-ząćęłńóśźż0-9\- ]+\s+\d{1,3}$/i.test(name);
+          const firstToken = normalizedName.split(/\s+/)[0];
 
           if (excludedItemTypes.has(itemType)) continue;
           if (sampleCategories.has(category)) continue;
           if (samplePattern.test(name)) continue;
+          if (looksLikeFabricSwatchName && knownFabricPrefixes.has(firstToken)) continue;
           if (looksLikeFabricSwatchName && (
             (fabric && normalizedName.startsWith(fabric)) ||
             (fabricCollection && normalizedName.startsWith(fabricCollection))
