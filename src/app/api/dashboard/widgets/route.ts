@@ -255,6 +255,8 @@ export async function POST(request: NextRequest) {
         const map: Record<string, number> = {};
         const samplePattern = /próbk|probk|muster|sample|swatch|tkanin/i;
         const sampleCategories = new Set(['próbki', 'probki', 'sample']);
+        const modelPattern = /łóżko|lozko|łożko|bett|boxspring|\bbed\b|kontynental/i;
+        const bedCategories = new Set(['łóżko', 'lozko', 'lozka', 'bed', 'bett', 'boxspring']);
         const excludedItemTypes = new Set(['shipping', 'service', 'surcharge']);
         for (const i of items) {
           const name = String(i.product_name || '').trim();
@@ -265,6 +267,7 @@ export async function POST(request: NextRequest) {
           if (excludedItemTypes.has(itemType)) continue;
           if (sampleCategories.has(category)) continue;
           if (samplePattern.test(name)) continue;
+          if (!bedCategories.has(category) && !modelPattern.test(name)) continue;
 
           map[name] = (map[name] || 0) + (i.quantity || 1);
         }
