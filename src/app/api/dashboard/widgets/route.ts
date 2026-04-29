@@ -251,7 +251,7 @@ export async function POST(request: NextRequest) {
 
       // ── Rankings ──
       case 'ranking_models': {
-        const items = await iqSafe('product_name, product_category, item_type, quantity');
+        const items = await iqSafe('product_name, product_category, item_type, fabric, fabric_collection, quantity');
         const map: Record<string, number> = {};
         const samplePattern = /próbk|probk|muster|sample|swatch|tkanin/i;
         const sampleCategories = new Set(['próbki', 'probki', 'sample']);
@@ -263,10 +263,18 @@ export async function POST(request: NextRequest) {
           if (!name) continue;
           const category = String(i.product_category || '').trim().toLowerCase();
           const itemType = String(i.item_type || '').trim().toLowerCase();
+          const fabric = String(i.fabric || '').trim().toLowerCase();
+          const fabricCollection = String(i.fabric_collection || '').trim().toLowerCase();
+          const normalizedName = name.toLowerCase();
+          const looksLikeFabricSwatchName = /^[a-ząćęłńóśźż0-9\- ]+\s+\d{1,3}$/i.test(name);
 
           if (excludedItemTypes.has(itemType)) continue;
           if (sampleCategories.has(category)) continue;
           if (samplePattern.test(name)) continue;
+          if (looksLikeFabricSwatchName && (
+            (fabric && normalizedName.startsWith(fabric)) ||
+            (fabricCollection && normalizedName.startsWith(fabricCollection))
+          )) continue;
           if (!bedCategories.has(category) && !modelPattern.test(name)) continue;
 
           map[name] = (map[name] || 0) + (i.quantity || 1);
