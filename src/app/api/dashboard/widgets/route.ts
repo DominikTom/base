@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabase';
+import { isInWarsawDateRange, shiftDate, warsawDateKey } from '@/lib/warsaw-date';
 
 export async function POST(request: NextRequest) {
   try {
     const { widget, dateFrom, dateTo, shop = 'all', limit = 20, crossFilters = [] } = await request.json();
     const db = getSupabaseAdmin();
+    const fetchFrom = shiftDate(dateFrom, -1);
+    const fetchTo = shiftDate(dateTo, 1);
+    const CANCELLED_STATUS = 'anulowane';
 
     const EUR_SHOPS = ['mybed.de', 'amazon.de', 'kaufland.de'];
     const isEurShop = shop !== 'all' && EUR_SHOPS.includes(shop);
@@ -23,12 +27,29 @@ export async function POST(request: NextRequest) {
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     function orderQuery(select: string): any {
-      let q = db.from('fact_orders').select(select)
-        .gte('order_date', dateFrom).lte('order_date', dateTo + 'T23:59:59')
-        .neq('status', 'anulowane');
+      const withDate = select.includes('order_date') ? select : `${select}, order_date`;
+      let q = db.from('fact_orders').select(withDate)
+        .gte('order_date', fetchFrom).lte('order_date', fetchTo + 'T23:59:59');
       if (shop !== 'all') q = q.eq('source_shop', shop);
       q = applyCross(q, orderCrossFields);
       return q;
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    function orderQueryAllStatuses(select: string): any {
+      const withDate = select.includes('order_date') ? select : `${select}, order_date`;
+      let q = db.from('fact_orders').select(withDate)
+        .gte('order_date', fetchFrom).lte('order_date', fetchTo + 'T23:59:59');
+      if (shop !== 'all') q = q.eq('source_shop', shop);
+      q = applyCross(q, orderCrossFields);
+      return q;
+    }
+
+    function scopeOrdersByWarsawDate<T extends { order_date?: string | null }>(
+      rows: T[] | null | undefined,
+    ): T[] {
+      if (!rows?.length) return [];
+      return rows.filter(r => isInWarsawDateRange(r.order_date, dateFrom, dateTo));
     }
 
     // ── SAFE items query: two-step approach (replaces broken iq() join) ──
@@ -37,14 +58,30 @@ export async function POST(request: NextRequest) {
     // NOTE: Supabase caps responses at 1000 rows — must paginate with .range()
     const PAGE = 1000;
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    async function fetchAllRows(baseQuery: any): Promise<any[]> {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const out: any[] = [];
+      let offset = 0;
+      while (true) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data, error }: { data: any[] | null; error: { message: string } | null } = await baseQuery.range(offset, offset + PAGE - 1);
+        if (error) throw new Error(error.message);
+        if (!data || data.length === 0) break;
+        out.push(...data);
+        if (data.length < PAGE) break;
+        offset += PAGE;
+      }
+      return out;
+    }
+
     let _validOrderIds: string[] | null = null;
     async function getValidOrderIds(): Promise<string[]> {
       if (_validOrderIds !== null) return _validOrderIds;
 
       function buildQ() {
-        let q = db.from('fact_orders').select('order_id')
-          .gte('order_date', dateFrom).lte('order_date', dateTo + 'T23:59:59')
-          .neq('status', 'anulowane');
+        let q = db.from('fact_orders').select('order_id, order_date')
+          .gte('order_date', fetchFrom).lte('order_date', fetchTo + 'T23:59:59');
         if (shop !== 'all') q = q.eq('source_shop', shop);
         q = applyCross(q, orderCrossFields);
         return q;
@@ -55,7 +92,10 @@ export async function POST(request: NextRequest) {
       while (true) {
         const { data } = await buildQ().range(offset, offset + PAGE - 1);
         if (!data || data.length === 0) break;
-        for (const r of data) allIds.push((r as { order_id: string }).order_id);
+        for (const r of data as Array<{ order_id: string; order_date?: string | null }>) {
+          if (!isInWarsawDateRange(r.order_date, dateFrom, dateTo)) continue;
+          allIds.push(r.order_id);
+        }
         if (data.length < PAGE) break;
         offset += PAGE;
       }
@@ -117,23 +157,35 @@ export async function POST(request: NextRequest) {
 
     const init = { revenue: 0, paid: 0, orders: 0, ordersPaid: 0, cancelled: 0 };
 
-    async function getKpiTotals() {
-      const revField = isEurShop ? 'revenue_gross_original' : 'revenue_gross_pln';
-      const grossField = isEurShop ? 'total_gross' : 'total_gross_pln';
+    function shopTokens(selectedShop: string): string[] {
+      if (selectedShop === 'all') return [];
+      const normalized = selectedShop.toLowerCase();
+      const map: Record<string, string[]> = {
+        'mybed.pl': ['mybed.pl', 'mybed_pl', 'mybedpl'],
+        'mybed.de': ['mybed.de', 'mybed_de', 'mybedde'],
+        'mittohome.pl': ['mittohome.pl', 'mittohome_pl', 'mittohomepl'],
+        'showroom': ['showroom'],
+        'amazon.de': ['amazon.de', 'amazon_de', 'amazonde'],
+        'allegro.pl': ['allegro.pl', 'allegro_pl', 'allegropl'],
+        'kaufland.de': ['kaufland.de', 'kaufland_de', 'kauflandde'],
+      };
+      return map[normalized] || [normalized];
+    }
 
-      if (!hasItemCrossFilters && crossFilters.length === 0) {
-        let q = db.from('fact_daily_revenue').select('*')
-          .gte('date', dateFrom).lte('date', dateTo);
-        if (shop !== 'all') q = q.eq('source_shop', shop);
-        const { data } = await q.limit(50000);
-        return (data || []).reduce((a: typeof init, r: Record<string, number | null>) => ({
-          revenue: a.revenue + (r[revField] || r.revenue_gross_pln || 0),
-          paid: a.paid + (r.revenue_paid_pln || 0),
-          orders: a.orders + (r.orders_count || 0),
-          ordersPaid: a.ordersPaid + (r.orders_paid || 0),
-          cancelled: a.cancelled + (r.orders_cancelled || 0),
-        }), init);
-      }
+    function textContainsShop(value: unknown, selectedShop: string): boolean {
+      if (selectedShop === 'all') return true;
+      const text = String(value || '').toLowerCase();
+      if (!text) return false;
+      return shopTokens(selectedShop).some(t => text.includes(t));
+    }
+
+    function filterRowsByShopHint<T extends Record<string, unknown>>(rows: T[], selectedShop: string, fields: string[]): T[] {
+      if (selectedShop === 'all') return rows;
+      return rows.filter(r => fields.some(f => textContainsShop(r[f], selectedShop)));
+    }
+
+    async function getKpiTotals() {
+      const grossField = isEurShop ? 'total_gross' : 'total_gross_pln';
 
       const filteredIds = await getFilteredOrderIds();
       let q = orderQuery(`${grossField}, total_gross_pln, is_paid, status`);
@@ -141,14 +193,25 @@ export async function POST(request: NextRequest) {
         if (filteredIds.length === 0) return init;
         q = q.in('order_id', filteredIds.slice(0, 5000));
       }
-      const { data } = await q.limit(50000);
-      return (data || []).reduce((a: typeof init, r: Record<string, unknown>) => ({
+      const data = await fetchAllRows(q);
+      const scoped = scopeOrdersByWarsawDate(data);
+      const totals = scoped.reduce((a: typeof init, r: Record<string, unknown>) => ({
         revenue: a.revenue + ((r[grossField] as number) || (r.total_gross_pln as number) || 0),
         paid: a.paid + (r.is_paid ? ((r.total_gross_pln as number) || 0) : 0),
         orders: a.orders + 1,
         ordersPaid: a.ordersPaid + (r.is_paid ? 1 : 0),
-        cancelled: a.cancelled + (r.status === 'anulowane' ? 1 : 0),
+        cancelled: a.cancelled,
       }), init);
+
+      let cq = orderQueryAllStatuses('status');
+      if (filteredIds !== null) {
+        if (filteredIds.length === 0) return totals;
+        cq = cq.in('order_id', filteredIds.slice(0, 5000));
+      }
+      const cancelledRows = await fetchAllRows(cq.eq('status', CANCELLED_STATUS));
+      totals.cancelled = scopeOrdersByWarsawDate(cancelledRows).length;
+
+      return totals;
     }
 
     switch (widget) {
@@ -198,10 +261,10 @@ export async function POST(request: NextRequest) {
         }
 
         const valueMap: Record<string, { value: number; format: string; debugQuery?: string }> = {
-          kpi_revenue: { value: totals.revenue, format: 'currency', debugQuery: 'SUM(revenue_gross_pln) from fact_daily_revenue' },
-          kpi_revenue_paid: { value: totals.paid, format: 'currency', debugQuery: 'SUM(revenue_paid_pln) from fact_daily_revenue' },
+          kpi_revenue: { value: totals.revenue, format: 'currency', debugQuery: 'SUM(total_gross_pln) from fact_orders' },
+          kpi_revenue_paid: { value: totals.paid, format: 'currency', debugQuery: 'SUM(total_gross_pln) for paid orders' },
           kpi_revenue_unpaid: { value: unpaid, format: 'currency', debugQuery: 'revenue - paid' },
-          kpi_orders: { value: totals.orders, format: 'number', debugQuery: 'SUM(orders_count) from fact_daily_revenue' },
+          kpi_orders: { value: totals.orders, format: 'number', debugQuery: 'COUNT(*) from fact_orders' },
           kpi_orders_beds: { value: bedOrders, format: 'number', debugQuery: 'COUNT DISTINCT order_id WHERE product_name contains łóżko/bett/boxspring' },
           kpi_qty_beds: { value: bedQty, format: 'number', debugQuery: 'SUM(quantity) WHERE product_name contains łóżko/bett/boxspring' },
           kpi_orders_samples: { value: sampleOrders, format: 'number', debugQuery: 'COUNT DISTINCT order_id WHERE product_name contains próbk/muster/sample' },
@@ -215,12 +278,45 @@ export async function POST(request: NextRequest) {
 
       // ── Rankings ──
       case 'ranking_models': {
-        const items = await iqSafe('product_name, quantity', { eq: { product_category: 'łóżko' } });
+        const items = await iqSafe('product_name, product_category, item_type, fabric, fabric_collection, quantity');
         const map: Record<string, number> = {};
-        for (const i of items) map[i.product_name] = (map[i.product_name] || 0) + (i.quantity || 1);
+        const samplePattern = /próbk|probk|muster|sample|swatch|tkanin/i;
+        const sampleCategories = new Set(['próbki', 'probki', 'sample']);
+        const excludedItemTypes = new Set(['shipping', 'service', 'surcharge']);
+        const placeholderProductPattern = /produkt\s+indywidualny|individual\s+product|pozycja\s+indywidualna/i;
+        const knownFabricPrefixes = new Set<string>();
+        for (const row of items) {
+          const f = String(row.fabric || '').trim().toLowerCase();
+          const fc = String(row.fabric_collection || '').trim().toLowerCase();
+          if (f) knownFabricPrefixes.add(f.split(/\s+/)[0]);
+          if (fc) knownFabricPrefixes.add(fc.split(/\s+/)[0]);
+        }
+        for (const i of items) {
+          const name = String(i.product_name || '').trim();
+          if (!name) continue;
+          const category = String(i.product_category || '').trim().toLowerCase();
+          const itemType = String(i.item_type || '').trim().toLowerCase();
+          const fabric = String(i.fabric || '').trim().toLowerCase();
+          const fabricCollection = String(i.fabric_collection || '').trim().toLowerCase();
+          const normalizedName = name.toLowerCase();
+          const looksLikeFabricSwatchName = /^[a-ząćęłńóśźż0-9\- ]+\s+\d{1,3}$/i.test(name);
+          const firstToken = normalizedName.split(/\s+/)[0];
+
+          if (excludedItemTypes.has(itemType)) continue;
+          if (sampleCategories.has(category)) continue;
+          if (samplePattern.test(name)) continue;
+          if (placeholderProductPattern.test(name)) continue;
+          if (looksLikeFabricSwatchName && knownFabricPrefixes.has(firstToken)) continue;
+          if (looksLikeFabricSwatchName && (
+            (fabric && normalizedName.startsWith(fabric)) ||
+            (fabricCollection && normalizedName.startsWith(fabricCollection))
+          )) continue;
+
+          map[name] = (map[name] || 0) + (i.quantity || 1);
+        }
         const ranked = Object.entries(map).sort(([,a],[,b]) => b - a).slice(0, limit);
         const total = ranked.reduce((s,[,v]) => s + v, 0);
-        return NextResponse.json({ type: 'ranking', data: ranked.map(([name, value]) => ({ name, value: Math.round(value) })), total, debug: { ...debug, query: 'fact_order_items WHERE product_category=łóżko, grouped by product_name, SUM(quantity)', itemsFound: items.length } });
+        return NextResponse.json({ type: 'ranking', data: ranked.map(([name, value]) => ({ name, value: Math.round(value) })), total, debug: { ...debug, query: 'fact_order_items excluding samples/service/shipping, swatches and placeholder products, grouped by product_name, SUM(quantity)', itemsFound: items.length } });
       }
 
       case 'ranking_fabric_collections': {
@@ -242,26 +338,29 @@ export async function POST(request: NextRequest) {
       }
 
       case 'ranking_cities': {
-        const { data } = await orderQuery('delivery_city').not('delivery_city', 'is', null).limit(50000);
+        const data = await fetchAllRows(orderQuery('delivery_city').not('delivery_city', 'is', null));
+        const scoped = scopeOrdersByWarsawDate(data);
         const map: Record<string, number> = {};
-        for (const o of data || []) if (o.delivery_city) map[o.delivery_city] = (map[o.delivery_city] || 0) + 1;
+        for (const o of scoped) if (o.delivery_city) map[o.delivery_city] = (map[o.delivery_city] || 0) + 1;
         const ranked = Object.entries(map).sort(([,a],[,b]) => b - a).slice(0, limit);
         return NextResponse.json({ type: 'ranking', data: ranked.map(([name, value]) => ({ name, value })), total: ranked.reduce((s,[,v]) => s + v, 0), debug: { ...debug, query: 'COUNT grouped by delivery_city from fact_orders' } });
       }
 
       case 'ranking_suppliers': {
         const grossCol = isEurShop ? 'total_gross' : 'total_gross_pln';
-        const { data } = await orderQuery(`supplier, ${grossCol}`).not('supplier', 'is', null).limit(50000);
+        const data = await fetchAllRows(orderQuery(`supplier, ${grossCol}`).not('supplier', 'is', null));
+        const scoped = scopeOrdersByWarsawDate(data);
         const map: Record<string, number> = {};
-        for (const o of data || []) if (o.supplier) map[o.supplier] = (map[o.supplier] || 0) + (o[grossCol] || 0);
+        for (const o of scoped) if (o.supplier) map[o.supplier] = (map[o.supplier] || 0) + (o[grossCol] || 0);
         const ranked = Object.entries(map).sort(([,a],[,b]) => b - a).slice(0, limit);
         return NextResponse.json({ type: 'ranking', data: ranked.map(([name, value]) => ({ name, value: Math.round(value) })), total: ranked.reduce((s,[,v]) => s + v, 0), format: 'currency', currency, debug: { ...debug, query: `SUM(${grossCol}) grouped by supplier` } });
       }
 
       case 'ranking_coupons': {
-        const { data } = await orderQuery('coupon_code').not('coupon_code', 'is', null).limit(50000);
+        const data = await fetchAllRows(orderQuery('coupon_code').not('coupon_code', 'is', null));
+        const scoped = scopeOrdersByWarsawDate(data);
         const map: Record<string, number> = {};
-        for (const o of data || []) if (o.coupon_code) { const c = o.coupon_code.trim().toUpperCase(); map[c] = (map[c] || 0) + 1; }
+        for (const o of scoped) if (o.coupon_code) { const c = o.coupon_code.trim().toUpperCase(); map[c] = (map[c] || 0) + 1; }
         const ranked = Object.entries(map).sort(([,a],[,b]) => b - a).slice(0, limit);
         return NextResponse.json({ type: 'ranking', data: ranked.map(([name, value]) => ({ name, value })), total: ranked.reduce((s,[,v]) => s + v, 0), debug: { ...debug, query: 'COUNT grouped by coupon_code' } });
       }
@@ -293,61 +392,40 @@ export async function POST(request: NextRequest) {
       // ── Charts ──
       case 'chart_orders_timeline':
       case 'chart_daily_orders': {
-        let chartData: Array<{ name: string; value: number }>;
-        if (hasItemCrossFilters || crossFilters.length > 0) {
-          const filteredIds = await getFilteredOrderIds();
-          let q = orderQuery('order_date');
-          if (filteredIds !== null) {
-            if (filteredIds.length === 0) return NextResponse.json({ type: widget === 'chart_daily_orders' ? 'bar' : 'line', data: [], debug });
-            q = q.in('order_id', filteredIds.slice(0, 5000));
-          }
-          const { data } = await q.limit(50000);
-          const byDate: Record<string, number> = {};
-          for (const r of data || []) { const d = (r.order_date as string).substring(0, 10); byDate[d] = (byDate[d] || 0) + 1; }
-          chartData = Object.entries(byDate).sort(([a],[b]) => a.localeCompare(b)).map(([name, value]) => ({ name, value }));
-        } else {
-          let q = db.from('fact_daily_revenue').select('date, orders_count')
-            .gte('date', dateFrom).lte('date', dateTo).order('date');
-          if (shop !== 'all') q = q.eq('source_shop', shop);
-          const { data } = await q.limit(50000);
-          const byDate: Record<string, number> = {};
-          for (const r of data || []) byDate[r.date] = (byDate[r.date] || 0) + (r.orders_count || 0);
-          chartData = Object.entries(byDate).sort(([a],[b]) => a.localeCompare(b)).map(([name, value]) => ({ name, value }));
+        const filteredIds = await getFilteredOrderIds();
+        let q = orderQuery('order_date');
+        if (filteredIds !== null) {
+          if (filteredIds.length === 0) return NextResponse.json({ type: widget === 'chart_daily_orders' ? 'bar' : 'line', data: [], debug });
+          q = q.in('order_id', filteredIds.slice(0, 5000));
         }
+        const data = await fetchAllRows(q);
+        const scoped = scopeOrdersByWarsawDate(data);
+        const byDate: Record<string, number> = {};
+        for (const r of scoped) {
+          const d = warsawDateKey(r.order_date as string);
+          if (!d) continue;
+          byDate[d] = (byDate[d] || 0) + 1;
+        }
+        const chartData = Object.entries(byDate).sort(([a],[b]) => a.localeCompare(b)).map(([name, value]) => ({ name, value }));
         return NextResponse.json({ type: widget === 'chart_daily_orders' ? 'bar' : 'line', data: chartData, debug });
       }
 
       case 'chart_revenue_timeline': {
-        if (hasItemCrossFilters || crossFilters.length > 0) {
-          const filteredIds = await getFilteredOrderIds();
-          let q = orderQuery('order_date, source_shop, total_gross_pln');
-          if (filteredIds !== null) {
-            if (filteredIds.length === 0) return NextResponse.json({ type: 'area', data: [], shops: [], debug });
-            q = q.in('order_id', filteredIds.slice(0, 5000));
-          }
-          const { data } = await q.limit(50000);
-          const shopSet = new Set<string>();
-          const byDate: Record<string, Record<string, number>> = {};
-          for (const r of data || []) {
-            const d = (r.order_date as string).substring(0, 10);
-            if (!byDate[d]) byDate[d] = {};
-            byDate[d][r.source_shop] = (byDate[d][r.source_shop] || 0) + (r.total_gross_pln || 0);
-            shopSet.add(r.source_shop);
-          }
-          const shops = [...shopSet];
-          const chartData = Object.entries(byDate).sort(([a],[b]) => a.localeCompare(b))
-            .map(([date, vals]) => ({ date, ...Object.fromEntries(shops.map(s => [s, Math.round(vals[s] || 0)])) }));
-          return NextResponse.json({ type: 'area', data: chartData, shops, debug });
+        const filteredIds = await getFilteredOrderIds();
+        let q = orderQuery('order_date, source_shop, total_gross_pln');
+        if (filteredIds !== null) {
+          if (filteredIds.length === 0) return NextResponse.json({ type: 'area', data: [], shops: [], debug });
+          q = q.in('order_id', filteredIds.slice(0, 5000));
         }
-        let q = db.from('fact_daily_revenue').select('date, source_shop, revenue_gross_pln')
-          .gte('date', dateFrom).lte('date', dateTo).order('date');
-        if (shop !== 'all') q = q.eq('source_shop', shop);
-        const { data } = await q.limit(50000);
+        const data = await fetchAllRows(q);
+        const scoped = scopeOrdersByWarsawDate(data);
         const shopSet = new Set<string>();
         const byDate: Record<string, Record<string, number>> = {};
-        for (const r of data || []) {
-          if (!byDate[r.date]) byDate[r.date] = {};
-          byDate[r.date][r.source_shop] = (byDate[r.date][r.source_shop] || 0) + (r.revenue_gross_pln || 0);
+        for (const r of scoped) {
+          const d = warsawDateKey(r.order_date as string);
+          if (!d) continue;
+          if (!byDate[d]) byDate[d] = {};
+          byDate[d][r.source_shop] = (byDate[d][r.source_shop] || 0) + (r.total_gross_pln || 0);
           shopSet.add(r.source_shop);
         }
         const shops = [...shopSet];
@@ -357,24 +435,16 @@ export async function POST(request: NextRequest) {
       }
 
       case 'chart_payment_status': {
-        if (hasItemCrossFilters || crossFilters.length > 0) {
-          const filteredIds = await getFilteredOrderIds();
-          let q = orderQuery('total_gross_pln, is_paid');
-          if (filteredIds !== null) {
-            if (filteredIds.length === 0) return NextResponse.json({ type: 'pie', data: [{ name: 'Zapłacone', value: 0 }, { name: 'Nieopłacone', value: 0 }], debug });
-            q = q.in('order_id', filteredIds.slice(0, 5000));
-          }
-          const { data } = await q.limit(50000);
-          let paid = 0, total = 0;
-          for (const r of data || []) { total += (r.total_gross_pln || 0); if (r.is_paid) paid += (r.total_gross_pln || 0); }
-          return NextResponse.json({ type: 'pie', data: [{ name: 'Zapłacone', value: Math.round(paid) }, { name: 'Nieopłacone', value: Math.round(total - paid) }], debug });
+        const filteredIds = await getFilteredOrderIds();
+        let q = orderQuery('total_gross_pln, is_paid');
+        if (filteredIds !== null) {
+          if (filteredIds.length === 0) return NextResponse.json({ type: 'pie', data: [{ name: 'Zapłacone', value: 0 }, { name: 'Nieopłacone', value: 0 }], debug });
+          q = q.in('order_id', filteredIds.slice(0, 5000));
         }
-        let q = db.from('fact_daily_revenue').select('revenue_paid_pln, revenue_gross_pln')
-          .gte('date', dateFrom).lte('date', dateTo);
-        if (shop !== 'all') q = q.eq('source_shop', shop);
-        const { data } = await q.limit(50000);
+        const data = await fetchAllRows(q);
+        const scoped = scopeOrdersByWarsawDate(data);
         let paid = 0, total = 0;
-        for (const r of data || []) { paid += r.revenue_paid_pln || 0; total += r.revenue_gross_pln || 0; }
+        for (const r of scoped) { total += (r.total_gross_pln || 0); if (r.is_paid) paid += (r.total_gross_pln || 0); }
         return NextResponse.json({ type: 'pie', data: [
           { name: 'Zapłacone', value: Math.round(paid) },
           { name: 'Nieopłacone', value: Math.round(total - paid) },
@@ -382,9 +452,10 @@ export async function POST(request: NextRequest) {
       }
 
       case 'chart_suppliers': {
-        const { data } = await orderQuery('supplier, total_gross_pln').not('supplier', 'is', null).limit(50000);
+        const data = await fetchAllRows(orderQuery('supplier, total_gross_pln').not('supplier', 'is', null));
+        const scoped = scopeOrdersByWarsawDate(data);
         const map: Record<string, number> = {};
-        for (const o of data || []) if (o.supplier) map[o.supplier] = (map[o.supplier] || 0) + (o.total_gross_pln || 0);
+        for (const o of scoped) if (o.supplier) map[o.supplier] = (map[o.supplier] || 0) + (o.total_gross_pln || 0);
         const sorted = Object.entries(map).sort(([,a],[,b]) => b - a);
         const top = sorted.slice(0, 8);
         const other = sorted.slice(8).reduce((s,[,v]) => s + v, 0);
@@ -403,16 +474,24 @@ export async function POST(request: NextRequest) {
 
       // ── Tables ──
       case 'table_payment_status': {
-        let q = db.from('fact_daily_revenue').select('orders_paid, orders_count, revenue_paid_pln, revenue_gross_pln')
-          .gte('date', dateFrom).lte('date', dateTo);
-        if (shop !== 'all') q = q.eq('source_shop', shop);
-        const { data } = await q.limit(50000);
+        const filteredIds = await getFilteredOrderIds();
+        let q = orderQuery('total_gross_pln, is_paid');
+        if (filteredIds !== null) {
+          if (filteredIds.length === 0) return NextResponse.json({ type: 'table', columns: ['Status', 'Zamówienia', 'Kwota'], data: [], debug });
+          q = q.in('order_id', filteredIds.slice(0, 5000));
+        }
+        const data = await fetchAllRows(q);
+        const scoped = scopeOrdersByWarsawDate(data);
         let paid = 0, unpaidRev = 0, paidCount = 0, unpaidCount = 0;
-        for (const r of data || []) {
-          paid += r.revenue_paid_pln || 0;
-          unpaidRev += (r.revenue_gross_pln || 0) - (r.revenue_paid_pln || 0);
-          paidCount += r.orders_paid || 0;
-          unpaidCount += (r.orders_count || 0) - (r.orders_paid || 0);
+        for (const r of scoped) {
+          const gross = r.total_gross_pln || 0;
+          if (r.is_paid) {
+            paid += gross;
+            paidCount += 1;
+          } else {
+            unpaidRev += gross;
+            unpaidCount += 1;
+          }
         }
         return NextResponse.json({ type: 'table', columns: ['Status', 'Zamówienia', 'Kwota'], data: [
           { status: 'Zapłacone', count: paidCount, amount: Math.round(paid) },
@@ -424,11 +503,12 @@ export async function POST(request: NextRequest) {
       case 'kpi_sessions':
       case 'kpi_users':
       case 'kpi_conversion_rate': {
-        const q = db.from('fact_daily_traffic').select('sessions, users, transactions')
+        const q = db.from('fact_daily_traffic').select('sessions, users, transactions, hostname, campaign')
           .gte('date', dateFrom).lte('date', dateTo);
-        const { data } = await q.limit(50000);
+        const data = await fetchAllRows(q);
+        const scopedTraffic = filterRowsByShopHint(data || [], shop, ['hostname', 'campaign']);
         let sessions = 0, users = 0, transactions = 0;
-        for (const r of data || []) { sessions += r.sessions || 0; users += r.users || 0; transactions += r.transactions || 0; }
+        for (const r of scopedTraffic) { sessions += r.sessions || 0; users += r.users || 0; transactions += r.transactions || 0; }
         const convRate = sessions > 0 ? (transactions / sessions) * 100 : 0;
         const valMap: Record<string, { value: number; format: string }> = {
           kpi_sessions: { value: sessions, format: 'number' },
@@ -439,11 +519,12 @@ export async function POST(request: NextRequest) {
       }
 
       case 'ranking_traffic_sources': {
-        const q = db.from('fact_daily_traffic').select('source, medium, sessions')
+        const q = db.from('fact_daily_traffic').select('source, medium, sessions, hostname, campaign')
           .gte('date', dateFrom).lte('date', dateTo);
-        const { data } = await q.limit(50000);
+        const data = await fetchAllRows(q);
+        const scopedTraffic = filterRowsByShopHint(data || [], shop, ['hostname', 'campaign']);
         const map: Record<string, number> = {};
-        for (const r of data || []) {
+        for (const r of scopedTraffic) {
           const key = `${r.source} / ${r.medium}`;
           map[key] = (map[key] || 0) + (r.sessions || 0);
         }
@@ -452,12 +533,13 @@ export async function POST(request: NextRequest) {
       }
 
       case 'chart_sessions_timeline': {
-        const q = db.from('fact_daily_traffic').select('date, hostname, sessions')
+        const q = db.from('fact_daily_traffic').select('date, hostname, sessions, campaign')
           .gte('date', dateFrom).lte('date', dateTo).order('date');
-        const { data } = await q.limit(50000);
+        const data = await fetchAllRows(q);
+        const scopedTraffic = filterRowsByShopHint(data || [], shop, ['hostname', 'campaign']);
         const hostSet = new Set<string>();
         const byDate: Record<string, Record<string, number>> = {};
-        for (const r of data || []) {
+        for (const r of scopedTraffic) {
           if (!byDate[r.date]) byDate[r.date] = {};
           byDate[r.date][r.hostname] = (byDate[r.date][r.hostname] || 0) + (r.sessions || 0);
           hostSet.add(r.hostname);
@@ -473,19 +555,22 @@ export async function POST(request: NextRequest) {
       case 'kpi_total_marketing_cost':
       case 'kpi_meta_spend':
       case 'kpi_google_spend': {
-        let revQ = db.from('fact_daily_revenue').select('revenue_gross_pln')
-          .gte('date', dateFrom).lte('date', dateTo);
-        if (shop !== 'all') revQ = revQ.eq('source_shop', shop);
-        const { data: revData } = await revQ.limit(50000);
-        const totalRevenue = (revData || []).reduce((s, r) => s + (r.revenue_gross_pln || 0), 0);
+        const revData = await fetchAllRows(orderQuery('total_gross_pln'));
+        const totalRevenue = scopeOrdersByWarsawDate(revData).reduce((s, r) => s + (r.total_gross_pln || 0), 0);
 
-        const { data: metaData } = await db.from('fact_daily_adspend').select('spend')
-          .eq('platform', 'meta').gte('date', dateFrom).lte('date', dateTo).limit(50000);
-        const metaSpend = (metaData || []).reduce((s, r) => s + (r.spend || 0), 0);
+        const metaData = await fetchAllRows(
+          db.from('fact_daily_adspend').select('spend, campaign_name, adset_name, account_id')
+            .eq('platform', 'meta').gte('date', dateFrom).lte('date', dateTo)
+        );
+        const metaScoped = filterRowsByShopHint(metaData || [], shop, ['campaign_name', 'adset_name', 'account_id']);
+        const metaSpend = metaScoped.reduce((s, r) => s + (r.spend || 0), 0);
 
-        const { data: googleData } = await db.from('fact_daily_traffic').select('ad_cost')
-          .eq('source', '__total__').gte('date', dateFrom).lte('date', dateTo).limit(50000);
-        const googleSpend = (googleData || []).reduce((s, r) => s + (r.ad_cost || 0), 0);
+        const googleData = await fetchAllRows(
+          db.from('fact_daily_traffic').select('ad_cost, hostname, campaign, source')
+            .eq('source', '__total__').gte('date', dateFrom).lte('date', dateTo)
+        );
+        const googleScoped = filterRowsByShopHint(googleData || [], shop, ['hostname', 'campaign', 'source']);
+        const googleSpend = googleScoped.reduce((s, r) => s + (r.ad_cost || 0), 0);
 
         const { data: agencyData } = await db.from('fact_agency_costs').select('month, amount_pln').limit(500);
         let agencyCost = 0;

@@ -29,6 +29,7 @@ const NAV_ITEMS = [
   { href: '/dashboard/costs', label: 'Koszty agencji', icon: Wallet, adminOnly: true },
   { href: '/dashboard/products', label: 'Produkty', icon: ShoppingBag, adminOnly: false },
   { href: '/dashboard/traffic', label: 'Ruch (GA4)', icon: Globe, adminOnly: false },
+  { href: '/dashboard/showroomy', label: 'Showroomy', icon: BarChart3, adminOnly: false },
   { href: '/dashboard/explorer', label: 'Eksplorator', icon: Compass, adminOnly: false },
   { href: '/dashboard/database', label: 'Baza danych', icon: Database, adminOnly: true },
   { href: '/dashboard/admin', label: 'ETL Admin', icon: Settings, adminOnly: true },

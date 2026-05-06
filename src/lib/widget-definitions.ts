@@ -55,6 +55,7 @@ export const WIDGET_CATALOG: WidgetDefinition[] = [
   // ── Tables ──
   { type: 'table_payment_status', name: 'Status płatności (tabela)', category: 'Tabela', defaultSize: { w: 6, h: 4 }, component: 'table' },
   { type: 'table_fabric_samples', name: 'Próbki tkanin', category: 'Tabela', defaultSize: { w: 12, h: 5 }, component: 'table' },
+  { type: 'custom_explorer', name: 'Własny widget (kreator)', category: 'Wykres', defaultSize: { w: 8, h: 5 }, component: 'bar' },
 ];
 
 export function getWidgetDef(type: string): WidgetDefinition | undefined {

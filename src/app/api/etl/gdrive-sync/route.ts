@@ -40,6 +40,16 @@ export async function GET(request: NextRequest) {
     }
 
     const db = getSupabaseAdmin();
+    await closeStaleRunningLogs(db);
+    const freshRunning = await hasFreshRunningLog(db);
+    if (freshRunning) {
+      return NextResponse.json({
+        skipped: true,
+        reason: 'ETL run already active (<45 min)',
+        activeRunId: freshRunning.id,
+        activeSource: freshRunning.source,
+      });
+    }
 
     // Poll mode runs only when there's a queued manual request.
     let queuedRequestId: number | null = null;
@@ -209,6 +219,37 @@ export async function GET(request: NextRequest) {
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
+
+async function closeStaleRunningLogs(db: ReturnType<typeof getSupabaseAdmin>) {
+  // Serverless timeouts/redeploys can leave ETL rows in `running` forever.
+  // Auto-close old runs so monitoring/queue state stays truthful.
+  const staleBefore = new Date(Date.now() - 45 * 60 * 1000).toISOString();
+  await db
+    .from('etl_log')
+    .update({
+      status: 'failed',
+      finished_at: new Date().toISOString(),
+      error_message: 'Auto-closed stale running ETL run (>45 min without finalize)',
+    })
+    .in('source', ['gdrive_csv', 'gdrive_csv_manual', 'erp_csv'])
+    .eq('status', 'running')
+    .lt('started_at', staleBefore);
+}
+
+async function hasFreshRunningLog(db: ReturnType<typeof getSupabaseAdmin>) {
+  const staleBefore = new Date(Date.now() - 45 * 60 * 1000).toISOString();
+  const { data } = await db
+    .from('etl_log')
+    .select('id, source')
+    .in('source', ['gdrive_csv', 'gdrive_csv_manual', 'erp_csv'])
+    .eq('status', 'running')
+    .gte('started_at', staleBefore)
+    .order('started_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  return data as { id: number; source: string } | null;
+}
 
 async function finishLog(
   db: ReturnType<typeof getSupabaseAdmin>,

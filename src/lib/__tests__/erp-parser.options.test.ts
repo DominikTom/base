@@ -80,3 +80,19 @@ describe('parseErpCsv — option parsing DE', () => {
     expect(it.options_language).toBe('de');
   });
 });
+
+describe('parseErpCsv — option parsing Mitto style', () => {
+  it('keeps only collection value before "|" in fabric-like payloads', async () => {
+    const rows = [makeRow({
+      'Numer': 'Shopify5001-1',
+      'Data zamówienia': '2025-07-15 14:30:00',
+      'Pozycje zamówienia/Produkt/Nazwa': 'Narożnik',
+      'Pozycje zamówienia/Ilość': '1',
+      'Pozycje zamówienia/Opcja': 'Kolekcja tkanin: Lincoln | Kolor: Beżowy',
+    })];
+    const r = await parseErpCsv(rows);
+    expect(r.items).toHaveLength(1);
+    expect(r.items[0].fabric).toBe('Lincoln');
+    expect(r.items[0].fabric_collection).toBe('Lincoln');
+  });
+});

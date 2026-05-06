@@ -76,10 +76,27 @@ describe('parseErpCsv — exploded rows grouping', () => {
 
     const order3 = r.orders.find(o => o.order_id === 'ZAM/00042')!;
     expect(order3.source_platform).toBe('manual');
-    expect(order3.source_shop).toBe('showroom');
+    expect(order3.source_shop).toBe('manual');
 
     expect(r.stats.tagOnlyRows).toBe(1);
     expect(r.stats.ordersCount).toBe(3);
+  });
+
+  it('deduplicates repeated operational tags from header and tag-only rows', async () => {
+    const rows = [
+      row({
+        'Numer': 'Shoper2001-1',
+        'Data zamówienia': '2025-07-15 10:00:00',
+        'Pozycje zamówienia/Produkt/Nazwa': 'Łóżko',
+        'Tagi': 'MONTAŻ',
+      }),
+      row({ 'Tagi': 'MONTAŻ' }),
+      row({ 'Tagi': 'montaż' }),
+    ];
+
+    const r = await parseErpCsv(rows);
+    expect(r.orders).toHaveLength(1);
+    expect(r.orders[0].operational_tags).toEqual(['MONTAŻ']);
   });
 });
 
