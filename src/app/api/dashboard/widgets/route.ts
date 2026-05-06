@@ -282,9 +282,8 @@ export async function POST(request: NextRequest) {
         const map: Record<string, number> = {};
         const samplePattern = /próbk|probk|muster|sample|swatch|tkanin/i;
         const sampleCategories = new Set(['próbki', 'probki', 'sample']);
-        const modelPattern = /łóżko|lozko|łożko|bett|boxspring|\bbed\b|kontynental/i;
-        const bedCategories = new Set(['łóżko', 'lozko', 'lozka', 'bed', 'bett', 'boxspring']);
         const excludedItemTypes = new Set(['shipping', 'service', 'surcharge']);
+        const placeholderProductPattern = /produkt\s+indywidualny|individual\s+product|pozycja\s+indywidualna/i;
         const knownFabricPrefixes = new Set<string>();
         for (const row of items) {
           const f = String(row.fabric || '').trim().toLowerCase();
@@ -306,18 +305,18 @@ export async function POST(request: NextRequest) {
           if (excludedItemTypes.has(itemType)) continue;
           if (sampleCategories.has(category)) continue;
           if (samplePattern.test(name)) continue;
+          if (placeholderProductPattern.test(name)) continue;
           if (looksLikeFabricSwatchName && knownFabricPrefixes.has(firstToken)) continue;
           if (looksLikeFabricSwatchName && (
             (fabric && normalizedName.startsWith(fabric)) ||
             (fabricCollection && normalizedName.startsWith(fabricCollection))
           )) continue;
-          if (!bedCategories.has(category) && !modelPattern.test(name)) continue;
 
           map[name] = (map[name] || 0) + (i.quantity || 1);
         }
         const ranked = Object.entries(map).sort(([,a],[,b]) => b - a).slice(0, limit);
         const total = ranked.reduce((s,[,v]) => s + v, 0);
-        return NextResponse.json({ type: 'ranking', data: ranked.map(([name, value]) => ({ name, value: Math.round(value) })), total, debug: { ...debug, query: 'fact_order_items excluding samples/service/shipping, grouped by product_name, SUM(quantity)', itemsFound: items.length } });
+        return NextResponse.json({ type: 'ranking', data: ranked.map(([name, value]) => ({ name, value: Math.round(value) })), total, debug: { ...debug, query: 'fact_order_items excluding samples/service/shipping, swatches and placeholder products, grouped by product_name, SUM(quantity)', itemsFound: items.length } });
       }
 
       case 'ranking_fabric_collections': {
