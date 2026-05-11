@@ -19,12 +19,21 @@ import { KpiCard } from '@/components/ui/kpi-card';
 import { DataTable, type Column } from '@/components/ui/data-table';
 import { SHOWROOMS, SHOWROOM_LABELS, SHOWROOM_COLORS, type Showroom, type ShowroomToday } from '@/lib/sensmax/types';
 
+interface SalesAgg {
+  orders: number;
+  revenue: number;
+  bookedOrders: number;
+  bookedRevenue: number;
+}
+
 interface AllResponse {
   mode: 'all';
   from: string;
   to: string;
   rows: Array<{ showroom: Showroom; date: string; visits: number }>;
   totals: Record<string, number>;
+  sales: Array<{ showroom: Showroom; date: string; orders: number; revenue: number; bookedOrders: number; bookedRevenue: number }>;
+  salesTotals: Record<string, SalesAgg>;
   error?: string;
 }
 
@@ -36,12 +45,14 @@ interface SingleResponse {
   hourlyFrom: string;
   daily: Array<{ date: string; visits: number; errors: number }>;
   hourly: Array<{ date: string; hour: number; visits: number }>;
+  sales: Array<{ date: string; orders: number; revenue: number; bookedOrders: number; bookedRevenue: number }>;
   error?: string;
 }
 
 const tooltipStyle = { backgroundColor: '#18181b', border: '1px solid #3f3f46', borderRadius: 8, fontSize: 12 } as const;
 const axisTick = { fontSize: 10, fill: '#71717a' } as const;
 const plNum = (n: number) => n.toLocaleString('pl-PL');
+const plMoney = (n: number) => `${Math.round(n).toLocaleString('pl-PL')} zł`;
 const warsawDay = (ms: number) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Warsaw' }).format(new Date(ms));
 
 function mondayOf(dateStr: string): string {
@@ -54,9 +65,12 @@ function mondayOf(dateStr: string): string {
 interface SummaryRow {
   showroom: Showroom;
   label: string;
-  total: number;
+  visits: number;
   perDay: number;
-  share: number;
+  orders: number | null;
+  conversion: number | null;
+  revenue: number | null;
+  aov: number | null;
   bestDayVisits: number;
   bestDayDate: string;
 }
@@ -79,6 +93,7 @@ export function ShowroomCharts() {
 
   const [selected, setSelected] = useState<Showroom>('katowice');
   const [agg, setAgg] = useState<'daily' | 'weekly'>('daily');
+  const [salesBasis, setSalesBasis] = useState<'all' | 'booked'>('all');
   const [hidden, setHidden] = useState<Set<Showroom>>(new Set());
 
   const [all, setAll] = useState<AllResponse | null>(null);
@@ -125,7 +140,6 @@ export function ShowroomCharts() {
     };
   }, [selected, dateFrom, dateTo]);
 
-  // live "today" snapshot — used for the cards when the range covers today
   useEffect(() => {
     let alive = true;
     const load = () => {
@@ -144,10 +158,20 @@ export function ShowroomCharts() {
     };
   }, []);
 
+  const ordersOf = (t: SalesAgg | undefined) => (t ? (salesBasis === 'booked' ? t.bookedOrders : t.orders) : 0);
+  const revenueOf = (t: SalesAgg | undefined) => (t ? (salesBasis === 'booked' ? t.bookedRevenue : t.revenue) : 0);
+  const ordersForRow = (r: { orders: number; bookedOrders: number }) => (salesBasis === 'booked' ? r.bookedOrders : r.orders);
+
   const activeShowrooms = useMemo(() => {
     const totals = all?.totals ?? {};
     const present = new Set((all?.rows ?? []).map((r) => r.showroom));
     return SHOWROOMS.filter((s) => present.has(s) || (totals[s] ?? 0) > 0);
+  }, [all]);
+
+  // showrooms that have any sales data in the period
+  const salesShowrooms = useMemo(() => {
+    const t = all?.salesTotals ?? {};
+    return SHOWROOMS.filter((s) => t[s] && (t[s].orders > 0 || t[s].bookedOrders > 0));
   }, [all]);
 
   const compareData = useMemo(() => {
@@ -162,14 +186,43 @@ export function ShowroomCharts() {
     return [...map.values()].sort((a, b) => (String(a._key) < String(b._key) ? -1 : 1));
   }, [all, agg]);
 
+  // weekly conversion (orders / visits) per showroom
+  const conversionData = useMemo(() => {
+    const visitsByWeek = new Map<string, Map<Showroom, number>>();
+    const ordersByWeek = new Map<string, Map<Showroom, number>>();
+    for (const r of all?.rows ?? []) {
+      const w = mondayOf(r.date);
+      if (!visitsByWeek.has(w)) visitsByWeek.set(w, new Map());
+      const m = visitsByWeek.get(w)!;
+      m.set(r.showroom, (m.get(r.showroom) ?? 0) + r.visits);
+    }
+    for (const r of all?.sales ?? []) {
+      const w = mondayOf(r.date);
+      if (!ordersByWeek.has(w)) ordersByWeek.set(w, new Map());
+      const m = ordersByWeek.get(w)!;
+      m.set(r.showroom, (m.get(r.showroom) ?? 0) + ordersForRow(r));
+    }
+    const weeks = [...new Set([...visitsByWeek.keys(), ...ordersByWeek.keys()])].sort();
+    return weeks.map((w) => {
+      const point: Record<string, number | string | null> = { name: w.slice(5), _key: w };
+      for (const s of salesShowrooms) {
+        const v = visitsByWeek.get(w)?.get(s) ?? 0;
+        const o = ordersByWeek.get(w)?.get(s) ?? 0;
+        point[s] = v > 0 ? Math.round((o / v) * 1000) / 10 : null;
+      }
+      return point;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [all, salesShowrooms, salesBasis]);
+
   const summaryRows = useMemo<SummaryRow[]>(() => {
     const rows = all?.rows ?? [];
     const totals = all?.totals ?? {};
-    const grand = Object.values(totals).reduce((a, b) => a + b, 0) || 1;
+    const salesTotals = all?.salesTotals ?? {};
     return activeShowrooms
       .map((s) => {
         const own = rows.filter((r) => r.showroom === s);
-        const total = totals[s] ?? 0;
+        const visits = totals[s] ?? 0;
         const days = own.length || 1;
         let bestDayVisits = 0;
         let bestDayDate = '—';
@@ -179,32 +232,47 @@ export function ShowroomCharts() {
             bestDayDate = r.date;
           }
         }
+        const st = salesTotals[s];
+        const orders = st ? ordersOf(st) : null;
+        const revenue = st ? revenueOf(st) : null;
         return {
           showroom: s,
           label: SHOWROOM_LABELS[s],
-          total,
-          perDay: Math.round((total / days) * 10) / 10,
-          share: Math.round((total / grand) * 1000) / 10,
+          visits,
+          perDay: Math.round((visits / days) * 10) / 10,
+          orders,
+          conversion: st && visits > 0 ? Math.round(((orders ?? 0) / visits) * 1000) / 10 : st ? 0 : null,
+          revenue,
+          aov: orders && orders > 0 ? Math.round((revenue ?? 0) / orders) : null,
           bestDayVisits,
           bestDayDate,
         };
       })
-      .sort((a, b) => b.total - a.total);
-  }, [all, activeShowrooms]);
+      .sort((a, b) => b.visits - a.visits);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [all, activeShowrooms, salesBasis]);
 
   const summaryColumns: Column<SummaryRow>[] = useMemo(
     () => [
       { key: 'label', header: 'Showroom', accessor: (r) => r.label, sortable: true },
-      { key: 'total', header: 'Wejścia (okres)', accessor: (r) => r.total, format: (v) => plNum(Number(v)), align: 'right', sortable: true },
-      { key: 'perDay', header: 'Śr. / dzień', accessor: (r) => r.perDay, format: (v) => plNum(Number(v)), align: 'right', sortable: true },
-      { key: 'share', header: 'Udział', accessor: (r) => r.share, format: (v) => `${v}%`, align: 'right', sortable: true },
+      { key: 'visits', header: 'Wejścia', accessor: (r) => r.visits, format: (v) => plNum(Number(v)), align: 'right', sortable: true },
+      { key: 'perDay', header: 'Śr. wejść/dzień', accessor: (r) => r.perDay, format: (v) => plNum(Number(v)), align: 'right', sortable: true },
+      { key: 'orders', header: 'Zamówienia', accessor: (r) => (r.orders ?? -1), format: (v) => (Number(v) < 0 ? '—' : plNum(Number(v))), align: 'right', sortable: true },
+      { key: 'conversion', header: 'Konwersja', accessor: (r) => (r.conversion ?? -1), format: (v) => (Number(v) < 0 ? '—' : `${v}%`), align: 'right', sortable: true },
+      { key: 'aov', header: 'AOV', accessor: (r) => (r.aov ?? -1), format: (v) => (Number(v) < 0 ? '—' : plMoney(Number(v))), align: 'right', sortable: true },
+      { key: 'revenue', header: 'Przychód', accessor: (r) => (r.revenue ?? -1), format: (v) => (Number(v) < 0 ? '—' : plMoney(Number(v))), align: 'right', sortable: true },
       { key: 'best', header: 'Najlepszy dzień', accessor: (r) => r.bestDayVisits, format: (v) => plNum(Number(v)), align: 'right', sortable: true },
       { key: 'bestDate', header: 'Data', accessor: (r) => r.bestDayDate, align: 'right', sortable: true },
     ],
     [],
   );
 
-  const detailDaily = useMemo(() => (single?.daily ?? []).map((d) => ({ name: d.date.slice(5), visits: d.visits })), [single]);
+  const detailDaily = useMemo(() => {
+    const orders = new Map<string, number>();
+    for (const r of single?.sales ?? []) orders.set(r.date, (orders.get(r.date) ?? 0) + ordersForRow(r));
+    return (single?.daily ?? []).map((d) => ({ name: d.date.slice(5), visits: d.visits, orders: orders.get(d.date) ?? 0 }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [single, salesBasis]);
   const detailHourlyAvg = useMemo(() => {
     const sums = new Array(24).fill(0) as number[];
     const days = new Set<string>();
@@ -226,6 +294,16 @@ export function ShowroomCharts() {
     for (const d of dates) for (const v of byDate.get(d)!) if (v > max) max = v;
     return { dates, byDate, max };
   }, [single]);
+  const detailSales = useMemo(() => {
+    let orders = 0;
+    let revenue = 0;
+    for (const r of single?.sales ?? []) {
+      orders += ordersForRow(r);
+      revenue += salesBasis === 'booked' ? r.bookedRevenue : r.revenue;
+    }
+    return { orders, revenue };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [single, salesBasis]);
 
   const toggleShowroom = (s: Showroom) =>
     setHidden((prev) => {
@@ -235,8 +313,6 @@ export function ShowroomCharts() {
       return next;
     });
 
-  // ── card value per showroom: live today (when range == today only),
-  //    otherwise the synced period total + today's live count if today isn't synced yet ──
   const rangeCoversToday = dateFrom <= todayIso && dateTo >= todayIso;
   const cardFor = (s: Showroom) => {
     const periodTotal = all?.totals?.[s] ?? 0;
@@ -247,12 +323,19 @@ export function ShowroomCharts() {
     }
     const todaySynced = (all?.rows ?? []).some((r) => r.showroom === s && r.date === todayIso);
     const addon = rangeCoversToday && !todaySynced ? live : 0;
-    return { value: periodTotal + addon, sub: `wejść · ${rangeLabel}` };
+    const value = periodTotal + addon;
+    const st = all?.salesTotals?.[s];
+    if (st && periodTotal > 0) {
+      const conv = Math.round((ordersOf(st) / periodTotal) * 1000) / 10;
+      return { value, sub: `konw. ${conv}% · ${plNum(ordersOf(st))} zam. · ${rangeLabel}` };
+    }
+    return { value, sub: `wejść · ${rangeLabel}` };
   };
 
   const allHasData = !!all && all.rows.length > 0;
   const detailHasData = !!single && single.daily.length > 0;
-  const detailTotal = (single?.daily ?? []).reduce((a, d) => a + d.visits, 0);
+  const detailVisits = (single?.daily ?? []).reduce((a, d) => a + d.visits, 0);
+  const detailConv = detailVisits > 0 && detailSales.orders > 0 ? Math.round((detailSales.orders / detailVisits) * 1000) / 10 : null;
 
   const emptyNote = (
     <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6 text-sm text-zinc-400">
@@ -263,7 +346,7 @@ export function ShowroomCharts() {
 
   return (
     <div className="space-y-6">
-      {/* ── Karty: wejścia per showroom (zakres globalny) ─────────────────── */}
+      {/* ── Karty: wejścia / konwersja per showroom (zakres globalny) ─────── */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {SHOWROOMS.map((s) => {
           const { value, sub } = cardFor(s);
@@ -271,9 +354,27 @@ export function ShowroomCharts() {
         })}
       </div>
 
-      {/* ── Porównanie showroomów ─────────────────────────────────────────── */}
+      {/* sales basis toggle */}
+      <div className="flex flex-wrap items-center gap-2 text-xs">
+        <span className="text-zinc-400">Zamówienia liczone jako:</span>
+        <div className="flex rounded-md border border-zinc-700">
+          {(['all', 'booked'] as const).map((b) => (
+            <button
+              key={b}
+              type="button"
+              onClick={() => setSalesBasis(b)}
+              className={`px-3 py-1 ${salesBasis === b ? 'bg-zinc-700 text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'}`}
+            >
+              {b === 'all' ? 'wszystkie' : 'tylko zaksięgowane'}
+            </button>
+          ))}
+        </div>
+        <span className="text-zinc-600">konwersja = zamówienia ÷ wejścia (surowe wejścia z czujników)</span>
+      </div>
+
+      {/* ── Porównanie wejść ──────────────────────────────────────────────── */}
       <ChartCard
-        title="Porównanie showroomów"
+        title="Porównanie wejść"
         subtitle={all ? `${all.from} – ${all.to}` : undefined}
         action={
           <div className="flex rounded-md border border-zinc-700 text-xs">
@@ -312,24 +413,14 @@ export function ShowroomCharts() {
                 );
               })}
             </div>
-            <ResponsiveContainer width="100%" height={320}>
+            <ResponsiveContainer width="100%" height={300}>
               <LineChart data={compareData} margin={{ top: 5, right: 8, bottom: 5, left: 5 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
                 <XAxis dataKey="name" tick={axisTick} tickLine={false} axisLine={{ stroke: '#3f3f46' }} interval="preserveStartEnd" minTickGap={24} />
                 <YAxis tick={{ fontSize: 11, fill: '#71717a' }} tickLine={false} axisLine={false} allowDecimals={false} />
                 <Tooltip contentStyle={tooltipStyle} />
                 {activeShowrooms.map((s) => (
-                  <Line
-                    key={s}
-                    type="monotone"
-                    dataKey={s}
-                    name={SHOWROOM_LABELS[s]}
-                    stroke={SHOWROOM_COLORS[s]}
-                    strokeWidth={2}
-                    dot={compareData.length <= 1}
-                    hide={hidden.has(s)}
-                    connectNulls
-                  />
+                  <Line key={s} type="monotone" dataKey={s} name={SHOWROOM_LABELS[s]} stroke={SHOWROOM_COLORS[s]} strokeWidth={2} dot={compareData.length <= 1} hide={hidden.has(s)} connectNulls />
                 ))}
               </LineChart>
             </ResponsiveContainer>
@@ -337,14 +428,51 @@ export function ShowroomCharts() {
         )}
       </ChartCard>
 
+      {/* ── Konwersja w czasie (tygodniowo) ───────────────────────────────── */}
+      {allHasData && salesShowrooms.length > 0 && (
+        <ChartCard title="Konwersja w czasie (tygodniowo)" subtitle="zamówienia ÷ wejścia, w ujęciu tygodniowym">
+          <div className="mb-3 flex flex-wrap gap-2">
+            {salesShowrooms.map((s) => {
+              const off = hidden.has(s);
+              return (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => toggleShowroom(s)}
+                  className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors ${
+                    off ? 'border-zinc-800 text-zinc-600' : 'border-zinc-700 text-zinc-200 hover:bg-zinc-800'
+                  }`}
+                >
+                  <span className="h-2 w-2 rounded-full" style={{ backgroundColor: off ? '#52525b' : SHOWROOM_COLORS[s] }} />
+                  <span className={off ? 'line-through' : ''}>{SHOWROOM_LABELS[s]}</span>
+                </button>
+              );
+            })}
+          </div>
+          <ResponsiveContainer width="100%" height={280}>
+            <LineChart data={conversionData} margin={{ top: 5, right: 8, bottom: 5, left: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
+              <XAxis dataKey="name" tick={axisTick} tickLine={false} axisLine={{ stroke: '#3f3f46' }} interval="preserveStartEnd" minTickGap={24} />
+              <YAxis tick={{ fontSize: 11, fill: '#71717a' }} tickLine={false} axisLine={false} unit="%" />
+              <Tooltip contentStyle={tooltipStyle} formatter={(v) => [`${v}%`, '']} />
+              {salesShowrooms.map((s) => (
+                <Line key={s} type="monotone" dataKey={s} name={SHOWROOM_LABELS[s]} stroke={SHOWROOM_COLORS[s]} strokeWidth={2} dot={conversionData.length <= 1} hide={hidden.has(s)} connectNulls />
+              ))}
+            </LineChart>
+          </ResponsiveContainer>
+        </ChartCard>
+      )}
+
       {/* ── Zestawienie ───────────────────────────────────────────────────── */}
       {allHasData && (
         <div>
           <h3 className="mb-2 text-sm font-medium text-zinc-200">
-            Zestawienie ({all!.from} – {all!.to})
+            Zestawienie ({all!.from} – {all!.to}) — zamówienia: {salesBasis === 'all' ? 'wszystkie' : 'tylko zaksięgowane'}
           </h3>
-          <DataTable data={summaryRows} columns={summaryColumns} onRowClick={(r) => setSelected(r.showroom)} />
-          <p className="mt-1.5 text-xs text-zinc-500">Kliknij wiersz, aby zobaczyć szczegóły showroomu poniżej.</p>
+          <div className="overflow-x-auto">
+            <DataTable data={summaryRows} columns={summaryColumns} onRowClick={(r) => setSelected(r.showroom)} />
+          </div>
+          <p className="mt-1.5 text-xs text-zinc-500">Myślnik w kolumnach sprzedażowych oznacza brak arkusza dla danego showroomu. Kliknij wiersz, aby zobaczyć szczegóły poniżej.</p>
         </div>
       )}
 
@@ -365,7 +493,7 @@ export function ShowroomCharts() {
           </select>
           {detailHasData && (
             <span className="text-sm text-zinc-500">
-              {plNum(detailTotal)} wejść w okresie {single!.from} – {single!.to}
+              {plNum(detailVisits)} wejść · {plNum(detailSales.orders)} zam.{detailConv !== null ? ` · konw. ${detailConv}%` : ''} · {single!.from} – {single!.to}
             </span>
           )}
         </div>
@@ -374,14 +502,15 @@ export function ShowroomCharts() {
         {!loadingSingle && !detailHasData && emptyNote}
         {!loadingSingle && detailHasData && (
           <div className="grid gap-4 lg:grid-cols-2">
-            <ChartCard title="Wejścia dziennie" subtitle={`${single!.from} – ${single!.to}`}>
+            <ChartCard title="Wejścia i zamówienia dziennie" subtitle={`${single!.from} – ${single!.to}`}>
               <ResponsiveContainer width="100%" height={300}>
                 <BarChart data={detailDaily} margin={{ top: 5, right: 5, bottom: 5, left: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
                   <XAxis dataKey="name" tick={axisTick} tickLine={false} axisLine={{ stroke: '#3f3f46' }} interval="preserveStartEnd" minTickGap={20} />
                   <YAxis tick={{ fontSize: 11, fill: '#71717a' }} tickLine={false} axisLine={false} allowDecimals={false} />
                   <Tooltip contentStyle={tooltipStyle} />
-                  <Bar dataKey="visits" fill={SHOWROOM_COLORS[selected]} radius={[3, 3, 0, 0]} maxBarSize={28} />
+                  <Bar dataKey="visits" name="wejścia" fill={SHOWROOM_COLORS[selected]} radius={[3, 3, 0, 0]} maxBarSize={28} />
+                  <Bar dataKey="orders" name="zamówienia" fill="#f59e0b" radius={[3, 3, 0, 0]} maxBarSize={14} />
                 </BarChart>
               </ResponsiveContainer>
             </ChartCard>

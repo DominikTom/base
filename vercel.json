@@ -37,6 +37,10 @@
     {
       "path": "/api/sensmax/sync",
       "schedule": "0 4 * * *"
+    },
+    {
+      "path": "/api/sensmax/sales-sync",
+      "schedule": "30 4 * * *"
     }
   ]
 }

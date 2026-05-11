@@ -19,6 +19,26 @@ function clampHourlyFrom(from: string, to: string): string {
   return from > capIso ? from : capIso;
 }
 
+interface SalesRow {
+  showroom: Showroom;
+  date: string;
+  orders: number;
+  revenue: number;
+  bookedOrders: number;
+  bookedRevenue: number;
+}
+
+function mapSales(data: Array<Record<string, unknown>> | null): SalesRow[] {
+  return (data ?? []).map((r) => ({
+    showroom: r.showroom as Showroom,
+    date: r.date as string,
+    orders: Number(r.orders) || 0,
+    revenue: Number(r.revenue_pln) || 0,
+    bookedOrders: Number(r.booked_orders) || 0,
+    bookedRevenue: Number(r.booked_revenue_pln) || 0,
+  }));
+}
+
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const showroom = searchParams.get('showroom');
@@ -35,15 +55,24 @@ export async function GET(request: NextRequest) {
   const db = getSupabaseAdmin();
 
   if (isAll) {
-    const { data, error } = await db
-      .from('sensmax_daily_by_showroom')
-      .select('showroom,date,visits_total')
-      .gte('date', from)
-      .lte('date', to)
-      .order('date', { ascending: true });
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    const [visitsRes, salesRes] = await Promise.all([
+      db
+        .from('sensmax_daily_by_showroom')
+        .select('showroom,date,visits_total')
+        .gte('date', from)
+        .lte('date', to)
+        .order('date', { ascending: true }),
+      db
+        .from('sensmax_showroom_sales')
+        .select('showroom,date,orders,revenue_pln,booked_orders,booked_revenue_pln')
+        .gte('date', from)
+        .lte('date', to)
+        .order('date', { ascending: true }),
+    ]);
+    if (visitsRes.error) return NextResponse.json({ error: visitsRes.error.message }, { status: 500 });
+    if (salesRes.error) return NextResponse.json({ error: salesRes.error.message }, { status: 500 });
 
-    const rows = (data ?? []).map((r) => ({
+    const rows = (visitsRes.data ?? []).map((r) => ({
       showroom: r.showroom as Showroom,
       date: r.date as string,
       visits: Number(r.visits_total) || 0,
@@ -51,11 +80,21 @@ export async function GET(request: NextRequest) {
     const totals: Record<string, number> = {};
     for (const r of rows) totals[r.showroom] = (totals[r.showroom] ?? 0) + r.visits;
 
-    return NextResponse.json({ mode: 'all', from, to, rows, totals });
+    const sales = mapSales(salesRes.data);
+    const salesTotals: Record<string, { orders: number; revenue: number; bookedOrders: number; bookedRevenue: number }> = {};
+    for (const r of sales) {
+      const t = (salesTotals[r.showroom] ??= { orders: 0, revenue: 0, bookedOrders: 0, bookedRevenue: 0 });
+      t.orders += r.orders;
+      t.revenue += r.revenue;
+      t.bookedOrders += r.bookedOrders;
+      t.bookedRevenue += r.bookedRevenue;
+    }
+
+    return NextResponse.json({ mode: 'all', from, to, rows, totals, sales, salesTotals });
   }
 
   const hourlyFrom = clampHourlyFrom(from, to);
-  const [dailyRes, hourlyRes] = await Promise.all([
+  const [dailyRes, hourlyRes, salesRes] = await Promise.all([
     db
       .from('sensmax_daily_by_showroom')
       .select('date,visits_total,errors_total')
@@ -71,10 +110,18 @@ export async function GET(request: NextRequest) {
       .lte('date', to)
       .order('date', { ascending: true })
       .order('hour', { ascending: true }),
+    db
+      .from('sensmax_showroom_sales')
+      .select('showroom,date,orders,revenue_pln,booked_orders,booked_revenue_pln')
+      .eq('showroom', showroom)
+      .gte('date', from)
+      .lte('date', to)
+      .order('date', { ascending: true }),
   ]);
 
   if (dailyRes.error) return NextResponse.json({ error: dailyRes.error.message }, { status: 500 });
   if (hourlyRes.error) return NextResponse.json({ error: hourlyRes.error.message }, { status: 500 });
+  if (salesRes.error) return NextResponse.json({ error: salesRes.error.message }, { status: 500 });
 
   return NextResponse.json({
     mode: 'single',
@@ -84,5 +131,6 @@ export async function GET(request: NextRequest) {
     hourlyFrom,
     daily: (dailyRes.data ?? []).map((r) => ({ date: r.date as string, visits: Number(r.visits_total) || 0, errors: Number(r.errors_total) || 0 })),
     hourly: (hourlyRes.data ?? []).map((r) => ({ date: r.date as string, hour: Number(r.hour) || 0, visits: Number(r.visits) || 0 })),
+    sales: mapSales(salesRes.data).map(({ date, orders, revenue, bookedOrders, bookedRevenue }) => ({ date, orders, revenue, bookedOrders, bookedRevenue })),
   });
 }
