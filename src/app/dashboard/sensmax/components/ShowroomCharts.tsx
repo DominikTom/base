@@ -174,6 +174,31 @@ export function ShowroomCharts() {
     return SHOWROOMS.filter((s) => t[s] && (t[s].orders > 0 || t[s].bookedOrders > 0));
   }, [all]);
 
+  // dates with sensor data per showroom (conversion only makes sense on those days)
+  const visitDatesByShowroom = useMemo(() => {
+    const m = new Map<Showroom, Set<string>>();
+    for (const r of all?.rows ?? []) {
+      let set = m.get(r.showroom);
+      if (!set) {
+        set = new Set();
+        m.set(r.showroom, set);
+      }
+      set.add(r.date);
+    }
+    return m;
+  }, [all]);
+
+  // orders on days that also have sensor data, per showroom (matched to current sales basis)
+  const ordersOnVisitDays = useMemo(() => {
+    const m = new Map<Showroom, number>();
+    for (const r of all?.sales ?? []) {
+      if (!visitDatesByShowroom.get(r.showroom)?.has(r.date)) continue;
+      m.set(r.showroom, (m.get(r.showroom) ?? 0) + (salesBasis === 'booked' ? r.bookedOrders : r.orders));
+    }
+    return m;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [all, visitDatesByShowroom, salesBasis]);
+
   const compareData = useMemo(() => {
     const rows = all?.rows ?? [];
     const map = new Map<string, Record<string, number | string>>();
@@ -235,13 +260,14 @@ export function ShowroomCharts() {
         const st = salesTotals[s];
         const orders = st ? ordersOf(st) : null;
         const revenue = st ? revenueOf(st) : null;
+        const matchedOrders = ordersOnVisitDays.get(s) ?? 0;
         return {
           showroom: s,
           label: SHOWROOM_LABELS[s],
           visits,
           perDay: Math.round((visits / days) * 10) / 10,
           orders,
-          conversion: st && visits > 0 ? Math.round(((orders ?? 0) / visits) * 1000) / 10 : st ? 0 : null,
+          conversion: st && visits > 0 ? Math.round((matchedOrders / visits) * 1000) / 10 : st ? 0 : null,
           revenue,
           aov: orders && orders > 0 ? Math.round((revenue ?? 0) / orders) : null,
           bestDayVisits,
@@ -250,7 +276,7 @@ export function ShowroomCharts() {
       })
       .sort((a, b) => b.visits - a.visits);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [all, activeShowrooms, salesBasis]);
+  }, [all, activeShowrooms, salesBasis, ordersOnVisitDays]);
 
   const summaryColumns: Column<SummaryRow>[] = useMemo(
     () => [
@@ -294,16 +320,6 @@ export function ShowroomCharts() {
     for (const d of dates) for (const v of byDate.get(d)!) if (v > max) max = v;
     return { dates, byDate, max };
   }, [single]);
-  const detailSales = useMemo(() => {
-    let orders = 0;
-    let revenue = 0;
-    for (const r of single?.sales ?? []) {
-      orders += ordersForRow(r);
-      revenue += salesBasis === 'booked' ? r.bookedRevenue : r.revenue;
-    }
-    return { orders, revenue };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [single, salesBasis]);
 
   const toggleShowroom = (s: Showroom) =>
     setHidden((prev) => {
@@ -326,7 +342,7 @@ export function ShowroomCharts() {
     const value = periodTotal + addon;
     const st = all?.salesTotals?.[s];
     if (st && periodTotal > 0) {
-      const conv = Math.round((ordersOf(st) / periodTotal) * 1000) / 10;
+      const conv = Math.round(((ordersOnVisitDays.get(s) ?? 0) / periodTotal) * 1000) / 10;
       return { value, sub: `konw. ${conv}% · ${plNum(ordersOf(st))} zam. · ${rangeLabel}` };
     }
     return { value, sub: `wejść · ${rangeLabel}` };
@@ -334,8 +350,9 @@ export function ShowroomCharts() {
 
   const allHasData = !!all && all.rows.length > 0;
   const detailHasData = !!single && single.daily.length > 0;
-  const detailVisits = (single?.daily ?? []).reduce((a, d) => a + d.visits, 0);
-  const detailConv = detailVisits > 0 && detailSales.orders > 0 ? Math.round((detailSales.orders / detailVisits) * 1000) / 10 : null;
+  const detailVisits = detailDaily.reduce((a, d) => a + d.visits, 0);
+  const detailMatchedOrders = detailDaily.reduce((a, d) => a + d.orders, 0);
+  const detailConv = detailVisits > 0 && detailMatchedOrders > 0 ? Math.round((detailMatchedOrders / detailVisits) * 1000) / 10 : null;
 
   const emptyNote = (
     <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6 text-sm text-zinc-400">
@@ -472,7 +489,10 @@ export function ShowroomCharts() {
           <div className="overflow-x-auto">
             <DataTable data={summaryRows} columns={summaryColumns} onRowClick={(r) => setSelected(r.showroom)} />
           </div>
-          <p className="mt-1.5 text-xs text-zinc-500">Myślnik w kolumnach sprzedażowych oznacza brak arkusza dla danego showroomu. Kliknij wiersz, aby zobaczyć szczegóły poniżej.</p>
+          <p className="mt-1.5 text-xs text-zinc-500">
+            Myślnik w kolumnach sprzedażowych = brak arkusza dla danego showroomu. Konwersja liczona jest tylko z dni, dla których są też dane z czujników
+            (arkusze mają zwykle dłuższą historię niż czujniki). Kliknij wiersz, aby zobaczyć szczegóły poniżej.
+          </p>
         </div>
       )}
 
@@ -493,7 +513,7 @@ export function ShowroomCharts() {
           </select>
           {detailHasData && (
             <span className="text-sm text-zinc-500">
-              {plNum(detailVisits)} wejść · {plNum(detailSales.orders)} zam.{detailConv !== null ? ` · konw. ${detailConv}%` : ''} · {single!.from} – {single!.to}
+              {plNum(detailVisits)} wejść · {plNum(detailMatchedOrders)} zam.{detailConv !== null ? ` · konw. ${detailConv}%` : ''} · {single!.from} – {single!.to}
             </span>
           )}
         </div>
