@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getRealtimeForShowroom } from '@/lib/sensmax/realtime';
-import type { Showroom } from '@/lib/sensmax/types';
+import { getShowroomToday } from '@/lib/sensmax/today';
+import { SHOWROOMS, type Showroom } from '@/lib/sensmax/types';
 
-const SHOWROOMS: Showroom[] = ['katowice', 'wroclaw', 'poznan'];
+export const dynamic = 'force-dynamic';
 
 export async function GET(_request: NextRequest, { params }: { params: Promise<{ showroom: string }> }) {
   const { showroom } = await params;
@@ -11,7 +11,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
   }
 
   try {
-    const data = await getRealtimeForShowroom(showroom as Showroom);
+    const data = await getShowroomToday(showroom as Showroom);
     return NextResponse.json(data);
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });

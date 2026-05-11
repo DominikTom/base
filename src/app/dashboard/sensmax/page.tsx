@@ -1,42 +1,33 @@
-import { getRealtimeForShowroom } from '@/lib/sensmax/realtime';
-import { LiveCounter } from './components/LiveCounter';
-import { DailyTrendChart } from './components/DailyTrendChart';
-import { HourlyHeatmap } from './components/HourlyHeatmap';
-import type { RealtimeSnapshot } from '@/lib/sensmax/types';
+import { getShowroomToday } from '@/lib/sensmax/today';
+import { SHOWROOMS, type ShowroomToday } from '@/lib/sensmax/types';
+import { TodayCard } from './components/TodayCard';
+import { ShowroomCharts } from './components/ShowroomCharts';
 
 export const dynamic = 'force-dynamic';
 
-function fallback(showroom: RealtimeSnapshot['showroom']): RealtimeSnapshot {
-  return {
-    showroom,
-    inside: 0,
-    max_capacity: null,
-    almost_full: null,
-    offline: true,
-    color: null,
-    message: 'Brak konfiguracji SensMax',
-    sensor_last_update: null,
-    fetched_at: new Date(0).toISOString(),
-  };
-}
-
 export default async function SensmaxDashboardPage() {
-  const [katowice, wroclaw, poznan] = await Promise.all([
-    getRealtimeForShowroom('katowice').catch(() => fallback('katowice')),
-    getRealtimeForShowroom('wroclaw').catch(() => fallback('wroclaw')),
-    getRealtimeForShowroom('poznan').catch(() => fallback('poznan')),
-  ]);
+  const todays = await Promise.all(
+    SHOWROOMS.map((showroom) =>
+      getShowroomToday(showroom).catch(
+        (): ShowroomToday => ({ showroom, visitsToday: 0, lastEntryTime: null, sensorCount: 0, fetchedAt: new Date(0).toISOString() }),
+      ),
+    ),
+  );
 
   return (
-    <div className="space-y-6 p-4">
-      <h1 className="text-2xl font-semibold">Showroomy</h1>
-      <div className="grid gap-4 md:grid-cols-3">
-        <LiveCounter showroom="katowice" initial={katowice} />
-        <LiveCounter showroom="wroclaw" initial={wroclaw} />
-        <LiveCounter showroom="poznan" initial={poznan} />
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-semibold text-zinc-100">Showroomy</h1>
+        <p className="text-sm text-zinc-500">Liczniki wejść SensMax — dzienne wejścia na żywo oraz historia.</p>
       </div>
-      <DailyTrendChart />
-      <HourlyHeatmap />
+
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {todays.map((t) => (
+          <TodayCard key={t.showroom} initial={t} />
+        ))}
+      </div>
+
+      <ShowroomCharts />
     </div>
   );
 }

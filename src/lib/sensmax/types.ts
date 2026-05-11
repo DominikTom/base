@@ -1,17 +1,32 @@
-export interface SensMaxReport {
-  id: number;
-  name: string;
-  date: string;
-  currentTime: string;
-  inside: number;
-  max: number;
-  almostFullPreset: number;
-  offline: boolean;
-  color: string;
-  message: string;
-  messageWhenLimitReached?: string;
-  messageWhenAlmostFullReached?: string;
-  messageWhenFree?: string;
+export type Showroom = 'krakow' | 'katowice' | 'warszawa' | 'poznan' | 'wroclaw' | 'nowa' | 'marki';
+
+export const SHOWROOMS: Showroom[] = ['krakow', 'katowice', 'warszawa', 'poznan', 'wroclaw', 'nowa', 'marki'];
+
+export const SHOWROOM_LABELS: Record<Showroom, string> = {
+  krakow: 'Kraków',
+  katowice: 'Katowice',
+  warszawa: 'Warszawa',
+  poznan: 'Poznań',
+  wroclaw: 'Wrocław',
+  nowa: 'Nowa',
+  marki: 'Marki',
+};
+
+// Mapping of SensMax sensor serial → showroom slug (from GET /api/v2/sensors).
+export const SENSOR_SHOWROOM: Record<string, Showroom> = {
+  '030013966': 'krakow', // My Bed Krakow
+  '030013921': 'katowice', // My Bed Katowice
+  '030013965': 'warszawa', // W-wa My Bed
+  '030013946': 'poznan', // Poznan My Bed
+  '030013954': 'wroclaw', // Wroclaw My
+  '030013916': 'nowa', // Nowa My Bed
+  '030013934': 'marki', // Marki My Bed
+};
+
+export function sensorsForShowroom(showroom: Showroom): string[] {
+  return Object.entries(SENSOR_SHOWROOM)
+    .filter(([, s]) => s === showroom)
+    .map(([serial]) => serial);
 }
 
 export interface SensMaxSensor {
@@ -24,25 +39,31 @@ export interface SensMaxSensor {
   group: string;
 }
 
+export interface SensMaxGroup {
+  id: string;
+  name: string;
+}
+
+// GET /api/v2/sensor/{serial}/data?start=&end=
 export interface SensMaxSensorDataDay {
   date: string;
   firstEntryTime: string;
   lastEntryTime: string;
-  visits: string[];
-  errors: string[];
+  visits: string[]; // 24 hourly counts as strings
+  errors: string[]; // 24 hourly error counts as strings
   battery: 0 | 1;
 }
 
-export type Showroom = 'katowice' | 'wroclaw' | 'poznan';
+// GET /api/v2/sensor/{serial}/updateddates
+export interface SensMaxUpdatedDates {
+  serial: string;
+  updated_data_dates: string[];
+}
 
-export interface RealtimeSnapshot {
+export interface ShowroomToday {
   showroom: Showroom;
-  inside: number | null;
-  max_capacity: number | null;
-  almost_full: number | null;
-  offline: boolean;
-  color: string | null;
-  message: string | null;
-  sensor_last_update: string | null;
-  fetched_at: string;
+  visitsToday: number;
+  lastEntryTime: string | null; // "HH:MM:SS"
+  sensorCount: number;
+  fetchedAt: string;
 }

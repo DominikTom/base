@@ -1,6 +1,6 @@
 import { getSupabaseAdmin } from '@/lib/supabase';
 
-type SyncKind = 'realtime' | 'historical' | 'sensor_list';
+type SyncKind = 'today' | 'historical' | 'sensor_list' | 'group_list';
 
 class SensMaxHttpError extends Error {
   constructor(
@@ -19,27 +19,44 @@ export async function logSyncEvent(input: {
   message?: string;
   durationMs?: number;
 }) {
-  await getSupabaseAdmin().from('sensmax_sync_log').insert({
-    kind: input.kind,
-    serial: input.serial ?? null,
-    status: input.status,
-    http_status: input.httpStatus ?? null,
-    message: input.message ?? null,
-    duration_ms: input.durationMs ?? null,
-  });
+  try {
+    await getSupabaseAdmin().from('sensmax_sync_log').insert({
+      kind: input.kind,
+      serial: input.serial ?? null,
+      status: input.status,
+      http_status: input.httpStatus ?? null,
+      message: input.message ?? null,
+      duration_ms: input.durationMs ?? null,
+    });
+  } catch {
+    /* best-effort logging */
+  }
 }
 
-export async function fetchSensMax<T>(path: string, kind: SyncKind, serial?: string): Promise<T> {
-  const baseUrl = process.env.SENSMAX_BASE_URL;
+interface FetchOpts {
+  serial?: string;
+  /** Use Next data cache with this TTL (seconds) instead of no-store. */
+  revalidateSec?: number;
+  /** Write a row to sensmax_sync_log for the outcome (default true). */
+  log?: boolean;
+}
+
+export async function fetchSensMax<T>(path: string, kind: SyncKind, opts: FetchOpts = {}): Promise<T> {
+  const { serial, revalidateSec, log = true } = opts;
+  const baseUrl = process.env.SENSMAX_BASE_URL || 'https://my.sensmax.eu/api/v2';
   const apiKey = process.env.SENSMAX_API_KEY;
 
-  if (!baseUrl || !apiKey) {
-    throw new Error('Missing SENSMAX_BASE_URL or SENSMAX_API_KEY');
+  if (!apiKey) {
+    throw new Error('Missing SENSMAX_API_KEY');
   }
 
-  const url = `${baseUrl}${path}`;
+  const url = `${baseUrl.replace(/\/+$/, '')}${path}`;
   const retries = [0, 2000, 5000];
   const started = Date.now();
+  const maybeLog = (event: Parameters<typeof logSyncEvent>[0]) => {
+    if (log) return logSyncEvent(event);
+    return Promise.resolve();
+  };
 
   for (let attempt = 0; attempt < retries.length; attempt += 1) {
     if (attempt > 0) {
@@ -53,29 +70,28 @@ export async function fetchSensMax<T>(path: string, kind: SyncKind, serial?: str
       const response = await fetch(url, {
         headers: { apikey: apiKey },
         signal: controller.signal,
-        cache: 'no-store',
+        ...(revalidateSec ? { next: { revalidate: revalidateSec } } : { cache: 'no-store' as RequestCache }),
       });
 
       if (!response.ok) {
         const body = await response.text();
         if (response.status === 429) {
-          await logSyncEvent({ kind, serial, status: 'rate_limited', httpStatus: 429, message: body, durationMs: Date.now() - started });
-          throw new SensMaxHttpError(`Rate limited: ${body}`, 429);
+          await maybeLog({ kind, serial, status: 'rate_limited', httpStatus: 429, message: body.slice(0, 500), durationMs: Date.now() - started });
+          throw new SensMaxHttpError(`Rate limited: ${body.slice(0, 200)}`, 429);
         }
         if (response.status >= 500 && attempt < retries.length - 1) {
           continue;
         }
-        await logSyncEvent({ kind, serial, status: 'http_error', httpStatus: response.status, message: body, durationMs: Date.now() - started });
-        throw new SensMaxHttpError(`HTTP ${response.status}: ${body}`, response.status);
+        await maybeLog({ kind, serial, status: 'http_error', httpStatus: response.status, message: body.slice(0, 500), durationMs: Date.now() - started });
+        throw new SensMaxHttpError(`HTTP ${response.status}: ${body.slice(0, 200)}`, response.status);
       }
 
       const contentType = response.headers.get('content-type') ?? '';
       const rawBody = await response.text();
 
       if (!contentType.toLowerCase().includes('application/json')) {
-        const snippet = rawBody.slice(0, 200);
-        const message = `Expected JSON from SensMax but got '${contentType || 'unknown'}'. Body starts with: ${snippet}`;
-        await logSyncEvent({ kind, serial, status: 'parse_error', httpStatus: response.status, message, durationMs: Date.now() - started });
+        const message = `Expected JSON from SensMax but got '${contentType || 'unknown'}'. Body: ${rawBody.slice(0, 200)}`;
+        await maybeLog({ kind, serial, status: 'parse_error', httpStatus: response.status, message, durationMs: Date.now() - started });
         throw new SensMaxHttpError(message, response.status);
       }
 
@@ -83,22 +99,21 @@ export async function fetchSensMax<T>(path: string, kind: SyncKind, serial?: str
       try {
         data = JSON.parse(rawBody) as T;
       } catch {
-        const snippet = rawBody.slice(0, 200);
-        const message = `Invalid JSON from SensMax. Body starts with: ${snippet}`;
-        await logSyncEvent({ kind, serial, status: 'parse_error', httpStatus: response.status, message, durationMs: Date.now() - started });
+        const message = `Invalid JSON from SensMax. Body: ${rawBody.slice(0, 200)}`;
+        await maybeLog({ kind, serial, status: 'parse_error', httpStatus: response.status, message, durationMs: Date.now() - started });
         throw new SensMaxHttpError(message, response.status);
       }
 
-      await logSyncEvent({ kind, serial, status: 'ok', durationMs: Date.now() - started });
+      await maybeLog({ kind, serial, status: 'ok', durationMs: Date.now() - started });
       return data;
     } catch (error) {
       if (error instanceof SensMaxHttpError) throw error;
       if (attempt < retries.length - 1) continue;
-      await logSyncEvent({
+      await maybeLog({
         kind,
         serial,
         status: 'parse_error',
-        message: error instanceof Error ? error.message : String(error),
+        message: (error instanceof Error ? error.message : String(error)).slice(0, 500),
         durationMs: Date.now() - started,
       });
       throw error;
