@@ -1,1 +1,1 @@
-export { default } from '@/app/dashboard/sensmax/page';
+export { default, dynamic } from '@/app/dashboard/sensmax/page';
