@@ -1,6 +1,7 @@
 'use client';
 
 import { Fragment, useEffect, useMemo, useState } from 'react';
+import { Users } from 'lucide-react';
 import {
   BarChart,
   Bar,
@@ -14,8 +15,9 @@ import {
 } from 'recharts';
 import { useDashboard } from '@/lib/dashboard-context';
 import { ChartCard } from '@/components/charts/chart-card';
+import { KpiCard } from '@/components/ui/kpi-card';
 import { DataTable, type Column } from '@/components/ui/data-table';
-import { SHOWROOMS, SHOWROOM_LABELS, SHOWROOM_COLORS, type Showroom } from '@/lib/sensmax/types';
+import { SHOWROOMS, SHOWROOM_LABELS, SHOWROOM_COLORS, type Showroom, type ShowroomToday } from '@/lib/sensmax/types';
 
 interface AllResponse {
   mode: 'all';
@@ -40,6 +42,7 @@ interface SingleResponse {
 const tooltipStyle = { backgroundColor: '#18181b', border: '1px solid #3f3f46', borderRadius: 8, fontSize: 12 } as const;
 const axisTick = { fontSize: 10, fill: '#71717a' } as const;
 const plNum = (n: number) => n.toLocaleString('pl-PL');
+const warsawDay = (ms: number) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Warsaw' }).format(new Date(ms));
 
 function mondayOf(dateStr: string): string {
   const d = new Date(`${dateStr}T00:00:00Z`);
@@ -62,12 +65,25 @@ export function ShowroomCharts() {
   const { filters } = useDashboard();
   const { dateFrom, dateTo } = filters;
 
+  const todayIso = useMemo(() => warsawDay(Date.now()), []);
+  const yesterdayIso = useMemo(() => warsawDay(Date.now() - 86_400_000), []);
+  const isTodayOnly = dateFrom === dateTo && dateTo === todayIso;
+  const rangeLabel = useMemo(() => {
+    if (dateFrom === dateTo) {
+      if (dateFrom === todayIso) return 'dziś';
+      if (dateFrom === yesterdayIso) return 'wczoraj';
+      return dateFrom;
+    }
+    return `${dateFrom} – ${dateTo}`;
+  }, [dateFrom, dateTo, todayIso, yesterdayIso]);
+
   const [selected, setSelected] = useState<Showroom>('katowice');
   const [agg, setAgg] = useState<'daily' | 'weekly'>('daily');
   const [hidden, setHidden] = useState<Set<Showroom>>(new Set());
 
   const [all, setAll] = useState<AllResponse | null>(null);
   const [single, setSingle] = useState<SingleResponse | null>(null);
+  const [todayData, setTodayData] = useState<Record<string, ShowroomToday> | null>(null);
   const [loadingAll, setLoadingAll] = useState(true);
   const [loadingSingle, setLoadingSingle] = useState(true);
 
@@ -108,6 +124,25 @@ export function ShowroomCharts() {
       alive = false;
     };
   }, [selected, dateFrom, dateTo]);
+
+  // live "today" snapshot — used for the cards when the range covers today
+  useEffect(() => {
+    let alive = true;
+    const load = () => {
+      fetch('/api/sensmax/today')
+        .then((r) => r.json())
+        .then((j) => {
+          if (alive && j && !j.error) setTodayData(j as Record<string, ShowroomToday>);
+        })
+        .catch(() => {});
+    };
+    load();
+    const id = setInterval(load, 5 * 60_000);
+    return () => {
+      alive = false;
+      clearInterval(id);
+    };
+  }, []);
 
   const activeShowrooms = useMemo(() => {
     const totals = all?.totals ?? {};
@@ -200,6 +235,21 @@ export function ShowroomCharts() {
       return next;
     });
 
+  // ── card value per showroom: live today (when range == today only),
+  //    otherwise the synced period total + today's live count if today isn't synced yet ──
+  const rangeCoversToday = dateFrom <= todayIso && dateTo >= todayIso;
+  const cardFor = (s: Showroom) => {
+    const periodTotal = all?.totals?.[s] ?? 0;
+    const live = todayData?.[s]?.visitsToday ?? 0;
+    const lastEntry = todayData?.[s]?.lastEntryTime ?? null;
+    if (isTodayOnly) {
+      return { value: live, sub: lastEntry ? `na żywo · ostatnie ${lastEntry.slice(0, 5)}` : 'na żywo · brak ruchu' };
+    }
+    const todaySynced = (all?.rows ?? []).some((r) => r.showroom === s && r.date === todayIso);
+    const addon = rangeCoversToday && !todaySynced ? live : 0;
+    return { value: periodTotal + addon, sub: `wejść · ${rangeLabel}` };
+  };
+
   const allHasData = !!all && all.rows.length > 0;
   const detailHasData = !!single && single.daily.length > 0;
   const detailTotal = (single?.daily ?? []).reduce((a, d) => a + d.visits, 0);
@@ -213,6 +263,14 @@ export function ShowroomCharts() {
 
   return (
     <div className="space-y-6">
+      {/* ── Karty: wejścia per showroom (zakres globalny) ─────────────────── */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {SHOWROOMS.map((s) => {
+          const { value, sub } = cardFor(s);
+          return <KpiCard key={s} title={SHOWROOM_LABELS[s]} value={plNum(value)} subLabel={sub} icon={<Users size={16} />} />;
+        })}
+      </div>
+
       {/* ── Porównanie showroomów ─────────────────────────────────────────── */}
       <ChartCard
         title="Porównanie showroomów"
@@ -268,7 +326,7 @@ export function ShowroomCharts() {
                     name={SHOWROOM_LABELS[s]}
                     stroke={SHOWROOM_COLORS[s]}
                     strokeWidth={2}
-                    dot={false}
+                    dot={compareData.length <= 1}
                     hide={hidden.has(s)}
                     connectNulls
                   />
@@ -282,7 +340,9 @@ export function ShowroomCharts() {
       {/* ── Zestawienie ───────────────────────────────────────────────────── */}
       {allHasData && (
         <div>
-          <h3 className="mb-2 text-sm font-medium text-zinc-200">Zestawienie ({all!.from} – {all!.to})</h3>
+          <h3 className="mb-2 text-sm font-medium text-zinc-200">
+            Zestawienie ({all!.from} – {all!.to})
+          </h3>
           <DataTable data={summaryRows} columns={summaryColumns} onRowClick={(r) => setSelected(r.showroom)} />
           <p className="mt-1.5 text-xs text-zinc-500">Kliknij wiersz, aby zobaczyć szczegóły showroomu poniżej.</p>
         </div>

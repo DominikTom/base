@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useCallback, type ReactNode } from 'react';
-import { format, subDays } from 'date-fns';
+import { format, subDays, startOfMonth, endOfMonth, subMonths } from 'date-fns';
 import type { Shop, CompareMode, DashboardFilters } from '@/types/database';
 
 export interface CrossFilter {
@@ -48,10 +48,15 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
   const applyPreset = useCallback((preset: string) => {
     const today = new Date();
     const fmt = (d: Date) => format(d, 'yyyy-MM-dd');
+    const set = (from: Date, to: Date) => setFilters(f => ({ ...f, dateFrom: fmt(from), dateTo: fmt(to) }));
     switch (preset) {
-      case '7d': setFilters(f => ({ ...f, dateFrom: fmt(subDays(today, 7)), dateTo: fmt(today) })); break;
-      case '30d': setFilters(f => ({ ...f, dateFrom: fmt(subDays(today, 30)), dateTo: fmt(today) })); break;
-      case '90d': setFilters(f => ({ ...f, dateFrom: fmt(subDays(today, 90)), dateTo: fmt(today) })); break;
+      case 'today': set(today, today); break;
+      case 'yesterday': { const y = subDays(today, 1); set(y, y); break; }
+      case '7d': set(subDays(today, 6), today); break;
+      case '30d': set(subDays(today, 29), today); break;
+      case '90d': set(subDays(today, 89), today); break;
+      case 'this_month': set(startOfMonth(today), today); break;
+      case 'prev_month': { const prev = subMonths(today, 1); set(startOfMonth(prev), endOfMonth(prev)); break; }
     }
   }, []);
 
