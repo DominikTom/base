@@ -33,6 +33,10 @@
     {
       "path": "/api/etl/meta-ad-sync",
       "schedule": "0 7 * * *"
+    },
+    {
+      "path": "/api/sensmax/sync",
+      "schedule": "0 4 * * *"
     }
   ]
 }
