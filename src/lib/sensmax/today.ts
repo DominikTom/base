@@ -1,5 +1,5 @@
 import { fetchSensMax } from './client';
-import { sensorsForShowroom, type SensMaxSensorDataDay, type Showroom, type ShowroomToday } from './types';
+import { SENSOR_DIVIDE_TWO, sensorsForShowroom, type SensMaxSensorDataDay, type Showroom, type ShowroomToday } from './types';
 
 const TODAY_TTL_SEC = 120;
 
@@ -27,12 +27,14 @@ export async function getShowroomToday(showroom: Showroom): Promise<ShowroomToda
           'today',
           { serial, revalidateSec: TODAY_TTL_SEC, log: false },
         );
+        let rawSum = 0;
         for (const day of days) {
           if (day.date !== date) continue;
-          for (const v of day.visits ?? []) visitsToday += Number.parseInt(v, 10) || 0;
+          for (const v of day.visits ?? []) rawSum += Number.parseInt(v, 10) || 0;
           const t = day.lastEntryTime;
           if (t && t !== '00:00:00' && (lastEntryTime === null || t > lastEntryTime)) lastEntryTime = t;
         }
+        visitsToday += SENSOR_DIVIDE_TWO[serial] ? Math.floor(rawSum / 2) : rawSum;
       } catch {
         /* a single sensor failing shouldn't blank the whole showroom card */
       }

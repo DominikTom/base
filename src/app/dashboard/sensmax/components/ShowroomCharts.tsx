@@ -386,7 +386,7 @@ export function ShowroomCharts() {
             </button>
           ))}
         </div>
-        <span className="text-zinc-600">konwersja = zamówienia ÷ wejścia (surowe wejścia z czujników)</span>
+        <span className="text-zinc-600">konwersja = zamówienia ÷ wejścia (wejścia jak w panelu SensMax — odczyt czujnika ÷ 2)</span>
       </div>
 
       {/* ── Porównanie wejść ──────────────────────────────────────────────── */}

@@ -33,6 +33,18 @@ export const SENSOR_SHOWROOM: Record<string, Showroom> = {
   '030013934': 'marki', // Marki My Bed
 };
 
+// Sensors configured with "divide by 2" in SensMax (bidirectional). The data
+// API returns the raw counter, ~2x what the panel shows — divide to match.
+export const SENSOR_DIVIDE_TWO: Record<string, boolean> = {
+  '030013966': true,
+  '030013921': true,
+  '030013965': true,
+  '030013946': true,
+  '030013954': true,
+  '030013916': true,
+  '030013934': true,
+};
+
 export function sensorsForShowroom(showroom: Showroom): string[] {
   return Object.entries(SENSOR_SHOWROOM)
     .filter(([, s]) => s === showroom)
