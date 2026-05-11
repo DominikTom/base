@@ -521,6 +521,14 @@ export function ShowroomCharts() {
               {plNum(detailVisits)} wejść · {plNum(detailMatchedOrders)} zam.{detailConv !== null ? ` · konw. ${detailConv}%` : ''} · {single!.from} – {single!.to}
             </span>
           )}
+          <a
+            href={`/dashboard/showroomy/raport?showroom=${selected}&from=${dateFrom}&to=${dateTo}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="ml-auto rounded-md border border-zinc-700 px-3 py-1.5 text-sm text-zinc-200 hover:bg-zinc-800"
+          >
+            Raport PDF — {SHOWROOM_LABELS[selected]}
+          </a>
         </div>
 
         {loadingSingle && <div className="text-sm text-zinc-500">Ładowanie…</div>}
