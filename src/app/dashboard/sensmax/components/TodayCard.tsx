@@ -31,8 +31,7 @@ export function TodayCard({ initial }: { initial: ShowroomToday }) {
     <KpiCard
       title={SHOWROOM_LABELS[data.showroom]}
       value={data.visitsToday.toLocaleString('pl-PL')}
-      subLabel={data.lastEntryTime ? `ostatnie wejście ${data.lastEntryTime.slice(0, 5)}` : 'brak wejść dziś'}
-      changeLabel="wejść dziś"
+      subLabel={data.lastEntryTime ? `wejść dziś — ostatnie ${data.lastEntryTime.slice(0, 5)}` : 'wejść dziś (brak ruchu)'}
       icon={<Users size={16} />}
     />
   );
