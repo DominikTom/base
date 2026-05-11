@@ -44,7 +44,19 @@ function Kpi({ label, value, sub }: { label: string; value: string; sub?: string
   );
 }
 
-export function ReportView({ showroom, from: fromProp, to: toProp }: { showroom: Showroom; from: string; to: string }) {
+export function ReportView({
+  showroom,
+  from: fromProp,
+  to: toProp,
+  sharePath,
+  publicMode = false,
+}: {
+  showroom: Showroom;
+  from: string;
+  to: string;
+  sharePath?: string;
+  publicMode?: boolean;
+}) {
   const to = /^\d{4}-\d{2}-\d{2}$/.test(toProp) ? toProp : warsawToday();
   const from = useMemo(() => {
     if (/^\d{4}-\d{2}-\d{2}$/.test(fromProp)) return fromProp;
@@ -55,6 +67,24 @@ export function ReportView({ showroom, from: fromProp, to: toProp }: { showroom:
 
   const [data, setData] = useState<Hist | null>(null);
   const [loading, setLoading] = useState(true);
+  const [copied, setCopied] = useState(false);
+
+  const copyShareLink = () => {
+    if (!sharePath) return;
+    const url = `${window.location.origin}${sharePath}`;
+    const clip = typeof navigator !== 'undefined' ? navigator.clipboard : undefined;
+    if (clip) {
+      clip.writeText(url).then(
+        () => {
+          setCopied(true);
+          setTimeout(() => setCopied(false), 2500);
+        },
+        () => window.prompt('Skopiuj link do raportu:', url),
+      );
+    } else {
+      window.prompt('Skopiuj link do raportu:', url);
+    }
+  };
 
   useEffect(() => {
     let alive = true;
@@ -150,14 +180,23 @@ export function ReportView({ showroom, from: fromProp, to: toProp }: { showroom:
     <div className="fixed inset-0 z-50 overflow-auto bg-zinc-100 print:static print:overflow-visible print:bg-white">
       <style dangerouslySetInnerHTML={{ __html: PRINT_CSS }} />
 
-      <div className="no-print sticky top-0 z-10 flex items-center gap-3 border-b border-zinc-300 bg-white px-6 py-3">
-        <button onClick={() => history.back()} className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm text-zinc-700 hover:bg-zinc-50">
-          ← Wróć
-        </button>
+      <div className="no-print sticky top-0 z-10 flex flex-wrap items-center gap-3 border-b border-zinc-300 bg-white px-6 py-3">
+        {!publicMode && (
+          <button onClick={() => history.back()} className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm text-zinc-700 hover:bg-zinc-50">
+            ← Wróć
+          </button>
+        )}
         <button onClick={() => window.print()} className="rounded-md bg-zinc-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-zinc-700">
           Pobierz PDF / drukuj
         </button>
-        <span className="text-sm text-zinc-500">W oknie drukowania wybierz „Zapisz jako PDF".</span>
+        {sharePath && (
+          <button onClick={copyShareLink} className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm text-zinc-700 hover:bg-zinc-50">
+            {copied ? 'Skopiowano link!' : 'Skopiuj link do wysłania'}
+          </button>
+        )}
+        <span className="text-sm text-zinc-500">
+          {sharePath ? 'Link można wysłać pracownikom — otwiera ten sam raport bez logowania.' : 'W oknie drukowania wybierz „Zapisz jako PDF".'}
+        </span>
       </div>
 
       <div id="sm-report" className="mx-auto max-w-[820px] bg-white p-8 text-zinc-900 print:p-0">
