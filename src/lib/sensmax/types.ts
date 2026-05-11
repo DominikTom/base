@@ -12,6 +12,16 @@ export const SHOWROOM_LABELS: Record<Showroom, string> = {
   marki: 'Marki',
 };
 
+export const SHOWROOM_COLORS: Record<Showroom, string> = {
+  krakow: '#3b82f6',
+  katowice: '#10b981',
+  warszawa: '#f59e0b',
+  poznan: '#ef4444',
+  wroclaw: '#8b5cf6',
+  nowa: '#ec4899',
+  marki: '#06b6d4',
+};
+
 // Mapping of SensMax sensor serial → showroom slug (from GET /api/v2/sensors).
 export const SENSOR_SHOWROOM: Record<string, Showroom> = {
   '030013966': 'krakow', // My Bed Krakow
