@@ -62,6 +62,11 @@ function mondayOf(dateStr: string): string {
   return d.toISOString().slice(0, 10);
 }
 
+const WEEKDAY_PL = ['nd', 'pn', 'wt', 'śr', 'cz', 'pt', 'so']; // 0 = Sunday
+const weekdayPl = (dateStr: string) => WEEKDAY_PL[new Date(`${dateStr}T00:00:00Z`).getUTCDay()];
+const dm = (dateStr: string) => `${dateStr.slice(8, 10)}.${dateStr.slice(5, 7)}`; // "09.04"
+const dayLabel = (dateStr: string) => `${weekdayPl(dateStr)} ${dm(dateStr)}`; // "śr 09.04"
+
 interface SummaryRow {
   showroom: Showroom;
   label: string;
@@ -204,7 +209,7 @@ export function ShowroomCharts() {
     const map = new Map<string, Record<string, number | string>>();
     for (const r of rows) {
       const bucket = agg === 'weekly' ? mondayOf(r.date) : r.date;
-      if (!map.has(bucket)) map.set(bucket, { name: bucket.slice(5), _key: bucket });
+      if (!map.has(bucket)) map.set(bucket, { name: agg === 'weekly' ? `tyg. ${dm(bucket)}` : dayLabel(bucket), _key: bucket });
       const o = map.get(bucket)!;
       o[r.showroom] = (Number(o[r.showroom]) || 0) + r.visits;
     }
@@ -229,7 +234,7 @@ export function ShowroomCharts() {
     }
     const weeks = [...new Set([...visitsByWeek.keys(), ...ordersByWeek.keys()])].sort();
     return weeks.map((w) => {
-      const point: Record<string, number | string | null> = { name: w.slice(5), _key: w };
+      const point: Record<string, number | string | null> = { name: `tyg. ${dm(w)}`, _key: w };
       for (const s of salesShowrooms) {
         const v = visitsByWeek.get(w)?.get(s) ?? 0;
         const o = ordersByWeek.get(w)?.get(s) ?? 0;
@@ -296,7 +301,7 @@ export function ShowroomCharts() {
   const detailDaily = useMemo(() => {
     const orders = new Map<string, number>();
     for (const r of single?.sales ?? []) orders.set(r.date, (orders.get(r.date) ?? 0) + ordersForRow(r));
-    return (single?.daily ?? []).map((d) => ({ name: d.date.slice(5), visits: d.visits, orders: orders.get(d.date) ?? 0 }));
+    return (single?.daily ?? []).map((d) => ({ name: dayLabel(d.date), visits: d.visits, orders: orders.get(d.date) ?? 0 }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [single, salesBasis]);
   const detailHourlyAvg = useMemo(() => {
@@ -572,13 +577,13 @@ export function ShowroomCharts() {
                     ))}
                     {heat.dates.map((date) => (
                       <Fragment key={date}>
-                        <div className="whitespace-nowrap pr-2 text-right text-[9px] text-zinc-500">{date.slice(5)}</div>
+                        <div className="whitespace-nowrap pr-2 text-right text-[9px] text-zinc-500">{dayLabel(date)}</div>
                         {heat.byDate.get(date)!.map((v, h) => {
                           const intensity = v / heat.max;
                           return (
                             <div
                               key={`${date}-${h}`}
-                              title={`${date} ${String(h).padStart(2, '0')}:00 — ${v} wejść`}
+                              title={`${weekdayPl(date)} ${date} ${String(h).padStart(2, '0')}:00 — ${v} wejść`}
                               className="h-4 w-4 rounded-[2px]"
                               style={{ backgroundColor: v === 0 ? '#27272a' : `rgba(59, 130, 246, ${0.15 + intensity * 0.85})` }}
                             />
