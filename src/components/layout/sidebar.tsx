@@ -17,12 +17,16 @@ import {
   PanelTop,
   Wallet,
   Database,
+  Sparkles,
+  Target,
 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { LogOut } from 'lucide-react';
 
 const NAV_ITEMS = [
   { href: '/dashboard/my', label: 'Mój Dashboard', icon: PanelTop, adminOnly: false },
+  { href: '/dashboard/chat', label: 'Asystent AI', icon: Sparkles, adminOnly: false },
+  { href: '/dashboard/kpi', label: 'KPI', icon: Target, adminOnly: false },
   { href: '/dashboard/overview', label: 'Przegląd', icon: LayoutDashboard, adminOnly: false },
   { href: '/dashboard/revenue', label: 'Revenue & Zamówienia', icon: TrendingUp, adminOnly: false },
   { href: '/dashboard/marketing', label: 'Marketing', icon: Megaphone, adminOnly: false },

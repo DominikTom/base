@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabase';
+import { ALLOWED_X_AXES, ALLOWED_Y_AXES, ALLOWED_GROUP_BY, FILTERABLE_FIELDS } from '@/lib/explorer-whitelist';
 
 type ExplorerFilterOperator = 'eq' | 'neq' | 'contains' | 'not_contains' | 'starts_with' | 'ends_with' | 'in' | 'gt' | 'gte' | 'lt' | 'lte' | 'between' | 'is_null' | 'not_null';
 
@@ -9,17 +10,6 @@ interface ExplorerFilter {
   value?: string | number | boolean | Array<string | number>;
   value_to?: string | number;
 }
-
-const FILTERABLE_FIELDS = [
-  'source_shop', 'source_platform', 'supplier', 'status', 'delivery_city', 'coupon_code',
-  'product_name', 'product_category', 'fabric_collection', 'fabric', 'bed_size', 'headboard_height', 'storage_type',
-  'total_gross_pln', 'quantity',
-];
-
-// Whitelist of allowed columns for security
-const ALLOWED_X_AXES = ['date', 'source_shop', 'product_category', 'fabric_collection', 'supplier', 'source_platform'];
-const ALLOWED_Y_AXES = ['revenue_gross', 'orders_count', 'avg_order_value', 'quantity'];
-const ALLOWED_GROUP_BY = ['source_shop', 'product_category', 'supplier', 'source_platform', 'fabric_collection'];
 
 export async function POST(request: NextRequest) {
   try {

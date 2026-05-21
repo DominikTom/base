@@ -15,9 +15,8 @@ import {
   type DashboardData,
 } from '@/lib/dashboard-store';
 import { Plus, RotateCcw, X, Save, Star, Trash2, Pencil, Check } from 'lucide-react';
-
-type AdvancedFilter = { field: string; operator: string; value: string; value_to?: string };
-type SchemaDimension = { field: string; label: string; type: string; operators: string[] };
+import { ExplorerQueryBuilder } from '@/components/dashboard/explorer-query-builder';
+import type { AdvancedFilter } from '@/lib/explorer-whitelist';
 
 const MAX_LAYOUTS = 5;
 
@@ -44,19 +43,6 @@ export default function MyDashboardPage() {
     granularity: 'day',
     filters_advanced: [] as AdvancedFilter[],
   });
-  const [schemaDimensions, setSchemaDimensions] = useState<SchemaDimension[]>([]);
-
-  useEffect(() => {
-    async function loadSchema() {
-      try {
-        const res = await fetch('/api/dashboard/schema');
-        if (!res.ok) return;
-        const json = await res.json();
-        setSchemaDimensions(json.dimensions || []);
-      } catch {}
-    }
-    loadSchema();
-  }, []);
 
   // Load from DB on mount
   useEffect(() => {
@@ -192,32 +178,6 @@ export default function MyDashboardPage() {
   }, [activeLayout, updateLayout]);
 
 
-
-  const addAdvancedFilter = useCallback(() => {
-    const first = schemaDimensions[0];
-    if (!first) return;
-    setCustomWidgetDraft(v => ({
-      ...v,
-      filters_advanced: [
-        ...(v.filters_advanced as AdvancedFilter[]),
-        { field: first.field, operator: first.operators[0] || 'eq', value: '' },
-      ],
-    }));
-  }, [schemaDimensions]);
-
-  const updateAdvancedFilter = useCallback((index: number, patch: Partial<AdvancedFilter>) => {
-    setCustomWidgetDraft(v => ({
-      ...v,
-      filters_advanced: (v.filters_advanced as AdvancedFilter[]).map((f, i) => i === index ? { ...f, ...patch } : f),
-    }));
-  }, []);
-
-  const removeAdvancedFilter = useCallback((index: number) => {
-    setCustomWidgetDraft(v => ({
-      ...v,
-      filters_advanced: (v.filters_advanced as AdvancedFilter[]).filter((_, i) => i !== index),
-    }));
-  }, []);
 
   // Explicit save button handler
   const handleExplicitSave = useCallback(() => {
@@ -402,56 +362,20 @@ export default function MyDashboardPage() {
       {customWidgetDialogOpen && (
         <div className="p-3 rounded-lg bg-zinc-800/50 border border-zinc-700 space-y-3">
           <div className="text-sm font-medium text-zinc-200">Kreator własnego widgetu</div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-            <input value={customWidgetDraft.title} onChange={e => setCustomWidgetDraft(v => ({ ...v, title: e.target.value }))} placeholder="Nazwa widgetu" className="px-3 py-2 rounded bg-zinc-900 border border-zinc-700 text-sm text-zinc-200" />
-            <select value={customWidgetDraft.chart_type} onChange={e => setCustomWidgetDraft(v => ({ ...v, chart_type: e.target.value }))} className="px-3 py-2 rounded bg-zinc-900 border border-zinc-700 text-sm text-zinc-200">
-              <option value="bar">Słupkowy</option><option value="line">Liniowy</option><option value="area">Warstwowy</option><option value="pie">Kołowy</option><option value="table">Tabela</option>
-            </select>
-            <select value={customWidgetDraft.granularity} onChange={e => setCustomWidgetDraft(v => ({ ...v, granularity: e.target.value }))} className="px-3 py-2 rounded bg-zinc-900 border border-zinc-700 text-sm text-zinc-200">
-              <option value="day">Dzień</option><option value="week">Tydzień</option><option value="month">Miesiąc</option><option value="quarter">Kwartał</option>
-            </select>
-            <select value={customWidgetDraft.x_axis} onChange={e => setCustomWidgetDraft(v => ({ ...v, x_axis: e.target.value }))} className="px-3 py-2 rounded bg-zinc-900 border border-zinc-700 text-sm text-zinc-200">
-              <option value="date">Data</option><option value="source_shop">Sklep</option><option value="product_category">Kategoria produktu</option><option value="supplier">Dostawca</option><option value="source_platform">Platforma</option>
-            </select>
-            <select value={customWidgetDraft.y_axis} onChange={e => setCustomWidgetDraft(v => ({ ...v, y_axis: e.target.value }))} className="px-3 py-2 rounded bg-zinc-900 border border-zinc-700 text-sm text-zinc-200">
-              <option value="revenue_gross">Revenue brutto</option><option value="orders_count">Liczba zamówień</option><option value="avg_order_value">Średnia wartość zamówienia</option>
-            </select>
-            <select value={customWidgetDraft.group_by} onChange={e => setCustomWidgetDraft(v => ({ ...v, group_by: e.target.value }))} className="px-3 py-2 rounded bg-zinc-900 border border-zinc-700 text-sm text-zinc-200">
-              <option value="">Bez grupowania</option><option value="source_shop">Sklep</option><option value="product_category">Kategoria</option><option value="supplier">Dostawca</option><option value="source_platform">Platforma</option>
-            </select>
-          </div>
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <div className="text-xs text-zinc-400">Filtry zaawansowane (Looker-style)</div>
-              <button onClick={addAdvancedFilter} className="text-xs px-2 py-1 rounded bg-zinc-700 hover:bg-zinc-600">+ filtr</button>
-            </div>
-            {(customWidgetDraft.filters_advanced as AdvancedFilter[]).map((f, idx) => {
-              const dim = schemaDimensions.find(d => d.field === f.field) || schemaDimensions[0];
-              const operators = dim?.operators || ['eq'];
-              const hideValue = f.operator === 'is_null' || f.operator === 'not_null';
-              const needsTo = f.operator === 'between';
-              const isIn = f.operator === 'in';
-              return (
-                <div key={idx} className="grid grid-cols-1 md:grid-cols-12 gap-2 items-center">
-                  <select value={f.field} onChange={e => updateAdvancedFilter(idx, { field: e.target.value, operator: (schemaDimensions.find(d => d.field === e.target.value)?.operators?.[0]) || 'eq', value: '', value_to: '' })} className="md:col-span-3 px-3 py-2 rounded bg-zinc-900 border border-zinc-700 text-xs text-zinc-200">
-                    {schemaDimensions.map(d => <option key={d.field} value={d.field}>{d.label}</option>)}
-                  </select>
-                  <select value={f.operator} onChange={e => updateAdvancedFilter(idx, { operator: e.target.value })} className="md:col-span-2 px-3 py-2 rounded bg-zinc-900 border border-zinc-700 text-xs text-zinc-200">
-                    {operators.map(op => <option key={op} value={op}>{op}</option>)}
-                  </select>
-                  {!hideValue && (
-                    <input value={f.value || ''} onChange={e => updateAdvancedFilter(idx, { value: e.target.value })} placeholder={isIn ? 'np. sofa, łóżko, materac' : 'wartość'} className="md:col-span-3 px-3 py-2 rounded bg-zinc-900 border border-zinc-700 text-xs text-zinc-200" />
-                  )}
-                  {needsTo && (
-                    <input value={f.value_to || ''} onChange={e => updateAdvancedFilter(idx, { value_to: e.target.value })} placeholder="do" className="md:col-span-2 px-3 py-2 rounded bg-zinc-900 border border-zinc-700 text-xs text-zinc-200" />
-                  )}
-                  {hideValue && <div className="md:col-span-5 text-[11px] text-zinc-500">Ten operator nie wymaga wartości.</div>}
-                  <button onClick={() => removeAdvancedFilter(idx)} className="md:col-span-2 px-3 py-2 rounded bg-red-950/50 border border-red-800 text-xs text-red-300">Usuń</button>
-                </div>
-              );
-            })}
-            <p className="text-[11px] text-zinc-500">Tip: dla operatora "in" podaj wiele wartości oddzielone przecinkiem.</p>
-          </div>
+          <input
+            value={customWidgetDraft.title}
+            onChange={e => setCustomWidgetDraft(v => ({ ...v, title: e.target.value }))}
+            placeholder="Nazwa widgetu"
+            className="w-full px-3 py-2 rounded bg-zinc-900 border border-zinc-700 text-sm text-zinc-200"
+          />
+          <ExplorerQueryBuilder
+            value={customWidgetDraft}
+            onChange={qs => setCustomWidgetDraft(v => ({
+              ...v, ...qs,
+              group_by: qs.group_by ?? '',
+              filters_advanced: qs.filters_advanced ?? [],
+            }))}
+          />
           <div className="flex gap-2">
             <button onClick={handleUpdateCustomWidgetConfig} className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded">Zapisz konfigurację</button>
             <button onClick={() => setCustomWidgetDialogOpen(false)} className="px-3 py-1.5 text-zinc-500 hover:text-zinc-300 text-xs">Anuluj</button>
