@@ -9,15 +9,22 @@
 --   2. Funkcja ai_run_readonly_query() — SECURITY DEFINER należąca do
 --      ai_readonly. Wykonuje zapytanie wygenerowane przez AI w transakcji
 --      read-only, z limitem czasu i twardym LIMIT-em 1000 wierszy.
---      Wywoływana wyłącznie przez service_role (API /api/assistant/query).
+--      EXECUTE ma wyłącznie service_role (API /api/assistant/chat).
 --
--- UWAGA OPERACYJNA: tę migrację musi zastosować administrator bazy
--- (Supabase SQL editor lub `supabase db push`). Tworzy rolę i funkcję
--- SECURITY DEFINER — zmiany uprawnień, nie tylko schematu.
+-- Uwagi do środowiska Supabase (wynikają z faktycznego wdrożenia):
+--   - `GRANT ai_readonly TO CURRENT_USER` z domyślnym INHERIT ubija
+--     połączenie (ochrona Supabase przed eskalacją uprawnień roli postgres).
+--     Dlatego używamy `WITH INHERIT FALSE, SET TRUE` — to wystarcza do
+--     przepisania właściciela funkcji, bez dziedziczenia uprawnień.
+--   - Zmiana właściciela na ai_readonly wymaga, by ai_readonly miała
+--     chwilowo CREATE na schemacie public (Postgres sprawdza to dla
+--     nowego właściciela). Nadajemy i od razu odbieramy.
+--   - Domyślne przywileje Supabase nadają EXECUTE na nowych funkcjach
+--     rolom anon/authenticated. REVOKE musi wykonać WŁAŚCICIEL funkcji
+--     (ai_readonly), inaczej jest cichym no-opem.
 -- ============================================================
 
--- Rola o minimalnych uprawnieniach. NOLOGIN — nie da się na nią zalogować,
--- używana tylko jako właściciel funkcji SECURITY DEFINER poniżej.
+-- 1. Rola o minimalnych uprawnieniach (NOLOGIN — brak logowania).
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'ai_readonly') THEN
@@ -25,15 +32,12 @@ BEGIN
   END IF;
 END $$;
 
--- Rola wykonująca migrację musi być członkiem ai_readonly, żeby móc
--- przepisać na nią właściciela funkcji (ALTER FUNCTION ... OWNER TO).
-GRANT ai_readonly TO CURRENT_USER;
+-- 2. Rola migracji musi móc SET ROLE ai_readonly (do ALTER ... OWNER).
+--    INHERIT FALSE — bez tego Supabase zrywa połączenie.
+GRANT ai_readonly TO CURRENT_USER WITH INHERIT FALSE, SET TRUE;
 
--- Widoczność schematu public, ale żadnych uprawnień do tabel poza listą.
+-- 3. Uprawnienia odczytu — jawna, zamknięta lista tabel analitycznych.
 GRANT USAGE ON SCHEMA public TO ai_readonly;
-
--- SELECT wyłącznie na jawnej liście tabel analitycznych.
--- (NIE GRANT ON ALL TABLES — lista jest celowo zamknięta.)
 GRANT SELECT ON
   fact_orders,
   fact_order_items,
@@ -48,16 +52,8 @@ GRANT SELECT ON
   etl_log
 TO ai_readonly;
 
--- Belt-and-braces: odbierz jakiekolwiek prawa zapisu, gdyby coś było
--- odziedziczone z PUBLIC.
-REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON ALL TABLES IN SCHEMA public FROM ai_readonly;
-
--- ------------------------------------------------------------
--- Funkcja wykonująca zapytanie AI.
--- SECURITY DEFINER → kod działa z uprawnieniami WŁAŚCICIELA funkcji
--- (ai_readonly), a nie wywołującego (service_role). Dzięki temu AI nie
--- ma dostępu do tabel spoza GRANT-u powyżej, nawet jeśli service_role ma.
--- ------------------------------------------------------------
+-- 4. Funkcja wykonująca zapytanie AI. SECURITY DEFINER → kod działa z
+--    uprawnieniami WŁAŚCICIELA (ai_readonly), nie wywołującego.
 CREATE OR REPLACE FUNCTION ai_run_readonly_query(query_text text)
 RETURNS jsonb
 LANGUAGE plpgsql
@@ -67,16 +63,13 @@ AS $$
 DECLARE
   result jsonb;
 BEGIN
-  -- Twarde zabezpieczenia na poziomie transakcji. transaction_read_only
-  -- sprawia, że jakikolwiek zapis (INSERT/UPDATE/DELETE/DDL) zostanie
-  -- odrzucony przez silnik bazy, niezależnie od treści zapytania.
+  -- Twarde zabezpieczenia na poziomie transakcji.
   SET LOCAL transaction_read_only = on;
   SET LOCAL statement_timeout = '8s';
   SET LOCAL idle_in_transaction_session_timeout = '10s';
 
   -- Zapytanie AI trafia w pozycję PODZAPYTANIA — średnik nie pozwoli
-  -- doklejić drugiej instrukcji (rozbije składnię), a wynik jest twardo
-  -- ograniczony do 1000 wierszy.
+  -- doklejić drugiej instrukcji, wynik twardo ograniczony do 1000 wierszy.
   EXECUTE format(
     'SELECT jsonb_agg(row_to_json(sub)) FROM (SELECT * FROM (%s) ai_q LIMIT 1000) sub',
     query_text
@@ -86,9 +79,15 @@ BEGIN
 END;
 $$;
 
--- Właścicielem funkcji jest rola o minimalnych uprawnieniach.
+-- 5. Właścicielem funkcji ma być rola o minimalnych uprawnieniach.
+--    Nowy właściciel potrzebuje chwilowo CREATE na schemacie public.
+GRANT CREATE ON SCHEMA public TO ai_readonly;
 ALTER FUNCTION ai_run_readonly_query(text) OWNER TO ai_readonly;
+REVOKE CREATE ON SCHEMA public FROM ai_readonly;
 
--- Tylko API (service_role) może wywołać funkcję. Nie anon, nie authenticated.
-REVOKE ALL ON FUNCTION ai_run_readonly_query(text) FROM PUBLIC;
+-- 6. Tylko service_role (API) może wywołać funkcję. REVOKE od anon/
+--    authenticated MUSI wykonać właściciel (ai_readonly).
+SET ROLE ai_readonly;
+REVOKE EXECUTE ON FUNCTION ai_run_readonly_query(text) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION ai_run_readonly_query(text) TO service_role;
+RESET ROLE;
