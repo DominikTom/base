@@ -5,13 +5,6 @@ import type { AdvancedFilter, QuerySpec } from '@/lib/explorer-whitelist';
 
 type SchemaDimension = { field: string; label: string; type: string; operators: string[] };
 
-const CHART_TYPES = [
-  { value: 'bar', label: 'Słupkowy' },
-  { value: 'line', label: 'Liniowy' },
-  { value: 'area', label: 'Warstwowy' },
-  { value: 'pie', label: 'Kołowy' },
-  { value: 'table', label: 'Tabela' },
-];
 const GRANULARITIES = [
   { value: 'day', label: 'Dzień' },
   { value: 'week', label: 'Tydzień' },
@@ -94,13 +87,7 @@ export function ExplorerQueryBuilder({ value, onChange }: Props) {
 
   return (
     <div className="space-y-3">
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-        <select value={value.chart_type} onChange={e => patch({ chart_type: e.target.value })} className={SELECT}>
-          {CHART_TYPES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>
-        <select value={value.granularity} onChange={e => patch({ granularity: e.target.value })} className={SELECT}>
-          {GRANULARITIES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
         <select value={value.x_axis} onChange={e => patch({ x_axis: e.target.value })} className={SELECT}>
           {X_AXES.map(o => <option key={o.value} value={o.value}>Oś X: {o.label}</option>)}
         </select>
@@ -109,6 +96,9 @@ export function ExplorerQueryBuilder({ value, onChange }: Props) {
         </select>
         <select value={value.group_by || ''} onChange={e => patch({ group_by: e.target.value })} className={SELECT}>
           {GROUP_BY.map(o => <option key={o.value} value={o.value}>Grupowanie: {o.label}</option>)}
+        </select>
+        <select value={value.granularity} onChange={e => patch({ granularity: e.target.value })} className={SELECT}>
+          {GRANULARITIES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
       </div>
 

@@ -50,7 +50,7 @@ export const TOOL_DEFINITIONS: Anthropic.Tool[] = [
   {
     name: 'show_chart',
     description:
-      'Wyświetla wykres w panelu artefaktów czatu. Przekaż MAŁY, już zagregowany zbiór danych (najlepiej < 100 punktów).',
+      'Wyświetla wykres w czacie. Przekaż MAŁY, już zagregowany zbiór danych (najlepiej < 100 punktów). Jeśli wykres odpowiada standardowemu zapytaniu (oś data/sklep/kategoria/dostawca/platforma × metryka revenue/orders/aov/quantity), dołącz query_spec — wtedy użytkownik będzie mógł zapisać wykres jako KPI.',
     input_schema: {
       type: 'object',
       properties: {
@@ -66,6 +66,17 @@ export const TOOL_DEFINITIONS: Anthropic.Tool[] = [
           type: 'array',
           items: { type: 'object' },
           description: 'Tablica obiektów, każdy z x_key oraz kluczami z series.',
+        },
+        query_spec: {
+          type: 'object',
+          description: 'Opcjonalnie: config umożliwiający zapis wykresu jako KPI. Filtry (np. sklep) wpisz w filters_advanced.',
+          properties: {
+            x_axis: { type: 'string' },
+            y_axis: { type: 'string' },
+            group_by: { type: 'string' },
+            granularity: { type: 'string', enum: ['day', 'week', 'month', 'quarter'] },
+            filters_advanced: { type: 'array', items: { type: 'object' } },
+          },
         },
       },
       required: ['title', 'chart_type', 'x_key', 'series', 'data'],
@@ -185,6 +196,22 @@ function handleShowChart(input: Record<string, unknown>): ToolOutcome {
     return err('show_chart wymaga niepustych pól data i series.');
   }
   const title = String(input.title || 'Wykres');
+
+  // Opcjonalny query_spec — gdy poprawny, pozwala zapisać wykres jako KPI.
+  let querySpec: QuerySpec | undefined;
+  if (input.query_spec && typeof input.query_spec === 'object') {
+    const raw = input.query_spec as Record<string, unknown>;
+    const candidate: QuerySpec = {
+      chart_type: chartType,
+      x_axis: String(raw.x_axis || 'date'),
+      y_axis: String(raw.y_axis || 'revenue_gross'),
+      group_by: raw.group_by ? String(raw.group_by) : '',
+      granularity: String(raw.granularity || 'month'),
+      filters_advanced: Array.isArray(raw.filters_advanced) ? raw.filters_advanced : [],
+    };
+    if (validateQuerySpec(candidate).length === 0) querySpec = candidate;
+  }
+
   return {
     content: JSON.stringify({ ok: true, points: data.length }),
     artifact: {
@@ -194,6 +221,7 @@ function handleShowChart(input: Record<string, unknown>): ToolOutcome {
       x_key: String(input.x_key || 'x'),
       series,
       data: data.slice(0, 500),
+      query_spec: querySpec,
     },
     step: { kind: 'chart', label: title },
   };

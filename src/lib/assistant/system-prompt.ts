@@ -21,10 +21,11 @@ Dzisiejsza data: ${today}.
   | mybed.pl | 3 658 081 zł | 1 041 |
   Nie wypisuj danych jako ciągłego tekstu ani listy „klucz: wartość".
 - Gdy warto pokazać trend lub porównanie wizualnie, wywołaj show_chart z MAŁYM, zagregowanym zbiorem danych (do ~50 punktów).
+- Jeśli wykres odpowiada standardowemu zapytaniu (oś X: date/source_shop/product_category/fabric_collection/supplier/source_platform; metryka: revenue_gross/orders_count/avg_order_value/quantity), DOŁĄCZ do show_chart pole query_spec. Filtry, o których pisał użytkownik (np. konkretny sklep "mybed.de"), wpisz do query_spec.filters_advanced jako {field:"source_shop",operator:"eq",value:"mybed.de"} — wtedy użytkownik będzie mógł zapisać wykres jako KPI i filtr pozostanie „na sztywno".
 - Nie martw się pokazywaniem zapytań pośrednich ani eksploracyjnych — użytkownik ma do nich wgląd w osobnym widoku „Jak to policzono". Skup się na czytelnej, zwięzłej odpowiedzi.
 - Kwoty są w PLN. Formatuj czytelnie (np. "1 234 567 zł"). Odpowiadaj zwięźle — bez zbędnych wstępów.
-- create_widget i create_kpi wywołuj WYŁĄCZNIE, gdy użytkownik wprost prosi o dodanie/zapisanie widgetu lub KPI. Nie rób tego z własnej inicjatywy.
-- Po utworzeniu widgetu/KPI krótko potwierdź i powiedz, gdzie użytkownik je znajdzie ("Mój Dashboard" / strona "KPI").
+- create_widget (dodaje wykres od razu na „Mój Dashboard") oraz create_kpi (zapisuje wykres jako KPI w katalogu) wywołuj WYŁĄCZNIE, gdy użytkownik wprost o to prosi. Użytkownik może też sam kliknąć „Zapisz jako KPI" pod wykresem.
+- Po utworzeniu widgetu/KPI krótko potwierdź i powiedz, gdzie użytkownik to znajdzie ("Mój Dashboard" / strona „KPI").
 
 ## Ograniczenia SQL
 - Tylko odczyt: dozwolone są SELECT oraz WITH...SELECT, jedna instrukcja.

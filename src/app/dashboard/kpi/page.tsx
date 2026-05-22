@@ -3,15 +3,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Plus, X, Pencil, Trash2, LayoutDashboard, Check } from 'lucide-react';
 import { ExplorerQueryBuilder, EMPTY_QUERY_SPEC } from '@/components/dashboard/explorer-query-builder';
+import { ChartTypePicker } from '@/components/dashboard/chart-type-picker';
+import { addCustomWidgetToDashboard } from '@/lib/dashboard-actions';
 import type { QuerySpec } from '@/lib/explorer-whitelist';
-import { getWidgetDef } from '@/lib/widget-definitions';
-import {
-  migrateToMultiLayout,
-  createDefaultDashboardData,
-  generateWidgetId,
-  type DashboardData,
-  type WidgetInstance,
-} from '@/lib/dashboard-store';
 
 interface KpiDefinition {
   id: string;
@@ -21,6 +15,7 @@ interface KpiDefinition {
   tier: string;
   value_type: string;
   query_spec: QuerySpec;
+  created_by: string | null;
 }
 
 interface KpiDraft {
@@ -53,6 +48,7 @@ export default function KpiPage() {
   const [kpis, setKpis] = useState<KpiDefinition[]>([]);
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -77,7 +73,7 @@ export default function KpiPage() {
     loadKpis();
     fetch('/api/user')
       .then(r => (r.ok ? r.json() : null))
-      .then(j => setIsAdmin(j?.profile?.role === 'admin'))
+      .then(j => { setIsAdmin(j?.profile?.role === 'admin'); setUserId(j?.user?.id || null); })
       .catch(() => {});
   }, [loadKpis]);
 
@@ -102,6 +98,10 @@ export default function KpiPage() {
     setTab('basic');
     setSaveError(null);
     setModalOpen(true);
+  }
+
+  function patchSpec(p: Partial<QuerySpec>) {
+    setDraft(d => ({ ...d, query_spec: { ...d.query_spec, ...p } }));
   }
 
   async function saveKpi() {
@@ -132,41 +132,15 @@ export default function KpiPage() {
     } catch { /* ignore */ }
   }
 
-  // Dodaje KPI jako widget custom_explorer na "Mój Dashboard".
   async function addToDashboard(k: KpiDefinition) {
-    try {
-      const profileRes = await fetch('/api/user');
-      const profileJson = profileRes.ok ? await profileRes.json() : null;
-      const raw = profileJson?.profile?.dashboard_layout;
-      const dashData: DashboardData = raw ? migrateToMultiLayout(raw) : createDefaultDashboardData();
-      const layout = dashData.layouts.find(l => l.id === dashData.defaultLayoutId) || dashData.layouts[0];
-      if (!layout) return;
-
-      const def = getWidgetDef('custom_explorer');
-      const widget: WidgetInstance = {
-        id: generateWidgetId(),
-        type: 'custom_explorer',
-        x: 0,
-        y: Infinity,
-        w: def?.defaultSize.w ?? 8,
-        h: def?.defaultSize.h ?? 5,
-        config: { title: k.name, ...k.query_spec },
-      };
-      layout.widgets = [...layout.widgets, widget];
-      layout.updatedAt = new Date().toISOString();
-
-      const res = await fetch('/api/user', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'save_dashboard_data', data: dashData }),
-      });
-      if (res.ok) {
-        setAddedId(k.id);
-        setTimeout(() => setAddedId(null), 2500);
-      }
-    } catch { /* ignore */ }
+    const result = await addCustomWidgetToDashboard(k.name, k.query_spec);
+    if (result.ok) {
+      setAddedId(k.id);
+      setTimeout(() => setAddedId(null), 2500);
+    }
   }
 
+  const canEdit = (k: KpiDefinition) => isAdmin || (!!userId && k.created_by === userId);
   const categories = [...new Set(kpis.map(k => k.category))].sort();
 
   return (
@@ -174,29 +148,25 @@ export default function KpiPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-semibold text-zinc-100">KPI</h1>
-          <p className="text-sm text-zinc-500">Wspólny rejestr wskaźników. Dodaj wybrane KPI na swój dashboard.</p>
+          <p className="text-sm text-zinc-500">Twórz wskaźniki i wykresy, dodawaj je na swój dashboard.</p>
         </div>
-        {isAdmin && (
-          <button
-            onClick={openNew}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
-          >
-            <Plus size={16} />
-            Nowy KPI
-          </button>
-        )}
+        <button
+          onClick={openNew}
+          className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+        >
+          <Plus size={16} />
+          Nowy KPI
+        </button>
       </div>
 
       {loading ? (
         <div className="text-zinc-500 animate-pulse">Ładowanie KPI…</div>
       ) : kpis.length === 0 ? (
         <div className="flex flex-col items-center justify-center h-64 gap-3 border-2 border-dashed border-zinc-800 rounded-xl">
-          <p className="text-zinc-500">Rejestr KPI jest pusty.</p>
-          {isAdmin && (
-            <button onClick={openNew} className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-lg">
-              <Plus size={16} /> Dodaj pierwsze KPI
-            </button>
-          )}
+          <p className="text-zinc-500">Nie masz jeszcze żadnych KPI.</p>
+          <button onClick={openNew} className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-lg">
+            <Plus size={16} /> Stwórz pierwsze KPI
+          </button>
         </div>
       ) : (
         categories.map(cat => (
@@ -229,7 +199,7 @@ export default function KpiPage() {
                       {addedId === k.id ? <Check size={13} /> : <LayoutDashboard size={13} />}
                       {addedId === k.id ? 'Dodano' : 'Dodaj do dashboardu'}
                     </button>
-                    {isAdmin && (
+                    {canEdit(k) && (
                       <>
                         <button onClick={() => openEdit(k)} className="p-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-400" title="Edytuj">
                           <Pencil size={13} />
@@ -268,12 +238,12 @@ export default function KpiPage() {
                     tab === t ? 'border-blue-500 text-zinc-100' : 'border-transparent text-zinc-500 hover:text-zinc-300'
                   }`}
                 >
-                  {t === 'basic' ? 'Podstawowe' : 'Zapytanie'}
+                  {t === 'basic' ? 'Podstawowe' : 'Wykres i dane'}
                 </button>
               ))}
             </div>
 
-            <div className="p-5 max-h-[60vh] overflow-y-auto">
+            <div className="p-5 max-h-[62vh] overflow-y-auto">
               {tab === 'basic' ? (
                 <div className="space-y-3">
                   <div>
@@ -283,6 +253,7 @@ export default function KpiPage() {
                       onChange={e => setDraft(d => ({ ...d, name: e.target.value }))}
                       placeholder="np. Przychód brutto"
                       className="w-full mt-1 px-3 py-2 rounded bg-zinc-900 border border-zinc-700 text-sm text-zinc-200"
+                      autoFocus
                     />
                   </div>
                   <div>
@@ -333,10 +304,22 @@ export default function KpiPage() {
                   </div>
                 </div>
               ) : (
-                <ExplorerQueryBuilder
-                  value={draft.query_spec}
-                  onChange={qs => setDraft(d => ({ ...d, query_spec: qs }))}
-                />
+                <div className="space-y-4">
+                  <div>
+                    <label className="text-xs text-zinc-500 block mb-1.5">Typ wykresu</label>
+                    <ChartTypePicker
+                      value={draft.query_spec.chart_type}
+                      onChange={ct => patchSpec({ chart_type: ct })}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-zinc-500 block mb-1.5">Dane i filtry</label>
+                    <ExplorerQueryBuilder
+                      value={draft.query_spec}
+                      onChange={qs => setDraft(d => ({ ...d, query_spec: qs }))}
+                    />
+                  </div>
+                </div>
               )}
             </div>
 

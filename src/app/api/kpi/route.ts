@@ -40,14 +40,11 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST → tworzy definicję KPI (tylko admin)
+// POST → tworzy definicję KPI (każdy zalogowany użytkownik)
 export async function POST(request: NextRequest) {
   try {
-    const { user, supabase } = await getAuthUser();
+    const { user } = await getAuthUser();
     if (!user) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
-    if (!(await isAdmin(supabase, user.id))) {
-      return NextResponse.json({ error: 'Tylko administrator może dodawać KPI' }, { status: 403 });
-    }
 
     const body = await request.json();
     const name = typeof body.name === 'string' ? body.name.trim() : '';
@@ -77,16 +74,33 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// PUT ?id= → aktualizuje definicję KPI (tylko admin)
+// Czy użytkownik może modyfikować dane KPI: autor lub administrator.
+async function canModifyKpi(
+  supabase: Awaited<ReturnType<typeof getAuthUser>>['supabase'],
+  userId: string,
+  kpiId: string,
+): Promise<{ ok: boolean; found: boolean }> {
+  const { data } = await getSupabaseAdmin()
+    .from('kpi_definitions')
+    .select('created_by')
+    .eq('id', kpiId)
+    .single();
+  if (!data) return { ok: false, found: false };
+  if (data.created_by === userId) return { ok: true, found: true };
+  return { ok: await isAdmin(supabase, userId), found: true };
+}
+
+// PUT ?id= → aktualizuje definicję KPI (autor lub admin)
 export async function PUT(request: NextRequest) {
   try {
     const { user, supabase } = await getAuthUser();
     if (!user) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
-    if (!(await isAdmin(supabase, user.id))) {
-      return NextResponse.json({ error: 'Tylko administrator może edytować KPI' }, { status: 403 });
-    }
     const id = new URL(request.url).searchParams.get('id');
     if (!id) return NextResponse.json({ error: 'Brak id' }, { status: 400 });
+
+    const perm = await canModifyKpi(supabase, user.id, id);
+    if (!perm.found) return NextResponse.json({ error: 'Nie znaleziono KPI' }, { status: 404 });
+    if (!perm.ok) return NextResponse.json({ error: 'Możesz edytować tylko swoje KPI' }, { status: 403 });
 
     const body = await request.json();
     const spec = normalizeSpec(body.query_spec);
@@ -113,16 +127,17 @@ export async function PUT(request: NextRequest) {
   }
 }
 
-// DELETE ?id= → usuwa definicję KPI (tylko admin)
+// DELETE ?id= → usuwa definicję KPI (autor lub admin)
 export async function DELETE(request: NextRequest) {
   try {
     const { user, supabase } = await getAuthUser();
     if (!user) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
-    if (!(await isAdmin(supabase, user.id))) {
-      return NextResponse.json({ error: 'Tylko administrator może usuwać KPI' }, { status: 403 });
-    }
     const id = new URL(request.url).searchParams.get('id');
     if (!id) return NextResponse.json({ error: 'Brak id' }, { status: 400 });
+
+    const perm = await canModifyKpi(supabase, user.id, id);
+    if (!perm.found) return NextResponse.json({ error: 'Nie znaleziono KPI' }, { status: 404 });
+    if (!perm.ok) return NextResponse.json({ error: 'Możesz usuwać tylko swoje KPI' }, { status: 403 });
 
     const { error } = await getSupabaseAdmin().from('kpi_definitions').delete().eq('id', id);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });

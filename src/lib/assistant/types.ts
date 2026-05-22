@@ -1,5 +1,7 @@
 // Typy współdzielone między backendem asystenta a UI czatu.
 
+import type { QuerySpec } from '@/lib/explorer-whitelist';
+
 export type Artifact =
   | {
       type: 'table';
@@ -15,6 +17,9 @@ export type Artifact =
       x_key: string;
       series: string[];
       data: Record<string, unknown>[];
+      // Gdy wykres odpowiada standardowemu configowi — pozwala zapisać go
+      // jako KPI (przycisk "Zapisz jako KPI" w czacie).
+      query_spec?: QuerySpec;
     }
   | {
       type: 'widget_created';

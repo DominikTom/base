@@ -15,8 +15,6 @@ import {
   type DashboardData,
 } from '@/lib/dashboard-store';
 import { Plus, RotateCcw, X, Save, Star, Trash2, Pencil, Check } from 'lucide-react';
-import { ExplorerQueryBuilder } from '@/components/dashboard/explorer-query-builder';
-import type { AdvancedFilter } from '@/lib/explorer-whitelist';
 
 const MAX_LAYOUTS = 5;
 
@@ -33,16 +31,6 @@ export default function MyDashboardPage() {
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [saveError, setSaveError] = useState<string | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
-  const [customWidgetDialogOpen, setCustomWidgetDialogOpen] = useState(false);
-  const [customWidgetDraft, setCustomWidgetDraft] = useState({
-    title: 'Własny widget',
-    chart_type: 'bar',
-    x_axis: 'date',
-    y_axis: 'revenue_gross',
-    group_by: '',
-    granularity: 'day',
-    filters_advanced: [] as AdvancedFilter[],
-  });
 
   // Load from DB on mount
   useEffect(() => {
@@ -109,7 +97,7 @@ export default function MyDashboardPage() {
     setHasUnsavedChanges(true);
   }, [dashData]);
 
-  const handleAddWidget = useCallback((type: string) => {
+  const handleAddWidget = useCallback((type: string, config?: Record<string, unknown>) => {
     if (!activeLayout) return;
     const def = getWidgetDef(type);
     if (!def) return;
@@ -120,29 +108,14 @@ export default function MyDashboardPage() {
       y: Infinity,
       w: def.defaultSize.w,
       h: def.defaultSize.h,
-      config: type === 'custom_explorer' ? { ...customWidgetDraft } : undefined,
+      config,
     };
     updateLayout({
       ...activeLayout,
       widgets: [...activeLayout.widgets, newWidget],
       updatedAt: new Date().toISOString(),
     });
-    if (type === 'custom_explorer') {
-      setCustomWidgetDialogOpen(true);
-    }
-  }, [activeLayout, updateLayout, customWidgetDraft]);
-
-  const handleUpdateCustomWidgetConfig = useCallback(() => {
-    if (!activeLayout) return;
-    const lastCustomWidget = [...activeLayout.widgets].reverse().find(w => w.type === 'custom_explorer');
-    if (!lastCustomWidget) return;
-    updateLayout({
-      ...activeLayout,
-      widgets: activeLayout.widgets.map(w => w.id === lastCustomWidget.id ? { ...w, config: { ...customWidgetDraft } } : w),
-      updatedAt: new Date().toISOString(),
-    });
-    setCustomWidgetDialogOpen(false);
-  }, [activeLayout, updateLayout, customWidgetDraft]);
+  }, [activeLayout, updateLayout]);
 
   const handleRemoveWidget = useCallback((id: string) => {
     if (!activeLayout) return;
@@ -355,31 +328,6 @@ export default function MyDashboardPage() {
           <button onClick={() => setRenameId(null)} className="px-3 py-1.5 text-zinc-500 hover:text-zinc-300 text-xs">
             Anuluj
           </button>
-        </div>
-      )}
-
-      {/* Save as dialog */}
-      {customWidgetDialogOpen && (
-        <div className="p-3 rounded-lg bg-zinc-800/50 border border-zinc-700 space-y-3">
-          <div className="text-sm font-medium text-zinc-200">Kreator własnego widgetu</div>
-          <input
-            value={customWidgetDraft.title}
-            onChange={e => setCustomWidgetDraft(v => ({ ...v, title: e.target.value }))}
-            placeholder="Nazwa widgetu"
-            className="w-full px-3 py-2 rounded bg-zinc-900 border border-zinc-700 text-sm text-zinc-200"
-          />
-          <ExplorerQueryBuilder
-            value={customWidgetDraft}
-            onChange={qs => setCustomWidgetDraft(v => ({
-              ...v, ...qs,
-              group_by: qs.group_by ?? '',
-              filters_advanced: qs.filters_advanced ?? [],
-            }))}
-          />
-          <div className="flex gap-2">
-            <button onClick={handleUpdateCustomWidgetConfig} className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded">Zapisz konfigurację</button>
-            <button onClick={() => setCustomWidgetDialogOpen(false)} className="px-3 py-1.5 text-zinc-500 hover:text-zinc-300 text-xs">Anuluj</button>
-          </div>
         </div>
       )}
 

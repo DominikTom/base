@@ -1,12 +1,14 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
 import {
   BarChart, Bar, LineChart, Line, AreaChart, Area, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts';
-import { LayoutDashboard, BarChart3, AlertTriangle } from 'lucide-react';
+import { LayoutDashboard, BarChart3, AlertTriangle, Check } from 'lucide-react';
 import { formatNumber } from '@/lib/utils';
+import { addCustomWidgetToDashboard } from '@/lib/dashboard-actions';
 import type { Artifact } from '@/lib/assistant/types';
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#f97316', '#06b6d4', '#ec4899', '#84cc16', '#14b8a6'];
@@ -88,8 +90,50 @@ export function ArtifactRenderer({ artifact }: { artifact: Artifact }) {
     );
   }
 
-  // chart
-  const { chart_type, x_key, series, data, title } = artifact;
+  return <ChartArtifact artifact={artifact} />;
+}
+
+function ChartArtifact({ artifact }: { artifact: Extract<Artifact, { type: 'chart' }> }) {
+  const { chart_type, x_key, series, data, title, query_spec } = artifact;
+  const [mode, setMode] = useState<'idle' | 'form' | 'saving' | 'saved'>('idle');
+  const [name, setName] = useState(title);
+  const [category, setCategory] = useState('Ogólne');
+  const [error, setError] = useState<string | null>(null);
+  const [dashAdded, setDashAdded] = useState(false);
+
+  async function addToDash() {
+    if (!query_spec) return;
+    const r = await addCustomWidgetToDashboard(name.trim() || title, query_spec);
+    if (r.ok) setDashAdded(true);
+  }
+
+  async function saveAsKpi() {
+    if (!name.trim() || !query_spec) return;
+    setMode('saving');
+    setError(null);
+    try {
+      const res = await fetch('/api/kpi', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: name.trim(),
+          category: category.trim() || 'Ogólne',
+          tier: 'standard',
+          value_type: 'number',
+          query_spec,
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) { setError(json.error || `HTTP ${res.status}`); setMode('form'); return; }
+      setMode('saved');
+    } catch (e) {
+      setError(String(e));
+      setMode('form');
+    }
+  }
+
+  const fieldCls = 'px-2.5 py-1.5 rounded bg-zinc-950 border border-zinc-700 text-xs text-zinc-200';
+
   return (
     <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-3">
       <div className="text-xs font-medium text-zinc-300 mb-2">{title}</div>
@@ -143,6 +187,51 @@ export function ArtifactRenderer({ artifact }: { artifact: Artifact }) {
           </BarChart>
         )}
       </ResponsiveContainer>
+
+      {query_spec && (
+        <div className="mt-2 pt-2 border-t border-zinc-800">
+          {mode === 'saved' ? (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <span className="inline-flex items-center gap-1.5 text-[11px] text-emerald-400">
+                <Check size={13} /> Zapisano jako KPI „{name}”.
+              </span>
+              <Link href="/dashboard/kpi" className="text-[11px] text-blue-400 hover:underline">
+                Zakładka KPI
+              </Link>
+              {dashAdded ? (
+                <span className="text-[11px] text-emerald-400">Dodano na dashboard</span>
+              ) : (
+                <button onClick={addToDash} className="text-[11px] text-blue-400 hover:underline">
+                  + Dodaj na dashboard
+                </button>
+              )}
+            </div>
+          ) : mode === 'form' || mode === 'saving' ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <input value={name} onChange={e => setName(e.target.value)} placeholder="Nazwa KPI" className={`${fieldCls} flex-1 min-w-[140px]`} />
+              <input value={category} onChange={e => setCategory(e.target.value)} placeholder="Kategoria" className={`${fieldCls} w-32`} />
+              <button
+                onClick={saveAsKpi}
+                disabled={mode === 'saving' || !name.trim()}
+                className="px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium disabled:opacity-50"
+              >
+                {mode === 'saving' ? 'Zapisywanie…' : 'Zapisz'}
+              </button>
+              <button onClick={() => setMode('idle')} className="px-2 py-1.5 text-xs text-zinc-500 hover:text-zinc-300">
+                Anuluj
+              </button>
+              {error && <span className="text-[11px] text-red-400 w-full">{error}</span>}
+            </div>
+          ) : (
+            <button
+              onClick={() => setMode('form')}
+              className="inline-flex items-center gap-1.5 text-[11px] text-zinc-400 hover:text-blue-400 transition-colors"
+            >
+              <BarChart3 size={12} /> Zapisz jako KPI
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

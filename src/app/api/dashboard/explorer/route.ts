@@ -11,6 +11,11 @@ interface ExplorerFilter {
   value_to?: string | number;
 }
 
+// Wymiary z poziomu pozycji zamówienia (nie zamówienia).
+const ITEM_LEVEL_DIMS = new Set(['product_category', 'fabric_collection']);
+// Pola filtrów dotyczące pozycji (wymagają dociągnięcia v_order_items).
+const ITEM_FILTER_FIELDS = new Set(['product_name', 'product_category', 'fabric_collection', 'fabric', 'bed_size', 'headboard_height', 'storage_type', 'quantity', 'is_sample']);
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -31,8 +36,6 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: `Invalid filter field: ${f.field}` }, { status: 400 });
       }
     }
-
-    // Validate inputs
     if (!ALLOWED_X_AXES.includes(x_axis)) {
       return NextResponse.json({ error: `Invalid x_axis: ${x_axis}` }, { status: 400 });
     }
@@ -43,208 +46,153 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: `Invalid group_by: ${group_by}` }, { status: 400 });
     }
 
-    // Decide which table to query. fact_daily_revenue jest prelagregowane i
-    // nie ma danych pozycji — gdy filtr dotyczy pozycji (np. is_sample),
-    // musimy iść ścieżką fact_orders + v_order_items.
-    const itemScopedFields = new Set(['product_name', 'product_category', 'fabric_collection', 'fabric', 'bed_size', 'headboard_height', 'storage_type', 'quantity', 'is_sample']);
-    const hasItemScopedAdvancedFilter = advancedFilters.some(f => itemScopedFields.has(f.field));
-    if (x_axis === 'date' && !hasItemScopedAdvancedFilter && ['revenue_gross', 'orders_count', 'avg_order_value'].includes(y_axis)) {
-      // Use fact_daily_revenue
-      return handleRevenueExplorer({ x_axis, y_axis, group_by, date_from, date_to, filters, granularity, advancedFilters });
-    }
-
-    // Use fact_orders + fact_order_items
-    return handleOrderExplorer({ x_axis, y_axis, group_by, date_from, date_to, filters, granularity, advancedFilters });
+    return handleExplorer({ x_axis, y_axis, group_by, date_from, date_to, filters, granularity, advancedFilters });
   } catch (err) {
     console.error('Explorer API error:', err);
     return NextResponse.json({ error: String(err) }, { status: 500 });
   }
 }
 
-async function handleRevenueExplorer(params: {
-  x_axis: string; y_axis: string; group_by?: string;
-  date_from: string; date_to: string; filters: Record<string, string[]>;
-  granularity: string;
-  advancedFilters: ExplorerFilter[];
-}) {
-  let query = getSupabaseAdmin()
-    .from('fact_daily_revenue')
-    .select('*')
-    .gte('date', params.date_from)
-    .lte('date', params.date_to)
-    .order('date', { ascending: true });
-
-  if (params.filters.shop?.length) {
-    query = query.in('source_shop', params.filters.shop);
-  }
-
-  query = applySupabaseFilters(query, params.advancedFilters, ['source_shop', 'source_platform', 'supplier', 'status']);
-
-  const { data, error } = await query.limit(50000);
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-
-  // Group by granularity
-  function getKey(date: string): string {
-    const d = new Date(date);
-    switch (params.granularity) {
-      case 'week': {
-        const sw = new Date(d);
-        sw.setDate(d.getDate() - ((d.getDay() + 6) % 7));
-        return sw.toISOString().split('T')[0];
-      }
-      case 'month': return date.substring(0, 7);
-      case 'quarter': return `${d.getFullYear()}-Q${Math.floor(d.getMonth() / 3) + 1}`;
-      default: return date;
+function dateKey(dateStr: string, granularity: string): string {
+  const d = new Date(dateStr);
+  switch (granularity) {
+    case 'week': {
+      const sw = new Date(d);
+      sw.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+      return sw.toISOString().split('T')[0];
     }
+    case 'month': return dateStr.substring(0, 7);
+    case 'quarter': return `${d.getFullYear()}-Q${Math.floor(d.getMonth() / 3) + 1}`;
+    default: return dateStr.substring(0, 10);
   }
-
-  const grouped: Record<string, Record<string, number>> = {};
-  for (const row of data || []) {
-    const xKey = getKey(row.date);
-    const gKey = params.group_by ? (row as Record<string, unknown>)[params.group_by] as string || 'unknown' : 'total';
-
-    if (!grouped[xKey]) grouped[xKey] = {};
-
-    let value = 0;
-    switch (params.y_axis) {
-      case 'revenue_gross': value = row.revenue_gross_pln || 0; break;
-      case 'orders_count': value = row.orders_count || 0; break;
-      case 'avg_order_value': value = row.avg_order_value_pln || 0; break;
-    }
-
-    grouped[xKey][gKey] = (grouped[xKey][gKey] || 0) + value;
-  }
-
-  // For AOV, recompute the average
-  if (params.y_axis === 'avg_order_value') {
-    const revGrouped: Record<string, Record<string, number>> = {};
-    const countGrouped: Record<string, Record<string, number>> = {};
-    for (const row of data || []) {
-      const xKey = getKey(row.date);
-      const gKey = params.group_by ? (row as Record<string, unknown>)[params.group_by] as string || 'unknown' : 'total';
-      if (!revGrouped[xKey]) revGrouped[xKey] = {};
-      if (!countGrouped[xKey]) countGrouped[xKey] = {};
-      revGrouped[xKey][gKey] = (revGrouped[xKey][gKey] || 0) + (row.revenue_gross_pln || 0);
-      countGrouped[xKey][gKey] = (countGrouped[xKey][gKey] || 0) + (row.orders_count || 0);
-    }
-    for (const xKey of Object.keys(grouped)) {
-      for (const gKey of Object.keys(grouped[xKey])) {
-        const count = countGrouped[xKey]?.[gKey] || 0;
-        const rev = revGrouped[xKey]?.[gKey] || 0;
-        grouped[xKey][gKey] = count > 0 ? Math.round(rev / count) : 0;
-      }
-    }
-  }
-
-  const groups = new Set<string>();
-  for (const vals of Object.values(grouped)) {
-    for (const g of Object.keys(vals)) groups.add(g);
-  }
-
-  const chartData = Object.entries(grouped)
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([key, values]) => ({
-      x: key,
-      ...Object.fromEntries([...groups].map(g => [g, Math.round(values[g] || 0)])),
-    }));
-
-  return NextResponse.json({
-    data: chartData,
-    groups: [...groups],
-    meta: {
-      total_rows: chartData.length,
-      date_range: { from: params.date_from, to: params.date_to },
-    },
-  });
 }
 
-async function handleOrderExplorer(params: {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function dimValue(dim: string, item: any, order: any, granularity: string): string {
+  switch (dim) {
+    case 'date': return dateKey(order?.order_date || '', granularity);
+    case 'source_shop': return order?.source_shop || 'unknown';
+    case 'source_platform': return order?.source_platform || 'unknown';
+    case 'supplier': return order?.supplier || 'Brak';
+    case 'product_category': return (item?.product_category as string) || 'Brak';
+    case 'fabric_collection': return (item?.fabric_collection as string) || 'Brak';
+    default: return 'unknown';
+  }
+}
+
+// Dociąga pozycje (v_order_items) dla zadanych zamówień, w paczkach —
+// .in() z tysiącami id rozsadziłoby długość zapytania.
+async function fetchItems(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  db: any,
+  orderIds: string[],
+): Promise<Array<Record<string, unknown>>> {
+  const out: Array<Record<string, unknown>> = [];
+  const CHUNK = 300;
+  for (let i = 0; i < orderIds.length; i += CHUNK) {
+    const chunk = orderIds.slice(i, i + CHUNK);
+    const { data } = await db
+      .from('v_order_items')
+      .select('order_id, product_name, product_category, fabric_collection, fabric, bed_size, headboard_height, storage_type, quantity, is_sample')
+      .in('order_id', chunk)
+      .not('item_type', 'in', '("shipping","service","surcharge")')
+      .limit(20000);
+    if (data) out.push(...data);
+  }
+  return out;
+}
+
+interface ExplorerParams {
   x_axis: string; y_axis: string; group_by?: string;
-  date_from: string; date_to: string; filters: Record<string, string[]>;
+  date_from: string; date_to: string;
+  filters: Record<string, string[]>;
   granularity: string;
   advancedFilters: ExplorerFilter[];
-}) {
-  let query = getSupabaseAdmin()
+}
+
+// Jedna ścieżka zapytań: zawsze fact_orders (+ v_order_items, gdy potrzebne).
+// fact_daily_revenue jest puste, dlatego nie używamy go już wcale.
+async function handleExplorer(params: ExplorerParams) {
+  const db = getSupabaseAdmin();
+
+  // 1. Zamówienia
+  let query = db
     .from('fact_orders')
     .select('order_id, order_date, source_shop, source_platform, supplier, total_gross_pln, status')
     .gte('order_date', params.date_from)
     .lte('order_date', params.date_to + 'T23:59:59');
 
-  if (params.filters.shop?.length) {
-    query = query.in('source_shop', params.filters.shop);
-  }
-  if (params.filters.supplier?.length) {
-    query = query.in('supplier', params.filters.supplier);
-  }
-  if (params.filters.status?.length) {
-    query = query.in('status', params.filters.status);
-  }
-
+  if (params.filters.shop?.length) query = query.in('source_shop', params.filters.shop);
+  if (params.filters.supplier?.length) query = query.in('supplier', params.filters.supplier);
+  if (params.filters.status?.length) query = query.in('status', params.filters.status);
   query = applySupabaseFilters(query, params.advancedFilters, ['source_shop', 'source_platform', 'supplier', 'status', 'delivery_city', 'coupon_code', 'total_gross_pln']);
 
-  const { data: orders, error } = await query.limit(50000);
+  const { data: ordersRaw, error } = await query.limit(50000);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  const orders = ordersRaw || [];
 
-  // For product-level/grouping OR item-scoped advanced filters, we need items too
+  // 2. Pozycje — gdy wymiar/grupowanie jest na poziomie pozycji, gdy mierzymy
+  //    ilość sztuk, albo gdy jest filtr dotyczący pozycji.
+  const xItem = ITEM_LEVEL_DIMS.has(params.x_axis);
+  const gItem = ITEM_LEVEL_DIMS.has(params.group_by || '');
+  const hasItemFilter = params.advancedFilters.some(f => ITEM_FILTER_FIELDS.has(f.field));
+  const needItems = xItem || gItem || hasItemFilter || params.y_axis === 'quantity';
+
   let items: Array<Record<string, unknown>> = [];
-  const itemFilterFields = new Set(['product_name', 'product_category', 'fabric_collection', 'fabric', 'bed_size', 'headboard_height', 'storage_type', 'quantity', 'is_sample']);
-  const hasItemScopedFilter = params.advancedFilters.some(f => itemFilterFields.has(f.field));
-  if (['product_category', 'fabric_collection'].includes(params.x_axis) ||
-      ['product_category', 'fabric_collection'].includes(params.group_by || '') ||
-      hasItemScopedFilter) {
-    const { data: itemData } = await getSupabaseAdmin()
-      .from('v_order_items')
-      .select('order_id, product_name, product_category, fabric_collection, fabric, bed_size, headboard_height, storage_type, quantity, is_sample')
-      .in('order_id', (orders || []).map(o => o.order_id))
-      .not('item_type', 'in', '("shipping","service","surcharge")')
-      .limit(50000);
-    items = itemData || [];
+  if (needItems && orders.length) {
+    items = await fetchItems(db, orders.map((o: { order_id: string }) => o.order_id));
   }
 
+  // 3. Filtr pozycji → zawężenie zamówień
   const orderIdFilter = buildOrderIdFilterFromItemFilters(params.advancedFilters, items);
-  const filteredOrders = orderIdFilter ? (orders || []).filter(o => orderIdFilter.has(o.order_id)) : (orders || []);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const orderById = new Map<string, any>(orders.map((o: { order_id: string }) => [o.order_id, o]));
+  const filteredOrders = orderIdFilter ? orders.filter((o: { order_id: string }) => orderIdFilter.has(o.order_id)) : orders;
+  const filteredOrderIds = new Set(filteredOrders.map((o: { order_id: string }) => o.order_id));
 
-  // Build grouped data
-  const grouped: Record<string, Record<string, number>> = {};
+  // Suma sztuk na zamówienie (do alokacji przychodu i miary "quantity").
+  const qtyByOrder: Record<string, number> = {};
+  for (const it of items) {
+    const oid = String(it.order_id);
+    qtyByOrder[oid] = (qtyByOrder[oid] || 0) + (Number(it.quantity) || 0);
+  }
 
-  for (const order of filteredOrders) {
-    let xKey: string;
-    switch (params.x_axis) {
-      case 'date': {
-        const d = new Date(order.order_date);
-        switch (params.granularity) {
-          case 'week': {
-            const sw = new Date(d);
-            sw.setDate(d.getDate() - ((d.getDay() + 6) % 7));
-            xKey = sw.toISOString().split('T')[0];
-            break;
-          }
-          case 'month': xKey = order.order_date.substring(0, 7); break;
-          case 'quarter': xKey = `${d.getFullYear()}-Q${Math.floor(d.getMonth() / 3) + 1}`; break;
-          default: xKey = order.order_date.substring(0, 10);
-        }
-        break;
-      }
-      case 'source_shop': xKey = order.source_shop; break;
-      case 'source_platform': xKey = order.source_platform; break;
-      case 'supplier': xKey = order.supplier || 'Brak'; break;
-      default: xKey = 'unknown';
-    }
-
-    const gKey = params.group_by
-      ? (order as Record<string, unknown>)[params.group_by] as string || 'unknown'
-      : 'total';
-
+  type Agg = { revenue: number; orderIds: Set<string>; quantity: number };
+  const grouped: Record<string, Record<string, Agg>> = {};
+  function bucket(xKey: string, gKey: string): Agg {
     if (!grouped[xKey]) grouped[xKey] = {};
+    if (!grouped[xKey][gKey]) grouped[xKey][gKey] = { revenue: 0, orderIds: new Set(), quantity: 0 };
+    return grouped[xKey][gKey];
+  }
 
-    let value = 0;
-    switch (params.y_axis) {
-      case 'revenue_gross': value = order.total_gross_pln || 0; break;
-      case 'orders_count': value = 1; break;
-      default: value = order.total_gross_pln || 0;
+  const itemGrain = xItem || gItem;
+  if (itemGrain) {
+    // Ziarno pozycji — przychód alokujemy proporcjonalnie do liczby sztuk
+    // w zamówieniu (zamówienia są wieloliniowe, brak ceny per linia).
+    for (const it of items) {
+      const oid = String(it.order_id);
+      if (!filteredOrderIds.has(oid)) continue;
+      const order = orderById.get(oid);
+      if (!order) continue;
+      const xKey = dimValue(params.x_axis, it, order, params.granularity);
+      const gKey = params.group_by ? dimValue(params.group_by, it, order, params.granularity) : 'total';
+      const agg = bucket(xKey, gKey);
+      const itemQty = Number(it.quantity) || 0;
+      agg.quantity += itemQty;
+      agg.orderIds.add(oid);
+      const totalQty = qtyByOrder[oid] || 0;
+      if (totalQty > 0) agg.revenue += (Number(order.total_gross_pln) || 0) * (itemQty / totalQty);
     }
-
-    grouped[xKey][gKey] = (grouped[xKey][gKey] || 0) + value;
+  } else {
+    // Ziarno zamówienia
+    for (const order of filteredOrders) {
+      const xKey = dimValue(params.x_axis, null, order, params.granularity);
+      const gKey = params.group_by ? dimValue(params.group_by, null, order, params.granularity) : 'total';
+      const agg = bucket(xKey, gKey);
+      agg.revenue += Number(order.total_gross_pln) || 0;
+      agg.orderIds.add(order.order_id);
+      agg.quantity += qtyByOrder[order.order_id] || 0;
+    }
   }
 
   const groups = new Set<string>();
@@ -252,11 +200,22 @@ async function handleOrderExplorer(params: {
     for (const g of Object.keys(vals)) groups.add(g);
   }
 
+  function measure(agg: Agg): number {
+    const orderCount = agg.orderIds.size;
+    switch (params.y_axis) {
+      case 'orders_count': return orderCount;
+      case 'avg_order_value': return orderCount > 0 ? agg.revenue / orderCount : 0;
+      case 'quantity': return agg.quantity;
+      case 'revenue_gross':
+      default: return agg.revenue;
+    }
+  }
+
   const chartData = Object.entries(grouped)
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([key, values]) => ({
       x: key,
-      ...Object.fromEntries([...groups].map(g => [g, Math.round(values[g] || 0)])),
+      ...Object.fromEntries([...groups].map(g => [g, values[g] ? Math.round(measure(values[g])) : 0])),
     }));
 
   return NextResponse.json({
@@ -298,8 +257,7 @@ function applySupabaseFilters(query: any, filters: ExplorerFilter[], allowedFiel
 }
 
 function buildOrderIdFilterFromItemFilters(filters: ExplorerFilter[], items: Array<Record<string, unknown>>): Set<string> | null {
-  const itemFields = new Set(['product_name', 'product_category', 'fabric_collection', 'fabric', 'bed_size', 'headboard_height', 'storage_type', 'quantity', 'is_sample']);
-  const itemFilters = filters.filter(f => itemFields.has(f.field));
+  const itemFilters = filters.filter(f => ITEM_FILTER_FIELDS.has(f.field));
   if (!itemFilters.length) return null;
   const matching = items.filter(item => itemFilters.every(f => matchFilter(item[f.field], f)));
   return new Set(matching.map(r => String(r.order_id)));
