@@ -114,7 +114,8 @@ export async function POST(request: NextRequest) {
         const chunk = validIds.slice(i, i + CHUNK);
 
         function buildItemQ() {
-          let q = db.from('fact_order_items')
+          // v_order_items = fact_order_items + wyliczona flaga is_sample
+          let q = db.from('v_order_items')
             .select(select + ', order_id')
             .in('order_id', chunk);
           if (extraFilters?.eq) {
@@ -232,14 +233,13 @@ export async function POST(request: NextRequest) {
         const paymentRate = totals.orders > 0 ? (totals.ordersPaid / totals.orders) * 100 : 0;
 
         let bedOrders = 0, sampleOrders = 0, bedQty = 0, sampleQty = 0;
-        const bedPattern = /łóżko|łożko|bett|boxspring/i;
-        const samplePattern = /próbk|muster|sample/i;
 
         if (widget === 'kpi_orders_beds' || widget === 'kpi_qty_beds') {
-          const items = await iqSafe('product_name, quantity');
+          // Łóżko = realny produkt (is_sample=false) w kategorii 'łóżko'.
+          const items = await iqSafe('product_category, is_sample, quantity');
           const bedOrderIds = new Set<string>();
           for (const i of items) {
-            if (bedPattern.test(i.product_name || '')) {
+            if (!i.is_sample && String(i.product_category || '') === 'łóżko') {
               bedOrderIds.add(i.order_id);
               bedQty += (i.quantity || 1);
             }
@@ -248,10 +248,11 @@ export async function POST(request: NextRequest) {
           Object.assign(debug, { query: widget === 'kpi_qty_beds' ? 'SUM(quantity)' : 'COUNT DISTINCT order_id', itemsFound: items.length, uniqueOrders: bedOrders, totalQty: bedQty, ordersInRange: (await getValidOrderIds()).length });
         }
         if (widget === 'kpi_orders_samples' || widget === 'kpi_qty_samples') {
-          const items = await iqSafe('product_name, product_category, quantity');
+          // Próbki = v_order_items.is_sample (flaga z migracji 011).
+          const items = await iqSafe('is_sample, quantity');
           const sampleOrderIds = new Set<string>();
           for (const i of items) {
-            if (i.product_category === 'próbki' || samplePattern.test(i.product_name || '')) {
+            if (i.is_sample) {
               sampleOrderIds.add(i.order_id);
               sampleQty += (i.quantity || 1);
             }
@@ -265,10 +266,10 @@ export async function POST(request: NextRequest) {
           kpi_revenue_paid: { value: totals.paid, format: 'currency', debugQuery: 'SUM(total_gross_pln) for paid orders' },
           kpi_revenue_unpaid: { value: unpaid, format: 'currency', debugQuery: 'revenue - paid' },
           kpi_orders: { value: totals.orders, format: 'number', debugQuery: 'COUNT(*) from fact_orders' },
-          kpi_orders_beds: { value: bedOrders, format: 'number', debugQuery: 'COUNT DISTINCT order_id WHERE product_name contains łóżko/bett/boxspring' },
-          kpi_qty_beds: { value: bedQty, format: 'number', debugQuery: 'SUM(quantity) WHERE product_name contains łóżko/bett/boxspring' },
-          kpi_orders_samples: { value: sampleOrders, format: 'number', debugQuery: 'COUNT DISTINCT order_id WHERE product_name contains próbk/muster/sample' },
-          kpi_qty_samples: { value: sampleQty, format: 'number', debugQuery: 'SUM(quantity) WHERE product_name contains próbk/muster/sample' },
+          kpi_orders_beds: { value: bedOrders, format: 'number', debugQuery: 'COUNT DISTINCT order_id WHERE is_sample=false AND product_category=łóżko' },
+          kpi_qty_beds: { value: bedQty, format: 'number', debugQuery: 'SUM(quantity) WHERE is_sample=false AND product_category=łóżko' },
+          kpi_orders_samples: { value: sampleOrders, format: 'number', debugQuery: 'COUNT DISTINCT order_id WHERE is_sample=true' },
+          kpi_qty_samples: { value: sampleQty, format: 'number', debugQuery: 'SUM(quantity) WHERE is_sample=true' },
           kpi_aov: { value: aov, format: 'currency', debugQuery: 'revenue / orders' },
           kpi_payment_rate: { value: paymentRate, format: 'percent', debugQuery: 'ordersPaid / orders * 100' },
         };
@@ -278,45 +279,22 @@ export async function POST(request: NextRequest) {
 
       // ── Rankings ──
       case 'ranking_models': {
-        const items = await iqSafe('product_name, product_category, item_type, fabric, fabric_collection, quantity');
+        // Realne produkty = v_order_items.is_sample = false (flaga z migracji 011
+        // wyodrębnia próbki tkanin niezależnie od niespójnej kategoryzacji).
+        const items = await iqSafe('product_name, item_type, is_sample, quantity');
         const map: Record<string, number> = {};
-        const samplePattern = /próbk|probk|muster|sample|swatch|tkanin/i;
-        const sampleCategories = new Set(['próbki', 'probki', 'sample']);
-        const excludedItemTypes = new Set(['shipping', 'service', 'surcharge']);
-        const placeholderProductPattern = /produkt\s+indywidualny|individual\s+product|pozycja\s+indywidualna/i;
-        const knownFabricPrefixes = new Set<string>();
-        for (const row of items) {
-          const f = String(row.fabric || '').trim().toLowerCase();
-          const fc = String(row.fabric_collection || '').trim().toLowerCase();
-          if (f) knownFabricPrefixes.add(f.split(/\s+/)[0]);
-          if (fc) knownFabricPrefixes.add(fc.split(/\s+/)[0]);
-        }
+        const placeholderProductPattern = /produkt\s+indywidualny|individual\s+product|pozycja\s+indywidualna|niezidentyfikowany/i;
         for (const i of items) {
           const name = String(i.product_name || '').trim();
           if (!name) continue;
-          const category = String(i.product_category || '').trim().toLowerCase();
-          const itemType = String(i.item_type || '').trim().toLowerCase();
-          const fabric = String(i.fabric || '').trim().toLowerCase();
-          const fabricCollection = String(i.fabric_collection || '').trim().toLowerCase();
-          const normalizedName = name.toLowerCase();
-          const looksLikeFabricSwatchName = /^[a-ząćęłńóśźż0-9\- ]+\s+\d{1,3}$/i.test(name);
-          const firstToken = normalizedName.split(/\s+/)[0];
-
-          if (excludedItemTypes.has(itemType)) continue;
-          if (sampleCategories.has(category)) continue;
-          if (samplePattern.test(name)) continue;
+          if (i.is_sample) continue;
+          if (String(i.item_type || '') !== 'product') continue;
           if (placeholderProductPattern.test(name)) continue;
-          if (looksLikeFabricSwatchName && knownFabricPrefixes.has(firstToken)) continue;
-          if (looksLikeFabricSwatchName && (
-            (fabric && normalizedName.startsWith(fabric)) ||
-            (fabricCollection && normalizedName.startsWith(fabricCollection))
-          )) continue;
-
           map[name] = (map[name] || 0) + (i.quantity || 1);
         }
         const ranked = Object.entries(map).sort(([,a],[,b]) => b - a).slice(0, limit);
         const total = ranked.reduce((s,[,v]) => s + v, 0);
-        return NextResponse.json({ type: 'ranking', data: ranked.map(([name, value]) => ({ name, value: Math.round(value) })), total, debug: { ...debug, query: 'fact_order_items excluding samples/service/shipping, swatches and placeholder products, grouped by product_name, SUM(quantity)', itemsFound: items.length } });
+        return NextResponse.json({ type: 'ranking', data: ranked.map(([name, value]) => ({ name, value: Math.round(value) })), total, debug: { ...debug, query: 'v_order_items WHERE is_sample=false AND item_type=product, grouped by product_name, SUM(quantity)', itemsFound: items.length } });
       }
 
       case 'ranking_fabric_collections': {

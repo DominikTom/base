@@ -19,7 +19,7 @@ export const ALLOWED_GROUP_BY: string[] = [
 export const FILTERABLE_FIELDS: string[] = [
   'source_shop', 'source_platform', 'supplier', 'status', 'delivery_city', 'coupon_code',
   'product_name', 'product_category', 'fabric_collection', 'fabric', 'bed_size',
-  'headboard_height', 'storage_type', 'total_gross_pln', 'quantity',
+  'headboard_height', 'storage_type', 'total_gross_pln', 'quantity', 'is_sample',
 ];
 
 export const ALLOWED_CHART_TYPES: string[] = ['bar', 'line', 'area', 'pie', 'table'];

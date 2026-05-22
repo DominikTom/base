@@ -18,6 +18,7 @@ const schema = {
     { field: 'headboard_height', label: 'Wysokość wezgłowia', type: 'string', table: 'fact_order_items', operators: ['eq', 'contains', 'in', 'is_null', 'not_null'] },
     { field: 'storage_type', label: 'Typ stelaża', type: 'string', table: 'fact_order_items', operators: ['eq', 'contains', 'in', 'is_null', 'not_null'] },
     { field: 'quantity', label: 'Ilość sztuk', type: 'number', table: 'fact_order_items', operators: ['eq', 'gt', 'gte', 'lt', 'lte', 'between'] },
+    { field: 'is_sample', label: 'Próbka tkaniny', type: 'boolean', table: 'fact_order_items', operators: ['eq'] },
   ],
   measures: [
     { field: 'revenue_gross', label: 'Revenue brutto', type: 'number' },

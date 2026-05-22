@@ -43,8 +43,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: `Invalid group_by: ${group_by}` }, { status: 400 });
     }
 
-    // Decide which table to query
-    if (x_axis === 'date' && ['revenue_gross', 'orders_count', 'avg_order_value'].includes(y_axis)) {
+    // Decide which table to query. fact_daily_revenue jest prelagregowane i
+    // nie ma danych pozycji — gdy filtr dotyczy pozycji (np. is_sample),
+    // musimy iść ścieżką fact_orders + v_order_items.
+    const itemScopedFields = new Set(['product_name', 'product_category', 'fabric_collection', 'fabric', 'bed_size', 'headboard_height', 'storage_type', 'quantity', 'is_sample']);
+    const hasItemScopedAdvancedFilter = advancedFilters.some(f => itemScopedFields.has(f.field));
+    if (x_axis === 'date' && !hasItemScopedAdvancedFilter && ['revenue_gross', 'orders_count', 'avg_order_value'].includes(y_axis)) {
       // Use fact_daily_revenue
       return handleRevenueExplorer({ x_axis, y_axis, group_by, date_from, date_to, filters, granularity, advancedFilters });
     }
@@ -183,14 +187,14 @@ async function handleOrderExplorer(params: {
 
   // For product-level/grouping OR item-scoped advanced filters, we need items too
   let items: Array<Record<string, unknown>> = [];
-  const itemFilterFields = new Set(['product_name', 'product_category', 'fabric_collection', 'fabric', 'bed_size', 'headboard_height', 'storage_type', 'quantity']);
+  const itemFilterFields = new Set(['product_name', 'product_category', 'fabric_collection', 'fabric', 'bed_size', 'headboard_height', 'storage_type', 'quantity', 'is_sample']);
   const hasItemScopedFilter = params.advancedFilters.some(f => itemFilterFields.has(f.field));
   if (['product_category', 'fabric_collection'].includes(params.x_axis) ||
       ['product_category', 'fabric_collection'].includes(params.group_by || '') ||
       hasItemScopedFilter) {
     const { data: itemData } = await getSupabaseAdmin()
-      .from('fact_order_items')
-      .select('order_id, product_name, product_category, fabric_collection, fabric, bed_size, headboard_height, storage_type, quantity')
+      .from('v_order_items')
+      .select('order_id, product_name, product_category, fabric_collection, fabric, bed_size, headboard_height, storage_type, quantity, is_sample')
       .in('order_id', (orders || []).map(o => o.order_id))
       .not('item_type', 'in', '("shipping","service","surcharge")')
       .limit(50000);
@@ -294,7 +298,7 @@ function applySupabaseFilters(query: any, filters: ExplorerFilter[], allowedFiel
 }
 
 function buildOrderIdFilterFromItemFilters(filters: ExplorerFilter[], items: Array<Record<string, unknown>>): Set<string> | null {
-  const itemFields = new Set(['product_name', 'product_category', 'fabric_collection', 'fabric', 'bed_size', 'headboard_height', 'storage_type', 'quantity']);
+  const itemFields = new Set(['product_name', 'product_category', 'fabric_collection', 'fabric', 'bed_size', 'headboard_height', 'storage_type', 'quantity', 'is_sample']);
   const itemFilters = filters.filter(f => itemFields.has(f.field));
   if (!itemFilters.length) return null;
   const matching = items.filter(item => itemFilters.every(f => matchFilter(item[f.field], f)));

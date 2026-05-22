@@ -22,27 +22,27 @@ Wszystkie kwoty są w PLN (kolumny *_pln). Dane analityczne, tylko do odczytu.
 - item_type — 'product' | 'shipping' | 'service' | 'surcharge'
 - quantity, bed_size, mattress_type, fabric, fabric_collection, headboard_height, storage_type
 
-### WAŻNE — próbki tkanin vs. realne produkty
-fact_order_items zawiera ZARÓWNO realne produkty, JAK I darmowe próbki tkanin.
-Próbka tkaniny ma product_name = nazwa tkaniny + numer odcienia, np. "Melody 13",
-"Find Me 2", "Storm 2", "Golden 21", "Legend 1". To NIE są modele łóżek.
-Kategoryzacja próbek jest NIESPÓJNA między sklepami:
-  - mybed.pl / mybed.de: próbki mają product_category = 'próbki'
-  - mittohome.pl: próbki mają product_category = 'inne' (ten sklep nie używa 'próbki')
+### WAŻNE — używaj widoku v_order_items zamiast fact_order_items
+fact_order_items miesza realne produkty z darmowymi próbkami tkanin, a ich
+kategoryzacja jest niespójna między sklepami. Dlatego do KAŻDEGO pytania o
+produkty, modele, bestsellery lub próbki używaj widoku **v_order_items**.
 
-Wartości product_category:
-  - realne produkty: 'łóżko', 'materac', 'sofa', 'fotel', 'pufa', 'meble',
-    'meble-dziecięce', 'poduszka', 'kołdra', 'koc', 'dekoracje', 'zestaw', 'pielęgnacja'
-  - NIE-produkty (wykluczaj z rankingów modeli/sprzedaży): 'próbki', 'inne',
-    'wysyłka', 'usługa', 'dopłata', 'voucher', 'konfigurator', 'SKU-kodowany'
+## v_order_items — fact_order_items + flaga is_sample
+Ma WSZYSTKIE kolumny fact_order_items oraz dodatkowo:
+- is_sample (boolean) — TRUE = próbka tkaniny (darmowa, nazwana jak tkanina
+  np. "Melody 13"), FALSE = realny produkt lub pozycja logistyczna.
 
-### Reguła dla rankingów modeli / bestsellerów / sprzedaży produktów
-- "Top modele łóżek", "najlepiej sprzedające się łóżka" → WHERE product_category = 'łóżko'
-- "Top produkty" ogólnie → WHERE item_type = 'product' AND product_category NOT IN
-  ('próbki','inne','wysyłka','usługa','dopłata','voucher','konfigurator','SKU-kodowany')
-- ZAWSZE wykluczaj też item_type IN ('shipping','service','surcharge').
-- Jeśli NIE wykluczysz próbek, ranking dla mittohome.pl pokaże same nazwy tkanin
-  (np. "Melody 13") zamiast modeli — to błędna odpowiedź.
+### Reguła dla rankingów / sprzedaży
+- Realne produkty / bestsellery / "top modele" → v_order_items
+  WHERE is_sample = false AND item_type = 'product'
+- Tylko próbki tkanin → WHERE is_sample = true
+- Konkretnie łóżka → dodatkowo AND product_category = 'łóżko'
+  (UWAGA: mittohome.pl sprzedaje głównie sofy, narożniki i szafki — nie łóżka;
+   dla pytań ogólnych o "produkty" nie zawężaj do kategorii 'łóżko')
+- Pozycje logistyczne wyklucza już warunek item_type = 'product'
+  (poza nim są 'shipping' / 'service' / 'surcharge').
+- Nie używaj samego product_category do odsiewania próbek — bywa błędne
+  (próbki bywają oznaczone 'inne', a nawet 'łóżko'). Ufaj fladze is_sample.
 
 ## fact_daily_revenue — dzienny przychód (ziarno: date + source_shop, prelagregowane)
 - date (date), source_shop
@@ -89,7 +89,8 @@ Pola configa:
 - filters_advanced: tablica { field, operator, value, value_to? }
   - field: source_shop, source_platform, supplier, status, delivery_city, coupon_code,
     product_name, product_category, fabric_collection, fabric, bed_size, headboard_height,
-    storage_type, total_gross_pln, quantity
+    storage_type, total_gross_pln, quantity, is_sample
   - operator: eq, neq, contains, not_contains, starts_with, ends_with, in, gt, gte, lt, lte, between, is_null, not_null
+  - is_sample to filtr logiczny: value "true" (tylko próbki) lub "false" (tylko realne produkty)
 
 Widgety i KPI renderuje istniejący silnik (/api/dashboard/explorer) — używaj tylko wartości z powyższych list.`;

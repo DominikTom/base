@@ -125,15 +125,20 @@ export function ExplorerQueryBuilder({ value, onChange }: Props) {
           const hideValue = f.operator === 'is_null' || f.operator === 'not_null';
           const needsTo = f.operator === 'between';
           const isIn = f.operator === 'in';
+          const isBoolean = dim?.type === 'boolean';
           return (
             <div key={idx} className="grid grid-cols-1 md:grid-cols-12 gap-2 items-center">
               <select
                 value={f.field}
-                onChange={e => updateFilter(idx, {
-                  field: e.target.value,
-                  operator: dimensions.find(d => d.field === e.target.value)?.operators?.[0] || 'eq',
-                  value: '', value_to: '',
-                })}
+                onChange={e => {
+                  const nd = dimensions.find(d => d.field === e.target.value);
+                  updateFilter(idx, {
+                    field: e.target.value,
+                    operator: nd?.operators?.[0] || 'eq',
+                    value: nd?.type === 'boolean' ? 'true' : '',
+                    value_to: '',
+                  });
+                }}
                 className="md:col-span-3 px-3 py-2 rounded bg-zinc-900 border border-zinc-700 text-xs text-zinc-200"
               >
                 {dimensions.map(d => <option key={d.field} value={d.field}>{d.label}</option>)}
@@ -145,7 +150,17 @@ export function ExplorerQueryBuilder({ value, onChange }: Props) {
               >
                 {operators.map(op => <option key={op} value={op}>{op}</option>)}
               </select>
-              {!hideValue && (
+              {!hideValue && isBoolean && (
+                <select
+                  value={f.value || 'true'}
+                  onChange={e => updateFilter(idx, { value: e.target.value })}
+                  className="md:col-span-3 px-3 py-2 rounded bg-zinc-900 border border-zinc-700 text-xs text-zinc-200"
+                >
+                  <option value="true">Tak</option>
+                  <option value="false">Nie</option>
+                </select>
+              )}
+              {!hideValue && !isBoolean && (
                 <input
                   value={f.value || ''}
                   onChange={e => updateFilter(idx, { value: e.target.value })}
