@@ -17,9 +17,32 @@ Wszystkie kwoty są w PLN (kolumny *_pln). Dane analityczne, tylko do odczytu.
 
 ## fact_order_items — pozycje zamówień (ziarno: linia zamówienia)
 - order_id (text, FK -> fact_orders.order_id), line_number
-- product_name, product_category, quantity, item_type (np. 'bed', 'sample', 'shipping', 'service')
-- bed_size, mattress_type, fabric, fabric_collection, headboard_height, storage_type
-- UWAGA: pozycje typu 'shipping'/'service'/'surcharge' to nie produkty — zwykle je wykluczaj.
+- product_name — nazwa pozycji (UWAGA: może to być model łóżka, mebel ALBO próbka tkaniny)
+- product_category — kategoria pozycji (lista niżej)
+- item_type — 'product' | 'shipping' | 'service' | 'surcharge'
+- quantity, bed_size, mattress_type, fabric, fabric_collection, headboard_height, storage_type
+
+### WAŻNE — próbki tkanin vs. realne produkty
+fact_order_items zawiera ZARÓWNO realne produkty, JAK I darmowe próbki tkanin.
+Próbka tkaniny ma product_name = nazwa tkaniny + numer odcienia, np. "Melody 13",
+"Find Me 2", "Storm 2", "Golden 21", "Legend 1". To NIE są modele łóżek.
+Kategoryzacja próbek jest NIESPÓJNA między sklepami:
+  - mybed.pl / mybed.de: próbki mają product_category = 'próbki'
+  - mittohome.pl: próbki mają product_category = 'inne' (ten sklep nie używa 'próbki')
+
+Wartości product_category:
+  - realne produkty: 'łóżko', 'materac', 'sofa', 'fotel', 'pufa', 'meble',
+    'meble-dziecięce', 'poduszka', 'kołdra', 'koc', 'dekoracje', 'zestaw', 'pielęgnacja'
+  - NIE-produkty (wykluczaj z rankingów modeli/sprzedaży): 'próbki', 'inne',
+    'wysyłka', 'usługa', 'dopłata', 'voucher', 'konfigurator', 'SKU-kodowany'
+
+### Reguła dla rankingów modeli / bestsellerów / sprzedaży produktów
+- "Top modele łóżek", "najlepiej sprzedające się łóżka" → WHERE product_category = 'łóżko'
+- "Top produkty" ogólnie → WHERE item_type = 'product' AND product_category NOT IN
+  ('próbki','inne','wysyłka','usługa','dopłata','voucher','konfigurator','SKU-kodowany')
+- ZAWSZE wykluczaj też item_type IN ('shipping','service','surcharge').
+- Jeśli NIE wykluczysz próbek, ranking dla mittohome.pl pokaże same nazwy tkanin
+  (np. "Melody 13") zamiast modeli — to błędna odpowiedź.
 
 ## fact_daily_revenue — dzienny przychód (ziarno: date + source_shop, prelagregowane)
 - date (date), source_shop
@@ -50,6 +73,7 @@ Wszystkie kwoty są w PLN (kolumny *_pln). Dane analityczne, tylko do odczytu.
 - Łączenie zamówień z pozycjami: fact_orders o JOIN fact_order_items i ON o.order_id = i.order_id
 - Do trendów dziennych najtaniej używać fact_daily_revenue (już zagregowane).
 - Filtry dat: order_date to timestamptz, date to date.
+- Pytania o modele/produkty/bestsellery: pamiętaj o regule wykluczania próbek opisanej wyżej.
 - Zawsze pisz jawne nazwy kolumn, agreguj w SQL (GROUP BY) zamiast pobierać wszystkie wiersze.`;
 
 // Whitelista metryk i wymiarów dla narzędzi create_widget / create_kpi.
