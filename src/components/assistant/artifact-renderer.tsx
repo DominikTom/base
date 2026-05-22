@@ -8,7 +8,7 @@ import {
 } from 'recharts';
 import { LayoutDashboard, BarChart3, AlertTriangle, Check } from 'lucide-react';
 import { formatNumber } from '@/lib/utils';
-import { addCustomWidgetToDashboard } from '@/lib/dashboard-actions';
+import { addWidgetToDashboard } from '@/lib/dashboard-actions';
 import type { Artifact } from '@/lib/assistant/types';
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#f97316', '#06b6d4', '#ec4899', '#84cc16', '#14b8a6'];
@@ -103,7 +103,7 @@ function ChartArtifact({ artifact }: { artifact: Extract<Artifact, { type: 'char
 
   async function addToDash() {
     if (!query_spec) return;
-    const r = await addCustomWidgetToDashboard(name.trim() || title, query_spec);
+    const r = await addWidgetToDashboard('custom_explorer', { title: name.trim() || title, ...query_spec });
     if (r.ok) setDashAdded(true);
   }
 

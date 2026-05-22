@@ -4,7 +4,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { Plus, X, Pencil, Trash2, LayoutDashboard, Check } from 'lucide-react';
 import { ExplorerQueryBuilder, EMPTY_QUERY_SPEC } from '@/components/dashboard/explorer-query-builder';
 import { ChartTypePicker } from '@/components/dashboard/chart-type-picker';
-import { addCustomWidgetToDashboard } from '@/lib/dashboard-actions';
+import { addWidgetToDashboard } from '@/lib/dashboard-actions';
+import { WIDGET_CATALOG, type WidgetDefinition } from '@/lib/widget-definitions';
 import type { QuerySpec } from '@/lib/explorer-whitelist';
 
 interface KpiDefinition {
@@ -43,6 +44,8 @@ const TIER_BADGE: Record<string, string> = {
 };
 const TIER_LABEL: Record<string, string> = { core: 'Core', standard: 'Standard', experimental: 'Eksperymentalne' };
 const VALUE_TYPE_LABEL: Record<string, string> = { currency: 'Waluta', number: 'Liczba', percent: 'Procent', ratio: 'Wskaźnik' };
+
+const BUILTIN_ORDER = ['KPI', 'Ranking', 'Wykres', 'Tabela'];
 
 export default function KpiPage() {
   const [kpis, setKpis] = useState<KpiDefinition[]>([]);
@@ -132,23 +135,37 @@ export default function KpiPage() {
     } catch { /* ignore */ }
   }
 
-  async function addToDashboard(k: KpiDefinition) {
-    const result = await addCustomWidgetToDashboard(k.name, k.query_spec);
-    if (result.ok) {
-      setAddedId(k.id);
-      setTimeout(() => setAddedId(null), 2500);
-    }
+  function flashAdded(id: string) {
+    setAddedId(id);
+    setTimeout(() => setAddedId(null), 2500);
+  }
+
+  async function addKpiToDashboard(k: KpiDefinition) {
+    const r = await addWidgetToDashboard('custom_explorer', { title: k.name, ...k.query_spec });
+    if (r.ok) flashAdded(k.id);
+  }
+
+  async function addBuiltinToDashboard(type: string) {
+    const r = await addWidgetToDashboard(type);
+    if (r.ok) flashAdded(type);
   }
 
   const canEdit = (k: KpiDefinition) => isAdmin || (!!userId && k.created_by === userId);
   const categories = [...new Set(kpis.map(k => k.category))].sort();
 
+  const builtinByCat: Record<string, WidgetDefinition[]> = {};
+  for (const w of WIDGET_CATALOG) {
+    if (w.type === 'custom_explorer') continue;
+    if (!builtinByCat[w.category]) builtinByCat[w.category] = [];
+    builtinByCat[w.category].push(w);
+  }
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold text-zinc-100">KPI</h1>
-          <p className="text-sm text-zinc-500">Twórz wskaźniki i wykresy, dodawaj je na swój dashboard.</p>
+          <h1 className="text-xl font-semibold text-zinc-100">KPI i widgety</h1>
+          <p className="text-sm text-zinc-500">Twórz i zarządzaj KPI, dodawaj KPI oraz gotowe widgety na dashboard.</p>
         </div>
         <button
           onClick={openNew}
@@ -160,61 +177,100 @@ export default function KpiPage() {
       </div>
 
       {loading ? (
-        <div className="text-zinc-500 animate-pulse">Ładowanie KPI…</div>
-      ) : kpis.length === 0 ? (
-        <div className="flex flex-col items-center justify-center h-64 gap-3 border-2 border-dashed border-zinc-800 rounded-xl">
-          <p className="text-zinc-500">Nie masz jeszcze żadnych KPI.</p>
-          <button onClick={openNew} className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-lg">
-            <Plus size={16} /> Stwórz pierwsze KPI
-          </button>
-        </div>
+        <div className="text-zinc-500 animate-pulse">Ładowanie…</div>
       ) : (
-        categories.map(cat => (
-          <section key={cat} className="space-y-3">
-            <h2 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">{cat}</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-              {kpis.filter(k => k.category === cat).map(k => (
-                <div key={k.id} className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4 flex flex-col gap-3">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <div className="text-sm font-medium text-zinc-100 truncate">{k.name}</div>
-                      {k.description && <div className="text-xs text-zinc-500 mt-0.5 line-clamp-2">{k.description}</div>}
-                    </div>
-                    <span className={`shrink-0 text-[10px] px-2 py-0.5 rounded-full border ${TIER_BADGE[k.tier] || TIER_BADGE.standard}`}>
-                      {TIER_LABEL[k.tier] || k.tier}
-                    </span>
+        <>
+          {/* Twoje KPI */}
+          <div className="space-y-4">
+            <h2 className="text-sm font-semibold text-zinc-300">Twoje KPI</h2>
+            {kpis.length === 0 ? (
+              <div className="flex items-center justify-between gap-3 rounded-xl border border-dashed border-zinc-800 px-4 py-5">
+                <p className="text-sm text-zinc-500">Nie masz jeszcze własnych KPI.</p>
+                <button onClick={openNew} className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded-lg shrink-0">
+                  <Plus size={14} /> Stwórz pierwsze KPI
+                </button>
+              </div>
+            ) : (
+              categories.map(cat => (
+                <section key={cat} className="space-y-2">
+                  <h3 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">{cat}</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {kpis.filter(k => k.category === cat).map(k => (
+                      <div key={k.id} className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4 flex flex-col gap-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="text-sm font-medium text-zinc-100 truncate">{k.name}</div>
+                            {k.description && <div className="text-xs text-zinc-500 mt-0.5 line-clamp-2">{k.description}</div>}
+                          </div>
+                          <span className={`shrink-0 text-[10px] px-2 py-0.5 rounded-full border ${TIER_BADGE[k.tier] || TIER_BADGE.standard}`}>
+                            {TIER_LABEL[k.tier] || k.tier}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-[10px] px-2 py-0.5 rounded bg-zinc-800 text-zinc-400">{VALUE_TYPE_LABEL[k.value_type] || k.value_type}</span>
+                          <span className="text-[10px] px-2 py-0.5 rounded bg-zinc-800 text-zinc-400">{k.query_spec?.chart_type}</span>
+                          <span className="text-[10px] px-2 py-0.5 rounded bg-zinc-800 text-zinc-400">{k.query_spec?.y_axis}</span>
+                        </div>
+                        <div className="flex items-center gap-2 mt-auto">
+                          <button
+                            onClick={() => addKpiToDashboard(k)}
+                            className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                              addedId === k.id ? 'bg-emerald-600 text-white' : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-200'
+                            }`}
+                          >
+                            {addedId === k.id ? <Check size={13} /> : <LayoutDashboard size={13} />}
+                            {addedId === k.id ? 'Dodano' : 'Dodaj do dashboardu'}
+                          </button>
+                          {canEdit(k) && (
+                            <>
+                              <button onClick={() => openEdit(k)} className="p-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-400" title="Edytuj">
+                                <Pencil size={13} />
+                              </button>
+                              <button onClick={() => deleteKpi(k.id)} className="p-1.5 rounded-lg bg-zinc-800 hover:bg-red-900/50 text-zinc-400 hover:text-red-300" title="Usuń">
+                                <Trash2 size={13} />
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <span className="text-[10px] px-2 py-0.5 rounded bg-zinc-800 text-zinc-400">{VALUE_TYPE_LABEL[k.value_type] || k.value_type}</span>
-                    <span className="text-[10px] px-2 py-0.5 rounded bg-zinc-800 text-zinc-400">{k.query_spec?.chart_type}</span>
-                    <span className="text-[10px] px-2 py-0.5 rounded bg-zinc-800 text-zinc-400">{k.query_spec?.y_axis}</span>
-                  </div>
-                  <div className="flex items-center gap-2 mt-auto">
+                </section>
+              ))
+            )}
+          </div>
+
+          {/* Widgety wbudowane */}
+          <div className="space-y-4">
+            <div>
+              <h2 className="text-sm font-semibold text-zinc-300">Widgety wbudowane</h2>
+              <p className="text-xs text-zinc-500">Gotowe widgety — kliknij, aby dodać na dashboard. Nie można ich edytować.</p>
+            </div>
+            {BUILTIN_ORDER.filter(cat => builtinByCat[cat]?.length).map(cat => (
+              <section key={cat} className="space-y-2">
+                <h3 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">{cat}</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                  {builtinByCat[cat].map(w => (
                     <button
-                      onClick={() => addToDashboard(k)}
-                      className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                        addedId === k.id ? 'bg-emerald-600 text-white' : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-200'
+                      key={w.type}
+                      onClick={() => addBuiltinToDashboard(w.type)}
+                      className={`flex items-center justify-between gap-2 rounded-lg border px-3 py-2.5 text-left transition-colors ${
+                        addedId === w.type
+                          ? 'border-emerald-700/50 bg-emerald-950/30'
+                          : 'border-zinc-800 bg-zinc-900/50 hover:border-zinc-700 hover:bg-zinc-800/50'
                       }`}
                     >
-                      {addedId === k.id ? <Check size={13} /> : <LayoutDashboard size={13} />}
-                      {addedId === k.id ? 'Dodano' : 'Dodaj do dashboardu'}
+                      <span className="text-sm text-zinc-200 truncate">{w.name}</span>
+                      <span className={`shrink-0 inline-flex items-center gap-1 text-xs ${addedId === w.type ? 'text-emerald-400' : 'text-zinc-500'}`}>
+                        {addedId === w.type ? <><Check size={12} /> Dodano</> : '+ dodaj'}
+                      </span>
                     </button>
-                    {canEdit(k) && (
-                      <>
-                        <button onClick={() => openEdit(k)} className="p-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-400" title="Edytuj">
-                          <Pencil size={13} />
-                        </button>
-                        <button onClick={() => deleteKpi(k.id)} className="p-1.5 rounded-lg bg-zinc-800 hover:bg-red-900/50 text-zinc-400 hover:text-red-300" title="Usuń">
-                          <Trash2 size={13} />
-                        </button>
-                      </>
-                    )}
-                  </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-          </section>
-        ))
+              </section>
+            ))}
+          </div>
+        </>
       )}
 
       {/* Modal Nowy / Edytuj KPI */}

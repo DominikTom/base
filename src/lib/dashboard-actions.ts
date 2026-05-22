@@ -6,28 +6,28 @@ import {
   type WidgetInstance,
   type DashboardData,
 } from './dashboard-store';
-import type { QuerySpec } from './explorer-whitelist';
 
-// Buduje instancję widgetu custom_explorer z nazwy + specyfikacji zapytania
-// (np. z definicji KPI). Widget renderuje widget-renderer przez /api/dashboard/explorer.
-export function buildCustomWidget(title: string, querySpec: QuerySpec): WidgetInstance {
-  const def = getWidgetDef('custom_explorer');
+// Buduje instancję dowolnego widgetu (predefiniowanego lub custom_explorer).
+export function buildWidget(type: string, config?: Record<string, unknown>): WidgetInstance {
+  const def = getWidgetDef(type);
   return {
     id: generateWidgetId(),
-    type: 'custom_explorer',
+    type,
     x: 0,
     y: Infinity,
-    w: def?.defaultSize.w ?? 8,
-    h: def?.defaultSize.h ?? 5,
-    config: { title, ...querySpec },
+    w: def?.defaultSize.w ?? 6,
+    h: def?.defaultSize.h ?? 4,
+    config,
   };
 }
 
 // Ładuje dashboard zalogowanego użytkownika, dokłada widget do domyślnego
-// układu i zapisuje. Używane przez stronę KPI ("Dodaj do dashboardu").
-export async function addCustomWidgetToDashboard(
-  title: string,
-  querySpec: QuerySpec,
+// układu i zapisuje. Używane przez stronę KPI ("Dodaj do dashboardu") oraz
+// czat ("Zapisz / dodaj na dashboard"). Config jest KOPIOWANY — późniejsza
+// edycja KPI nie zmienia już dodanych widgetów.
+export async function addWidgetToDashboard(
+  type: string,
+  config?: Record<string, unknown>,
 ): Promise<{ ok: boolean; error?: string }> {
   try {
     const profileRes = await fetch('/api/user');
@@ -37,7 +37,7 @@ export async function addCustomWidgetToDashboard(
     const layout = dashData.layouts.find(l => l.id === dashData.defaultLayoutId) || dashData.layouts[0];
     if (!layout) return { ok: false, error: 'Brak układu dashboardu' };
 
-    layout.widgets = [...layout.widgets, buildCustomWidget(title, querySpec)];
+    layout.widgets = [...layout.widgets, buildWidget(type, config)];
     layout.updatedAt = new Date().toISOString();
 
     const res = await fetch('/api/user', {
