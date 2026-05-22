@@ -11,7 +11,7 @@ import {
   type WidgetInstance,
 } from '@/lib/dashboard-store';
 import { DB_SCHEMA_DESCRIPTION, WIDGET_SPEC_REFERENCE } from './schema-context';
-import type { Artifact } from './types';
+import type { Artifact, AssistantStep } from './types';
 
 export interface ToolContext {
   userId: string;
@@ -22,9 +22,10 @@ export interface ToolContext {
 export interface ToolOutcome {
   content: string;          // treść tool_result wracająca do modelu
   artifact?: Artifact;      // opcjonalny artefakt do wyświetlenia w UI
+  step?: AssistantStep;     // krok do popupu "Jak to policzono"
 }
 
-// Ile wierszy wyniku SQL przekazać modelowi (artefakt w UI dostaje więcej).
+// Ile wierszy wyniku SQL przekazać modelowi.
 const MODEL_ROW_CAP = 100;
 
 export const TOOL_DEFINITIONS: Anthropic.Tool[] = [
@@ -148,10 +149,17 @@ async function loadDashboardData(userId: string): Promise<DashboardData> {
 }
 
 async function handleRunSql(input: Record<string, unknown>): Promise<ToolOutcome> {
+  const sql = typeof input.sql === 'string' ? input.sql : '';
   const result = await runAiQuery(input.sql);
   if (result.error) {
-    return { content: JSON.stringify({ error: result.error }) };
+    return {
+      content: JSON.stringify({ error: result.error }),
+      step: { kind: 'sql', sql, error: result.error },
+    };
   }
+  // Wynik trafia do modelu jako dane — bez artefaktu. Model prezentuje
+  // odpowiedź sam (tabela Markdown / wykres). Zapytania widoczne są
+  // w popupie "Jak to policzono".
   const modelRows = result.rows.slice(0, MODEL_ROW_CAP);
   const content = JSON.stringify({
     columns: result.columns,
@@ -162,12 +170,7 @@ async function handleRunSql(input: Record<string, unknown>): Promise<ToolOutcome
   });
   return {
     content,
-    artifact: {
-      type: 'table',
-      columns: result.columns,
-      rows: result.rows,
-      truncated: result.truncated,
-    },
+    step: { kind: 'sql', sql, rowCount: result.rowCount },
   };
 }
 
@@ -181,16 +184,18 @@ function handleShowChart(input: Record<string, unknown>): ToolOutcome {
   if (!data.length || !series.length) {
     return err('show_chart wymaga niepustych pól data i series.');
   }
+  const title = String(input.title || 'Wykres');
   return {
     content: JSON.stringify({ ok: true, points: data.length }),
     artifact: {
       type: 'chart',
-      title: String(input.title || 'Wykres'),
+      title,
       chart_type: chartType as 'bar' | 'line' | 'area' | 'pie',
       x_key: String(input.x_key || 'x'),
       series,
       data: data.slice(0, 500),
     },
+    step: { kind: 'chart', label: title },
   };
 }
 
@@ -233,6 +238,7 @@ async function handleCreateWidget(input: Record<string, unknown>, ctx: ToolConte
   return {
     content: JSON.stringify({ ok: true, message: `Widget "${title}" dodany do "${layout.name}".` }),
     artifact: { type: 'widget_created', title, layoutName: layout.name },
+    step: { kind: 'widget', label: title },
   };
 }
 
@@ -271,6 +277,7 @@ async function handleCreateKpi(input: Record<string, unknown>, ctx: ToolContext)
   return {
     content: JSON.stringify({ ok: true, message: `KPI "${data.name}" dodane do rejestru.` }),
     artifact: { type: 'kpi_created', kpiId: data.id, name: data.name, category: data.category },
+    step: { kind: 'kpi', label: data.name },
   };
 }
 

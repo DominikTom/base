@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthUser } from '@/lib/auth';
 import { getSupabaseAdmin } from '@/lib/supabase';
-import type { Artifact, ChatMessageDTO, ConversationSummary } from '@/lib/assistant/types';
+import type { AnswerMeta, Artifact, ChatMessageDTO, ConversationSummary } from '@/lib/assistant/types';
 
 // GET            → lista rozmów użytkownika
 // GET ?id=<uuid> → wiadomości jednej rozmowy
@@ -27,12 +27,16 @@ export async function GET(request: NextRequest) {
         .select('role, content, artifacts, created_at')
         .eq('conversation_id', id)
         .order('created_at', { ascending: true });
-      const messages: ChatMessageDTO[] = (rows || []).map(r => ({
-        role: r.role === 'assistant' ? 'assistant' : 'user',
-        content: (r.content as { text?: string } | null)?.text || '',
-        artifacts: (r.artifacts as Artifact[] | null) || undefined,
-        createdAt: r.created_at as string,
-      }));
+      const messages: ChatMessageDTO[] = (rows || []).map(r => {
+        const c = r.content as { text?: string; meta?: AnswerMeta } | null;
+        return {
+          role: r.role === 'assistant' ? 'assistant' as const : 'user' as const,
+          content: c?.text || '',
+          artifacts: (r.artifacts as Artifact[] | null) || undefined,
+          meta: c?.meta || undefined,
+          createdAt: r.created_at as string,
+        };
+      });
       return NextResponse.json({ conversation: { id: conv.id, title: conv.title }, messages });
     }
 

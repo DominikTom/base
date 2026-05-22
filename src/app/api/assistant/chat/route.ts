@@ -4,7 +4,7 @@ import { getAuthUser, isAdmin } from '@/lib/auth';
 import { getSupabaseAdmin } from '@/lib/supabase';
 import { buildSystemPrompt } from '@/lib/assistant/system-prompt';
 import { TOOL_DEFINITIONS, runTool, type ToolContext } from '@/lib/assistant/tools';
-import type { Artifact, ChatResponse } from '@/lib/assistant/types';
+import type { Artifact, AssistantStep, ChatResponse } from '@/lib/assistant/types';
 
 const MODEL = 'claude-opus-4-7';
 const MAX_TOKENS = 4096;
@@ -79,6 +79,7 @@ export async function POST(request: NextRequest) {
     const system = buildSystemPrompt(new Date().toISOString().split('T')[0]);
 
     const artifacts: Artifact[] = [];
+    const steps: AssistantStep[] = [];
     let finalText = '';
 
     // ── Pętla tool-calling ──
@@ -106,6 +107,7 @@ export async function POST(request: NextRequest) {
         if (block.type !== 'tool_use') continue;
         const outcome = await runTool(block.name, block.input as Record<string, unknown>, ctx);
         if (outcome.artifact) artifacts.push(outcome.artifact);
+        if (outcome.step) steps.push(outcome.step);
         toolResults.push({
           type: 'tool_result',
           tool_use_id: block.id,
@@ -120,15 +122,16 @@ export async function POST(request: NextRequest) {
     }
 
     // ── Zapis ──
+    const meta = { steps };
     await db.from('ai_messages').insert([
       { conversation_id: conversationId, role: 'user', content: { text: message } },
-      { conversation_id: conversationId, role: 'assistant', content: { text: finalText }, artifacts },
+      { conversation_id: conversationId, role: 'assistant', content: { text: finalText, meta }, artifacts },
     ]);
     await db.from('ai_conversations').update({ updated_at: new Date().toISOString() }).eq('id', conversationId);
 
     const result: ChatResponse = {
       conversationId,
-      reply: { role: 'assistant', content: finalText, artifacts },
+      reply: { role: 'assistant', content: finalText, artifacts, meta },
     };
     return NextResponse.json(result);
   } catch (err) {

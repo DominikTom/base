@@ -32,11 +32,26 @@ export type Artifact =
       message: string;
     };
 
+// Pojedynczy krok, który asystent wykonał, by udzielić odpowiedzi.
+// Zasila popup "Jak to policzono".
+export interface AssistantStep {
+  kind: 'sql' | 'chart' | 'widget' | 'kpi';
+  sql?: string;        // dla kind === 'sql'
+  rowCount?: number;   // liczba wierszy zwrócona przez zapytanie
+  error?: string;      // komunikat błędu, jeśli krok się nie powiódł
+  label?: string;      // krótki opis (wykres / widget / KPI)
+}
+
+export interface AnswerMeta {
+  steps: AssistantStep[];
+}
+
 // Wiadomość w formie gotowej do wyświetlenia w UI.
 export interface ChatMessageDTO {
   role: 'user' | 'assistant';
   content: string;
   artifacts?: Artifact[];
+  meta?: AnswerMeta;
   createdAt?: string;
 }
 
