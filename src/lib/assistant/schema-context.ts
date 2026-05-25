@@ -51,8 +51,26 @@ Ma WSZYSTKIE kolumny fact_order_items oraz dodatkowo:
 - revenue_beds, revenue_mattresses, revenue_accessories, revenue_furniture, revenue_other
 
 ## fact_daily_adspend — dzienne wydatki reklamowe (ziarno: date + platform + campaign_id)
-- date, platform (meta, google, pinterest), campaign_id, campaign_name, adset_name
-- impressions, clicks, spend, conversions, conversion_value, cpc, cpm, ctr, roas
+- date, platform (na razie tylko 'meta'), account_id, campaign_id, campaign_name, adset_name
+- impressions, clicks, spend (w PLN), conversions, conversion_value, cpc, cpm, ctr, roas
+
+### Mapowanie account_id → sklep (Meta Ads)
+Tabela NIE ma kolumny source_shop. Przypisanie wydatku do sklepu robisz po account_id:
+  - 'act_1681802382204753' → 'mybed.pl'
+  - 'act_637792865917248'  → 'mybed.de'
+  - 'act_797212915921530'  → 'mittohome.pl'
+Wzorzec SQL dla „spend per sklep per miesiąc":
+  SELECT date_trunc('month', date)::date AS month,
+         CASE account_id
+           WHEN 'act_1681802382204753' THEN 'mybed.pl'
+           WHEN 'act_637792865917248'  THEN 'mybed.de'
+           WHEN 'act_797212915921530'  THEN 'mittohome.pl'
+         END AS shop,
+         ROUND(SUM(spend)::numeric, 0) AS spend_pln
+  FROM fact_daily_adspend
+  WHERE platform = 'meta'
+  GROUP BY 1, 2 ORDER BY 1, 2;
+Sklepy Amazon/Allegro/Kaufland nie mają osobnych kont Meta — ich wydatki idą zwykle przez konto mybed.de lub nie są tam mierzone.
 
 ## fact_daily_traffic — ruch GA4 (ziarno: date + source + medium + hostname + campaign)
 - date, source, medium, campaign, hostname
@@ -62,6 +80,7 @@ Ma WSZYSTKIE kolumny fact_order_items oraz dodatkowo:
 - date, platform, account_id, campaign_id/name, adset_id/name, ad_id/name, creative_id
 - impressions, reach, clicks, spend, conversions, conversion_value, cpc, cpm, ctr, roas, frequency
 - video_play_3s, video_p25_watched, video_p50_watched, video_p75_watched, video_p95_watched, video_p100_watched, thruplays
+- Mapowanie account_id → sklep takie same jak w fact_daily_adspend (patrz wyżej).
 
 ## dim_exchange_rates — kursy walut: date, currency, rate_to_pln, source
 ## dim_products — słownik produktów: product_name (PK), product_category, total_orders, total_quantity, first_sold, last_sold
