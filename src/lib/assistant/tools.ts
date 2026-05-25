@@ -50,12 +50,12 @@ export const TOOL_DEFINITIONS: Anthropic.Tool[] = [
   {
     name: 'show_chart',
     description:
-      'Wyświetla wykres w czacie. Przekaż MAŁY, już zagregowany zbiór danych (najlepiej < 100 punktów). Jeśli wykres odpowiada standardowemu zapytaniu (oś data/sklep/kategoria/dostawca/platforma × metryka revenue/orders/aov/quantity), dołącz query_spec — wtedy użytkownik będzie mógł zapisać wykres jako KPI.',
+      'Wyświetla wykres LUB tabelę w czacie jako kartę artefaktu (z przyciskiem „Zapisz jako KPI"). Przekaż MAŁY, już zagregowany zbiór danych (najlepiej < 100 punktów / wierszy). Jeśli artefakt odpowiada standardowemu zapytaniu (oś data/sklep/kategoria/dostawca/platforma × metryka revenue/orders/aov/quantity), dołącz query_spec — wtedy użytkownik może go zapisać jako KPI. Dla tabel: chart_type="table", series = kolumny wartości, x_key = kolumna etykiet (pierwsza), data = wiersze.',
     input_schema: {
       type: 'object',
       properties: {
         title: { type: 'string' },
-        chart_type: { type: 'string', enum: ['bar', 'line', 'area', 'pie'] },
+        chart_type: { type: 'string', enum: ['bar', 'line', 'area', 'pie', 'table'] },
         x_key: { type: 'string', description: 'Nazwa klucza w obiektach data dla osi X / etykiet.' },
         series: {
           type: 'array',
@@ -187,7 +187,7 @@ async function handleRunSql(input: Record<string, unknown>): Promise<ToolOutcome
 
 function handleShowChart(input: Record<string, unknown>): ToolOutcome {
   const chartType = String(input.chart_type);
-  if (!['bar', 'line', 'area', 'pie'].includes(chartType)) {
+  if (!['bar', 'line', 'area', 'pie', 'table'].includes(chartType)) {
     return err(`Niedozwolony chart_type: ${chartType}`);
   }
   const data = Array.isArray(input.data) ? (input.data as Record<string, unknown>[]) : [];
@@ -217,7 +217,7 @@ function handleShowChart(input: Record<string, unknown>): ToolOutcome {
     artifact: {
       type: 'chart',
       title,
-      chart_type: chartType as 'bar' | 'line' | 'area' | 'pie',
+      chart_type: chartType as 'bar' | 'line' | 'area' | 'pie' | 'table',
       x_key: String(input.x_key || 'x'),
       series,
       data: data.slice(0, 500),

@@ -134,9 +134,44 @@ function ChartArtifact({ artifact }: { artifact: Extract<Artifact, { type: 'char
 
   const fieldCls = 'px-2.5 py-1.5 rounded bg-zinc-950 border border-zinc-700 text-xs text-zinc-200';
 
+  const tableColumns = chart_type === 'table' ? [x_key, ...series] : [];
+  const tableRows = chart_type === 'table' ? data.slice(0, 100) : [];
+
   return (
     <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-3">
       <div className="text-xs font-medium text-zinc-300 mb-2">{title}</div>
+      {chart_type === 'table' ? (
+        <div className="overflow-auto max-h-80 rounded-md border border-zinc-800">
+          <table className="w-full text-xs">
+            <thead className="sticky top-0 bg-zinc-900">
+              <tr className="border-b border-zinc-700">
+                {tableColumns.map(c => (
+                  <th key={c} className="py-1.5 px-2 text-left text-zinc-400 font-medium whitespace-nowrap">{c}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {tableRows.map((row, i) => (
+                <tr key={i} className="border-b border-zinc-800/30">
+                  {tableColumns.map(c => {
+                    const v = row[c];
+                    return (
+                      <td key={c} className="py-1.5 px-2 text-zinc-300 whitespace-nowrap">
+                        {typeof v === 'number' ? formatNumber(v) : v == null ? '—' : String(v)}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {data.length > tableRows.length && (
+            <div className="px-3 py-1.5 text-[11px] text-zinc-500 border-t border-zinc-800">
+              Pokazano {tableRows.length} z {data.length} wierszy.
+            </div>
+          )}
+        </div>
+      ) : (
       <ResponsiveContainer width="100%" height={260}>
         {chart_type === 'pie' ? (
           <PieChart>
@@ -187,6 +222,7 @@ function ChartArtifact({ artifact }: { artifact: Extract<Artifact, { type: 'char
           </BarChart>
         )}
       </ResponsiveContainer>
+      )}
 
       {query_spec && (
         <div className="mt-2 pt-2 border-t border-zinc-800">

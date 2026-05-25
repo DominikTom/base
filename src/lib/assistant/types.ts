@@ -13,7 +13,7 @@ export type Artifact =
   | {
       type: 'chart';
       title: string;
-      chart_type: 'bar' | 'line' | 'area' | 'pie';
+      chart_type: 'bar' | 'line' | 'area' | 'pie' | 'table';
       x_key: string;
       series: string[];
       data: Record<string, unknown>[];
