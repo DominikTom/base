@@ -71,10 +71,24 @@ Wzorzec SQL dla „spend per sklep per miesiąc":
   WHERE platform = 'meta'
   GROUP BY 1, 2 ORDER BY 1, 2;
 Sklepy Amazon/Allegro/Kaufland nie mają osobnych kont Meta — ich wydatki idą zwykle przez konto mybed.de lub nie są tam mierzone.
+Google Ads spend NIE jest w tej tabeli — szukaj w `fact_daily_traffic.ad_cost` (patrz niżej).
 
-## fact_daily_traffic — ruch GA4 (ziarno: date + source + medium + hostname + campaign)
-- date, source, medium, campaign, hostname
-- sessions, users, new_users, pageviews, bounce_rate, avg_session_duration, transactions, ga_revenue
+## fact_daily_traffic — ruch GA4 + Google Ads spend (ziarno: date + source + medium + hostname + campaign)
+- date, source, medium, campaign, hostname (= sklep: mybed.pl / mybed.de / mittohome.pl)
+- sessions, users, new_users, pageviews, bounce_rate, avg_session_duration, transactions, ga_revenue, ad_cost
+
+### WAŻNE — Google Ads spend
+Wydatki Google Ads są w kolumnie `ad_cost`, w SPECJALNYCH wierszach `source = '__total__'`
+(GA4 raportuje dzienny ad_cost tylko jako dzienne podsumowanie, nie per kampania).
+Dla spend per sklep użyj `hostname` (sklep = hostname, bez mapowania).
+Wzorzec SQL „Google Ads spend per sklep per miesiąc":
+  SELECT date_trunc('month', date)::date AS month,
+         hostname AS shop,
+         ROUND(SUM(ad_cost)::numeric, 0) AS google_spend_pln
+  FROM fact_daily_traffic
+  WHERE source = '__total__'
+  GROUP BY 1, 2 ORDER BY 1, 2;
+Do zwykłej analizy ruchu (sesje/transakcje per source/medium) filtruj `source <> '__total__'`.
 
 ## fact_daily_ad_performance — metryki na poziomie reklamy (ziarno: date + platform + ad_id)
 - date, platform, account_id, campaign_id/name, adset_id/name, ad_id/name, creative_id
