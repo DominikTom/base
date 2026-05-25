@@ -4,6 +4,7 @@ import {
   ALLOWED_X_AXES, ALLOWED_Y_AXES, ALLOWED_GROUP_BY, FILTERABLE_FIELDS,
   measureDataset, META_ACCOUNT_TO_SHOP,
 } from '@/lib/explorer-whitelist';
+import { fetchEurRatesByDate, gaToPln } from '@/lib/ad-cost';
 
 type ExplorerFilterOperator = 'eq' | 'neq' | 'contains' | 'not_contains' | 'starts_with' | 'ends_with' | 'in' | 'gt' | 'gte' | 'lt' | 'lte' | 'between' | 'is_null' | 'not_null';
 
@@ -319,6 +320,10 @@ async function handleTrafficExplorer(params: ExplorerParams) {
   const { data: rows, error } = await q.limit(50000);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
+  // ad_cost i ga_revenue trzymane są w walucie property GA4 (mybed.de = EUR).
+  // Konwertujemy do PLN per dzień przez kursy z fact_orders.exchange_rate.
+  const rates = await fetchEurRatesByDate(db, params.date_from, params.date_to);
+
   type AggT = { sessions: number; users: number; transactions: number; ga_revenue: number; pageviews: number; ad_cost: number };
   const grouped: Record<string, Record<string, AggT>> = {};
   function bucket(xKey: string, gKey: string): AggT {
@@ -344,9 +349,10 @@ async function handleTrafficExplorer(params: ExplorerParams) {
     agg.sessions += Number(r.sessions) || 0;
     agg.users += Number(r.users) || 0;
     agg.transactions += Number(r.transactions) || 0;
-    agg.ga_revenue += Number(r.ga_revenue) || 0;
     agg.pageviews += Number(r.pageviews) || 0;
-    agg.ad_cost += Number(r.ad_cost) || 0;
+    const dateStr = String(r.date);
+    agg.ga_revenue += gaToPln(r.hostname, Number(r.ga_revenue) || 0, dateStr, rates);
+    agg.ad_cost += gaToPln(r.hostname, Number(r.ad_cost) || 0, dateStr, rates);
   }
 
   const groups = new Set<string>();

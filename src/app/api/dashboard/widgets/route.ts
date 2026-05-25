@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabase';
 import { isInWarsawDateRange, shiftDate, warsawDateKey } from '@/lib/warsaw-date';
+import { fetchEurRatesByDate, gaToPln } from '@/lib/ad-cost';
 
 export async function POST(request: NextRequest) {
   try {
@@ -548,11 +549,17 @@ export async function POST(request: NextRequest) {
         const metaSpend = metaScoped.reduce((s, r) => s + (r.spend || 0), 0);
 
         const googleData = await fetchAllRows(
-          db.from('fact_daily_traffic').select('ad_cost, hostname, campaign, source')
+          db.from('fact_daily_traffic').select('date, ad_cost, hostname, campaign, source')
             .eq('source', '__total__').gte('date', dateFrom).lte('date', dateTo)
         );
         const googleScoped = filterRowsByShopHint(googleData || [], shop, ['hostname', 'campaign', 'source']);
-        const googleSpend = googleScoped.reduce((s, r) => s + (r.ad_cost || 0), 0);
+        // ad_cost dla mybed.de jest w EUR (waluta property GA4) — konwersja na PLN
+        // przez kursy z fact_orders.exchange_rate.
+        const eurRates = await fetchEurRatesByDate(db, dateFrom, dateTo);
+        const googleSpend = googleScoped.reduce(
+          (s, r) => s + gaToPln(r.hostname, Number(r.ad_cost) || 0, String(r.date), eurRates),
+          0,
+        );
 
         const { data: agencyData } = await db.from('fact_agency_costs').select('month, amount_pln').limit(500);
         let agencyCost = 0;
