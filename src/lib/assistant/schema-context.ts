@@ -115,15 +115,30 @@ export const WIDGET_SPEC_REFERENCE = `# Specyfikacja widgetu / KPI (config custo
 
 Pola configa:
 - chart_type: "bar" | "line" | "area" | "pie" | "table"
-- x_axis (oś X / wymiar): "date" | "source_shop" | "product_category" | "fabric_collection" | "supplier" | "source_platform"
-- y_axis (metryka): "revenue_gross" | "orders_count" | "avg_order_value" | "quantity"
-- group_by (opcjonalna seria, "" = brak): "source_shop" | "product_category" | "supplier" | "source_platform" | "fabric_collection"
+
+- x_axis (oś X / wymiar):
+  Z fact_orders: "date" | "source_shop" | "source_platform" | "supplier" | "delivery_city" | "status" | "coupon_code"
+  Z fact_order_items: "product_category" | "fabric_collection" | "bed_size" | "mattress_type" | "headboard_height"
+
+- y_axis (metryka — wybór y_axis decyduje też o źródle danych):
+  Z fact_orders / pozycji: "revenue_gross" | "revenue_paid" | "shipping_revenue" | "orders_count" | "orders_paid" | "orders_cancelled" | "avg_order_value" | "quantity"
+  Z fact_daily_adspend (Meta Ads): "meta_spend" | "meta_impressions" | "meta_clicks" | "meta_conversions" | "meta_ctr" | "meta_cpc"
+  Z fact_daily_traffic (ruch + Google Ads): "google_spend" | "sessions" | "users" | "transactions" | "ga_revenue" | "pageviews"
+
+- group_by (opcjonalna seria, "" = brak): "source_shop" | "source_platform" | "supplier" | "status" | "delivery_city" | "product_category" | "fabric_collection" | "bed_size" | "mattress_type" | "headboard_height"
+
 - granularity (gdy x_axis = "date"): "day" | "week" | "month" | "quarter"
+
 - filters_advanced: tablica { field, operator, value, value_to? }
   - field: source_shop, source_platform, supplier, status, delivery_city, coupon_code,
-    product_name, product_category, fabric_collection, fabric, bed_size, headboard_height,
-    storage_type, total_gross_pln, quantity, is_sample
+    product_name, product_category, fabric_collection, fabric, bed_size, mattress_type,
+    headboard_height, storage_type, total_gross_pln, quantity, is_sample
   - operator: eq, neq, contains, not_contains, starts_with, ends_with, in, gt, gte, lt, lte, between, is_null, not_null
   - is_sample to filtr logiczny: value "true" (tylko próbki) lub "false" (tylko realne produkty)
+
+WAŻNE — dopasowanie x_axis do y_axis:
+- Miary Meta (meta_*) i ruchu (sessions / google_spend / transactions / users / ga_revenue / pageviews) sensownie reagują tylko na x_axis = "date" lub "source_shop" (+ "source_platform"). Inne osie X dadzą jeden zbiorczy słupek "Łącznie".
+- Wymiary z poziomu pozycji (product_category, fabric_collection, bed_size, mattress_type, headboard_height) działają TYLKO z miarami z zamówień (revenue/orders/quantity).
+- Sklep w meta jest dedukowany z account_id; w ruchu sklep = hostname.
 
 Widgety i KPI renderuje istniejący silnik (/api/dashboard/explorer) — używaj tylko wartości z powyższych list.`;

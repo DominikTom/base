@@ -161,10 +161,14 @@ export async function POST(request: NextRequest) {
     function shopTokens(selectedShop: string): string[] {
       if (selectedShop === 'all') return [];
       const normalized = selectedShop.toLowerCase();
+      // account_id Mety dla każdego sklepu — bez tego filtr sklepu na widgetach
+      // Meta (kpi_meta_spend, kpi_mer, kpi_total_marketing_cost) zwracał 0,
+      // bo nazwy kampanii często nie zawierają „mybed.de" itd., a samo account_id
+      // jest jedynym pewnym powiązaniem z konkretnym kontem reklamowym.
       const map: Record<string, string[]> = {
-        'mybed.pl': ['mybed.pl', 'mybed_pl', 'mybedpl'],
-        'mybed.de': ['mybed.de', 'mybed_de', 'mybedde'],
-        'mittohome.pl': ['mittohome.pl', 'mittohome_pl', 'mittohomepl'],
+        'mybed.pl': ['mybed.pl', 'mybed_pl', 'mybedpl', 'act_1681802382204753'],
+        'mybed.de': ['mybed.de', 'mybed_de', 'mybedde', 'act_637792865917248'],
+        'mittohome.pl': ['mittohome.pl', 'mittohome_pl', 'mittohomepl', 'act_797212915921530'],
         'showroom': ['showroom'],
         'amazon.de': ['amazon.de', 'amazon_de', 'amazonde'],
         'allegro.pl': ['allegro.pl', 'allegro_pl', 'allegropl'],

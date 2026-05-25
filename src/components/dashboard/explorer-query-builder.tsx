@@ -14,24 +14,55 @@ const GRANULARITIES = [
 const X_AXES = [
   { value: 'date', label: 'Data' },
   { value: 'source_shop', label: 'Sklep' },
+  { value: 'source_platform', label: 'Platforma' },
+  { value: 'supplier', label: 'Dostawca' },
+  { value: 'delivery_city', label: 'Miasto dostawy' },
+  { value: 'status', label: 'Status zamówienia' },
+  { value: 'coupon_code', label: 'Kod kuponu' },
   { value: 'product_category', label: 'Kategoria produktu' },
   { value: 'fabric_collection', label: 'Kolekcja tkaniny' },
-  { value: 'supplier', label: 'Dostawca' },
-  { value: 'source_platform', label: 'Platforma' },
+  { value: 'bed_size', label: 'Rozmiar łóżka' },
+  { value: 'mattress_type', label: 'Typ materaca' },
+  { value: 'headboard_height', label: 'Wezgłowie' },
 ];
+// Pogrupowane logicznie po datasetach (orders / Meta Ads / Ruch).
 const Y_AXES = [
-  { value: 'revenue_gross', label: 'Revenue brutto' },
-  { value: 'orders_count', label: 'Liczba zamówień' },
-  { value: 'avg_order_value', label: 'Średnia wartość zamówienia' },
-  { value: 'quantity', label: 'Suma ilości' },
+  // Zamówienia
+  { value: 'revenue_gross', label: '[Zamówienia] Przychód brutto (PLN)' },
+  { value: 'revenue_paid', label: '[Zamówienia] Przychód opłacony (PLN)' },
+  { value: 'shipping_revenue', label: '[Zamówienia] Przychód z wysyłki (PLN)' },
+  { value: 'orders_count', label: '[Zamówienia] Liczba zamówień' },
+  { value: 'orders_paid', label: '[Zamówienia] Zamówienia opłacone' },
+  { value: 'orders_cancelled', label: '[Zamówienia] Zamówienia anulowane' },
+  { value: 'avg_order_value', label: '[Zamówienia] Średnia wartość zamówienia (AOV)' },
+  { value: 'quantity', label: '[Zamówienia] Suma sztuk' },
+  // Meta Ads
+  { value: 'meta_spend', label: '[Meta Ads] Wydatki (PLN)' },
+  { value: 'meta_impressions', label: '[Meta Ads] Wyświetlenia' },
+  { value: 'meta_clicks', label: '[Meta Ads] Kliknięcia' },
+  { value: 'meta_conversions', label: '[Meta Ads] Konwersje' },
+  { value: 'meta_ctr', label: '[Meta Ads] CTR (%)' },
+  { value: 'meta_cpc', label: '[Meta Ads] CPC (PLN)' },
+  // Ruch / GA4 / Google Ads
+  { value: 'google_spend', label: '[Ruch] Google Ads — wydatki (PLN)' },
+  { value: 'sessions', label: '[Ruch] Sesje' },
+  { value: 'users', label: '[Ruch] Użytkownicy' },
+  { value: 'transactions', label: '[Ruch] Transakcje' },
+  { value: 'ga_revenue', label: '[Ruch] Przychód GA4 (PLN)' },
+  { value: 'pageviews', label: '[Ruch] Odsłony' },
 ];
 const GROUP_BY = [
   { value: '', label: 'Bez grupowania' },
   { value: 'source_shop', label: 'Sklep' },
-  { value: 'product_category', label: 'Kategoria' },
-  { value: 'fabric_collection', label: 'Kolekcja tkaniny' },
-  { value: 'supplier', label: 'Dostawca' },
   { value: 'source_platform', label: 'Platforma' },
+  { value: 'supplier', label: 'Dostawca' },
+  { value: 'status', label: 'Status zamówienia' },
+  { value: 'delivery_city', label: 'Miasto dostawy' },
+  { value: 'product_category', label: 'Kategoria produktu' },
+  { value: 'fabric_collection', label: 'Kolekcja tkaniny' },
+  { value: 'bed_size', label: 'Rozmiar łóżka' },
+  { value: 'mattress_type', label: 'Typ materaca' },
+  { value: 'headboard_height', label: 'Wezgłowie' },
 ];
 
 export const EMPTY_QUERY_SPEC: QuerySpec = {
