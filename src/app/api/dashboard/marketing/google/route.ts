@@ -2,12 +2,16 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabase';
 import { fetchEurRatesByDate, gaToPln } from '@/lib/ad-cost';
 
-// Google Ads w bazie żyje w fact_daily_traffic (z importu GA4). Per-kampania
-// dane to wiersze source='google' AND medium='cpc' z populowanymi
-// ad_cost / ad_clicks / ad_impressions oraz ga_revenue/transactions.
-// Hostname = sklep (mybed.pl / mybed.de / mittohome.pl).
-// UWAGA — waluta: dla mybed.de ad_cost i ga_revenue są w EUR (waluta property
-// GA4); konwertujemy na PLN dziennymi kursami z fact_orders.exchange_rate.
+// Google Ads w GA4 ma DWA tryby raportowania advertiserAdCost:
+//   1) source='__total__' — dzienna suma per host. To samo, co Looker pokazuje
+//      jako „Google Ads total" i co używa widget kpi_google_spend na dashboardzie.
+//   2) source='google' AND medium='cpc' — per-kampania. GA4 NIE przypisuje wszystkich
+//      kliknięć do konkretnych kampanii (np. UAC, kampanie z błędnym taggingiem),
+//      więc SUMA per-kampania jest typowo o ~5-10% mniejsza niż __total__.
+//
+// Headline KPIs (Total Spend, Revenue, ROAS, daily charts) → __total__ (zgodność z widgetem).
+// Tabela kampanii → per-kampania (jedyne źródło breakdownów).
+// Waluta: mybed.de jest w EUR — konwertujemy gaToPln dziennymi kursami z fact_orders.
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -17,34 +21,62 @@ export async function GET(request: NextRequest) {
 
     const db = getSupabaseAdmin();
 
-    // Paginowane pobranie per-kampania (PostgREST 1000-row default cap).
     const PAGE_SIZE = 1000;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const rows: any[] = [];
-    let offset = 0;
-    // eslint-disable-next-line no-constant-condition
-    while (true) {
-      let q = db
-        .from('fact_daily_traffic')
-        .select('date, hostname, campaign, sessions, transactions, ga_revenue, ad_cost, ad_clicks, ad_impressions')
-        .eq('source', 'google').eq('medium', 'cpc')
-        .gte('date', dateFrom).lte('date', dateTo)
-        .order('date', { ascending: true })
-        .range(offset, offset + PAGE_SIZE - 1);
-      if (shop !== 'all') q = q.eq('hostname', shop);
-      const { data: page, error } = await q;
-      if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-      if (!page || page.length === 0) break;
-      rows.push(...page);
-      if (page.length < PAGE_SIZE) break;
-      offset += PAGE_SIZE;
+    async function fetchAll(filterFn: (q: ReturnType<typeof db.from>) => unknown) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const out: any[] = [];
+      let offset = 0;
+      while (true) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        let q: any = db
+          .from('fact_daily_traffic')
+          .select('date, hostname, campaign, sessions, transactions, ga_revenue, ad_cost, ad_clicks, ad_impressions')
+          .gte('date', dateFrom).lte('date', dateTo)
+          .order('date', { ascending: true })
+          .range(offset, offset + PAGE_SIZE - 1);
+        q = filterFn(q) ?? q;
+        const { data: page, error } = await q;
+        if (error) throw new Error(error.message);
+        if (!page || page.length === 0) break;
+        out.push(...page);
+        if (page.length < PAGE_SIZE) break;
+        offset += PAGE_SIZE;
+      }
+      return out;
     }
 
-    // Kursy EUR→PLN dla konwersji wierszy mybed.de.
+    // 1) __total__ — headline KPIs, daily charts, per-host breakdown
+    const totalRows = await fetchAll(q => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let qq = (q as any).eq('source', '__total__');
+      if (shop !== 'all') qq = qq.eq('hostname', shop);
+      return qq;
+    });
+
+    // 2) per-kampania — tabela kampanii i top by ROAS
+    const campRows = await fetchAll(q => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let qq = (q as any).eq('source', 'google').eq('medium', 'cpc');
+      if (shop !== 'all') qq = qq.eq('hostname', shop);
+      return qq;
+    });
+
     const eurRates = await fetchEurRatesByDate(db, dateFrom, dateTo);
 
-    // Pre-pass: każdy wiersz konwertujemy raz; potem normalnie agregujemy.
-    const norm = rows.map(r => ({
+    // Normalizacja __total__ z konwersją EUR→PLN dla mybed.de
+    const totalNorm = totalRows.map(r => ({
+      date: String(r.date),
+      hostname: String(r.hostname || ''),
+      sessions: Number(r.sessions) || 0,
+      transactions: Number(r.transactions) || 0,
+      clicks: Number(r.ad_clicks) || 0,
+      impressions: Number(r.ad_impressions) || 0,
+      spend: gaToPln(r.hostname, Number(r.ad_cost) || 0, String(r.date), eurRates),
+      revenue: gaToPln(r.hostname, Number(r.ga_revenue) || 0, String(r.date), eurRates),
+    }));
+
+    // Normalizacja per-kampania (PLN po konwersji)
+    const campNorm = campRows.map(r => ({
       date: String(r.date),
       hostname: String(r.hostname || ''),
       campaign: String(r.campaign || '(unknown)'),
@@ -56,8 +88,8 @@ export async function GET(request: NextRequest) {
       revenue: gaToPln(r.hostname, Number(r.ga_revenue) || 0, String(r.date), eurRates),
     }));
 
-    // KPIs
-    const totals = norm.reduce(
+    // KPIs z __total__
+    const totals = totalNorm.reduce(
       (a, r) => {
         a.spend += r.spend;
         a.revenue += r.revenue;
@@ -75,9 +107,9 @@ export async function GET(request: NextRequest) {
     const avgCtr = totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : 0;
     const convRate = totals.sessions > 0 ? (totals.transactions / totals.sessions) * 100 : 0;
 
-    // Spend vs Revenue per dzień
+    // Spend vs Revenue per dzień — z __total__
     const dailyMap: Record<string, { spend: number; revenue: number }> = {};
-    for (const r of norm) {
+    for (const r of totalNorm) {
       if (!dailyMap[r.date]) dailyMap[r.date] = { spend: 0, revenue: 0 };
       dailyMap[r.date].spend += r.spend;
       dailyMap[r.date].revenue += r.revenue;
@@ -86,26 +118,25 @@ export async function GET(request: NextRequest) {
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([date, v]) => ({ date, spend: Math.round(v.spend), revenue: Math.round(v.revenue) }));
 
-    // ROAS trend (per dzień)
     const roasTrend = spendVsRevenue.map(d => ({
       name: d.date,
       value: d.spend > 0 ? Math.round((d.revenue / d.spend) * 100) / 100 : 0,
     }));
 
-    // Spend per sklep
+    // Spend per sklep — z __total__
     const byShop: Record<string, number> = {};
-    for (const r of norm) byShop[r.hostname] = (byShop[r.hostname] || 0) + r.spend;
+    for (const r of totalNorm) byShop[r.hostname] = (byShop[r.hostname] || 0) + r.spend;
     const spendByShop = Object.entries(byShop)
       .map(([name, value]) => ({ name, value: Math.round(value) }))
       .sort((a, b) => b.value - a.value);
 
-    // Tabela kampanii (campaign × hostname)
+    // Tabela kampanii — z per-kampania (jedyne źródło)
     const campaignMap: Record<string, {
       campaign: string; hostname: string;
       spend: number; revenue: number; clicks: number; impressions: number;
       transactions: number; sessions: number;
     }> = {};
-    for (const r of norm) {
+    for (const r of campNorm) {
       const key = `${r.hostname}::${r.campaign}`;
       if (!campaignMap[key]) {
         campaignMap[key] = {
@@ -137,21 +168,23 @@ export async function GET(request: NextRequest) {
       }))
       .sort((a, b) => b.spend - a.spend);
 
-    // Top 10 kampanii wg ROAS (z minimalnym spend, żeby nie wybijały singletony)
+    // Suma per-kampania — żeby frontend mógł pokazać gap vs Total Spend
+    const campaignSumSpend = Math.round(campaignTable.reduce((s, c) => s + c.spend, 0));
+
     const topByRoas = [...campaignTable]
       .filter(c => c.spend > 100)
       .sort((a, b) => b.roas - a.roas)
       .slice(0, 10)
       .map(c => ({ name: c.campaign, value: Math.round(c.roas * 100) / 100 }));
 
-    // Coverage
+    // Coverage — bazujemy na __total__ (to definiuje obecność danych Google Ads)
     const [minRes, maxRes, countRes] = await Promise.all([
-      db.from('fact_daily_traffic').select('date').eq('source', 'google').eq('medium', 'cpc')
+      db.from('fact_daily_traffic').select('date').eq('source', '__total__')
         .order('date', { ascending: true }).limit(1).maybeSingle(),
-      db.from('fact_daily_traffic').select('date').eq('source', 'google').eq('medium', 'cpc')
+      db.from('fact_daily_traffic').select('date').eq('source', '__total__')
         .order('date', { ascending: false }).limit(1).maybeSingle(),
       db.from('fact_daily_traffic').select('*', { count: 'exact', head: true })
-        .eq('source', 'google').eq('medium', 'cpc'),
+        .eq('source', '__total__'),
     ]);
     const coverage = minRes.data && maxRes.data
       ? { from: minRes.data.date as string, to: maxRes.data.date as string, rows: countRes.count ?? 0 }
@@ -181,6 +214,7 @@ export async function GET(request: NextRequest) {
       },
       charts: { spendVsRevenue, roasTrend, spendByShop, topByRoas },
       campaignTable,
+      campaignSumSpend,
       coverage,
       lastSync: lastSyncRow ? { at: lastSyncRow.finished_at, rows: lastSyncRow.rows_processed } : null,
     });

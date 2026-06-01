@@ -81,6 +81,7 @@ interface GoogleAdsData {
     cpc: number;
     roas: number;
   }>;
+  campaignSumSpend: number;
   coverage: { from: string; to: string; rows: number } | null;
   lastSync: { at: string; rows: number } | null;
 }
@@ -286,8 +287,9 @@ function GoogleAdsTab() {
             </p>
           )}
           <p className="text-[11px] text-zinc-600 mt-0.5">
-            Źródło: fact_daily_traffic (GA4, source=google/medium=cpc). Dla mybed.de ad_cost
-            i revenue konwertowane EUR→PLN dziennymi kursami z fact_orders.
+            KPI z fact_daily_traffic (GA4, source=__total__) — to samo źródło, co widget
+            „Google Ads Spend”. Tabela kampanii z source=google/medium=cpc. Dla mybed.de
+            ad_cost i revenue konwertowane EUR→PLN dziennymi kursami z fact_orders.
           </p>
         </div>
         {data.lastSync && (
@@ -329,7 +331,14 @@ function GoogleAdsTab() {
         <SimpleBarChart data={data.charts.topByRoas} layout="horizontal" barColor="#10b981" valueFormatter={v => `${v}x`} height={360} />
       </ChartCard>
 
-      <ChartCard title="Tabela kampanii Google Ads">
+      <ChartCard
+        title="Tabela kampanii Google Ads"
+        subtitle={
+          data.campaignSumSpend < data.kpis.totalSpend
+            ? `Suma kampanii: ${formatCurrency(data.campaignSumSpend)} z ${formatCurrency(data.kpis.totalSpend)} (Total Spend). GA4 nie przypisuje wszystkich kliknięć do konkretnych kampanii — różnica ${formatCurrency(data.kpis.totalSpend - data.campaignSumSpend)} pochodzi z ruchu bez tagu utm_campaign.`
+            : undefined
+        }
+      >
         <DataTable data={data.campaignTable} columns={campaignColumns} pageSize={15} />
       </ChartCard>
     </div>
