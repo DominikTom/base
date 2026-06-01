@@ -33,11 +33,13 @@ const schema = {
     { field: 'quantity', label: 'Suma sztuk', type: 'number', dataset: 'orders' },
     // Meta Ads
     { field: 'meta_spend', label: 'Meta Ads — wydatki', type: 'number', dataset: 'meta' },
+    { field: 'meta_revenue', label: 'Meta Ads — przychód (Meta-reported)', type: 'number', dataset: 'meta' },
     { field: 'meta_impressions', label: 'Meta Ads — wyświetlenia', type: 'number', dataset: 'meta' },
     { field: 'meta_clicks', label: 'Meta Ads — kliknięcia', type: 'number', dataset: 'meta' },
     { field: 'meta_conversions', label: 'Meta Ads — konwersje', type: 'number', dataset: 'meta' },
     { field: 'meta_ctr', label: 'Meta Ads — CTR (%)', type: 'number', dataset: 'meta' },
     { field: 'meta_cpc', label: 'Meta Ads — CPC', type: 'number', dataset: 'meta' },
+    { field: 'meta_roas', label: 'Meta Ads — ROAS', type: 'number', dataset: 'meta' },
     // Ruch / GA4 / Google Ads
     { field: 'google_spend', label: 'Google Ads — wydatki', type: 'number', dataset: 'traffic' },
     { field: 'sessions', label: 'Sesje', type: 'number', dataset: 'traffic' },

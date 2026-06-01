@@ -92,7 +92,7 @@ export const TOOL_DEFINITIONS: Anthropic.Tool[] = [
         title: { type: 'string' },
         chart_type: { type: 'string', enum: ['bar', 'line', 'area', 'pie', 'table'] },
         x_axis: { type: 'string', enum: ['date', 'source_shop', 'source_platform', 'supplier', 'delivery_city', 'status', 'coupon_code', 'product_category', 'fabric_collection', 'bed_size', 'mattress_type', 'headboard_height'] },
-        y_axis: { type: 'string', enum: ['revenue_gross', 'revenue_paid', 'shipping_revenue', 'orders_count', 'orders_paid', 'orders_cancelled', 'avg_order_value', 'quantity', 'meta_spend', 'meta_impressions', 'meta_clicks', 'meta_conversions', 'meta_ctr', 'meta_cpc', 'google_spend', 'sessions', 'users', 'transactions', 'ga_revenue', 'pageviews'] },
+        y_axis: { type: 'string', enum: ['revenue_gross', 'revenue_paid', 'shipping_revenue', 'orders_count', 'orders_paid', 'orders_cancelled', 'avg_order_value', 'quantity', 'meta_spend', 'meta_revenue', 'meta_impressions', 'meta_clicks', 'meta_conversions', 'meta_ctr', 'meta_cpc', 'meta_roas', 'google_spend', 'sessions', 'users', 'transactions', 'ga_revenue', 'pageviews'] },
         group_by: { type: 'string', enum: ['', 'source_shop', 'source_platform', 'supplier', 'status', 'delivery_city', 'product_category', 'fabric_collection', 'bed_size', 'mattress_type', 'headboard_height'] },
         granularity: { type: 'string', enum: ['day', 'week', 'month', 'quarter'] },
         filters_advanced: {

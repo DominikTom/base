@@ -240,7 +240,7 @@ async function handleOrderExplorer(params: ExplorerParams) {
 async function handleMetaAdsExplorer(params: ExplorerParams) {
   const db = getSupabaseAdmin();
   let q = db.from('fact_daily_adspend')
-    .select('date, account_id, spend, impressions, clicks, conversions')
+    .select('date, account_id, spend, conversion_value, impressions, clicks, conversions')
     .eq('platform', 'meta')
     .gte('date', params.date_from)
     .lte('date', params.date_to);
@@ -256,11 +256,11 @@ async function handleMetaAdsExplorer(params: ExplorerParams) {
   const { data: rows, error } = await q.limit(50000);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  type AggA = { spend: number; impressions: number; clicks: number; conversions: number };
+  type AggA = { spend: number; revenue: number; impressions: number; clicks: number; conversions: number };
   const grouped: Record<string, Record<string, AggA>> = {};
   function bucket(xKey: string, gKey: string): AggA {
     if (!grouped[xKey]) grouped[xKey] = {};
-    if (!grouped[xKey][gKey]) grouped[xKey][gKey] = { spend: 0, impressions: 0, clicks: 0, conversions: 0 };
+    if (!grouped[xKey][gKey]) grouped[xKey][gKey] = { spend: 0, revenue: 0, impressions: 0, clicks: 0, conversions: 0 };
     return grouped[xKey][gKey];
   }
 
@@ -279,6 +279,7 @@ async function handleMetaAdsExplorer(params: ExplorerParams) {
     const gKey = params.group_by ? dim(params.group_by, r) : 'total';
     const agg = bucket(xKey, gKey);
     agg.spend += Number(r.spend) || 0;
+    agg.revenue += Number(r.conversion_value) || 0;
     agg.impressions += Number(r.impressions) || 0;
     agg.clicks += Number(r.clicks) || 0;
     agg.conversions += Number(r.conversions) || 0;
@@ -290,11 +291,13 @@ async function handleMetaAdsExplorer(params: ExplorerParams) {
   function measure(a: AggA): number {
     switch (params.y_axis) {
       case 'meta_spend': return a.spend;
+      case 'meta_revenue': return a.revenue;
       case 'meta_impressions': return a.impressions;
       case 'meta_clicks': return a.clicks;
       case 'meta_conversions': return a.conversions;
       case 'meta_ctr': return a.impressions > 0 ? (a.clicks / a.impressions) * 100 : 0;
       case 'meta_cpc': return a.clicks > 0 ? a.spend / a.clicks : 0;
+      case 'meta_roas': return a.spend > 0 ? a.revenue / a.spend : 0;
       default: return 0;
     }
   }

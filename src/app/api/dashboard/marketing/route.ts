@@ -173,6 +173,7 @@ export async function GET(request: NextRequest) {
         totalSpendOriginal: hasForeignCurrency ? Math.round(totals.spendOriginal) : null,
         originalCurrency: hasForeignCurrency ? singleOriginalCurrency : null,
         totalConversions: totals.conversions,
+        totalConversionValue: Math.round(totals.conversionValue),
         blendedRoas: Math.round(blendedRoas * 100) / 100,
         avgCpc: Math.round(avgCpc * 100) / 100,
         avgCpm: Math.round(avgCpm * 100) / 100,

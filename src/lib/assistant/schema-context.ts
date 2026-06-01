@@ -52,7 +52,18 @@ Ma WSZYSTKIE kolumny fact_order_items oraz dodatkowo:
 
 ## fact_daily_adspend — dzienne wydatki reklamowe (ziarno: date + platform + campaign_id)
 - date, platform (na razie tylko 'meta'), account_id, campaign_id, campaign_name, adset_name
-- impressions, clicks, spend (w PLN), conversions, conversion_value, cpc, cpm, ctr, roas
+- impressions, clicks, spend (w PLN), conversions, conversion_value (przychód raportowany przez Meta, w PLN), cpc, cpm, ctr, roas
+- spend_original, original_currency — pierwotne wartości z konta (dla mybed.de = EUR);
+  jednak kolumny spend i conversion_value ETL zapisuje JUŻ PRZELICZONE NA PLN (mnożone przez kurs dnia).
+
+### WAŻNE — przychód z Meta Ads
+„Przychód z Meta" / „Meta revenue" / „Meta-reported revenue" = SUM(conversion_value)
+z fact_daily_adspend WHERE platform = 'meta'. JUŻ JEST w PLN — bez konwersji.
+NIE używaj do tego ga_revenue z fact_daily_traffic — to GA4 last-click, który masowo
+underreportuje konwersje Meta (typowo 100× mniej). Meta zna własne konwersje (post-click
+i view-through) i raportuje je w polu conversion_value; ga_revenue dla kanału Meta to
+zupełnie inna, mniejsza liczba.
+ROAS Meta = SUM(conversion_value) / SUM(spend) — obie kolumny w PLN.
 
 ### Mapowanie account_id → sklep (Meta Ads)
 Tabela NIE ma kolumny source_shop. Przypisanie wydatku do sklepu robisz po account_id:
@@ -137,7 +148,7 @@ Pola configa:
 
 - y_axis (metryka — wybór y_axis decyduje też o źródle danych):
   Z fact_orders / pozycji: "revenue_gross" | "revenue_paid" | "shipping_revenue" | "orders_count" | "orders_paid" | "orders_cancelled" | "avg_order_value" | "quantity"
-  Z fact_daily_adspend (Meta Ads): "meta_spend" | "meta_impressions" | "meta_clicks" | "meta_conversions" | "meta_ctr" | "meta_cpc"
+  Z fact_daily_adspend (Meta Ads): "meta_spend" | "meta_revenue" | "meta_impressions" | "meta_clicks" | "meta_conversions" | "meta_ctr" | "meta_cpc" | "meta_roas"
   Z fact_daily_traffic (ruch + Google Ads): "google_spend" | "sessions" | "users" | "transactions" | "ga_revenue" | "pageviews"
 
 - group_by (opcjonalna seria, "" = brak): "source_shop" | "source_platform" | "supplier" | "status" | "delivery_city" | "product_category" | "fabric_collection" | "bed_size" | "mattress_type" | "headboard_height"

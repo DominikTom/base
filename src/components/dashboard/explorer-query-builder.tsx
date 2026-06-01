@@ -38,11 +38,13 @@ const Y_AXES = [
   { value: 'quantity', label: '[Zamówienia] Suma sztuk' },
   // Meta Ads
   { value: 'meta_spend', label: '[Meta Ads] Wydatki (PLN)' },
+  { value: 'meta_revenue', label: '[Meta Ads] Przychód Meta-reported (PLN)' },
   { value: 'meta_impressions', label: '[Meta Ads] Wyświetlenia' },
   { value: 'meta_clicks', label: '[Meta Ads] Kliknięcia' },
   { value: 'meta_conversions', label: '[Meta Ads] Konwersje' },
   { value: 'meta_ctr', label: '[Meta Ads] CTR (%)' },
   { value: 'meta_cpc', label: '[Meta Ads] CPC (PLN)' },
+  { value: 'meta_roas', label: '[Meta Ads] ROAS' },
   // Ruch / GA4 / Google Ads
   { value: 'google_spend', label: '[Ruch] Google Ads — wydatki (PLN)' },
   { value: 'sessions', label: '[Ruch] Sesje' },

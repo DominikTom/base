@@ -20,8 +20,8 @@ export const ALLOWED_Y_AXES: string[] = [
   'revenue_gross', 'orders_count', 'avg_order_value', 'quantity',
   'revenue_paid', 'orders_paid', 'orders_cancelled', 'shipping_revenue',
   // Z Meta Ads
-  'meta_spend', 'meta_impressions', 'meta_clicks', 'meta_conversions',
-  'meta_ctr', 'meta_cpc',
+  'meta_spend', 'meta_revenue', 'meta_impressions', 'meta_clicks', 'meta_conversions',
+  'meta_ctr', 'meta_cpc', 'meta_roas',
   // Z ruchu / Google Ads
   'google_spend', 'sessions', 'users', 'transactions', 'ga_revenue', 'pageviews',
 ];
@@ -57,7 +57,7 @@ export const META_ACCOUNT_TO_SHOP: Record<string, string> = {
 };
 
 // Datasety y_axis → dyspozytor w eksploratorze.
-const META_MEASURES = new Set(['meta_spend', 'meta_impressions', 'meta_clicks', 'meta_conversions', 'meta_ctr', 'meta_cpc']);
+const META_MEASURES = new Set(['meta_spend', 'meta_revenue', 'meta_impressions', 'meta_clicks', 'meta_conversions', 'meta_ctr', 'meta_cpc', 'meta_roas']);
 const TRAFFIC_MEASURES = new Set(['google_spend', 'sessions', 'users', 'transactions', 'ga_revenue', 'pageviews']);
 export function measureDataset(y: string): 'meta' | 'traffic' | 'orders' {
   if (META_MEASURES.has(y)) return 'meta';
