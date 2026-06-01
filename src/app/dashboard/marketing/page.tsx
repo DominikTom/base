@@ -9,9 +9,12 @@ import { SimplePieChart } from '@/components/charts/pie-chart';
 import { DataTable, type Column } from '@/components/ui/data-table';
 import { formatCurrency, formatNumber, cn } from '@/lib/utils';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
-import { DollarSign, Target, TrendingUp, MousePointerClick, Eye, Percent, RefreshCw, CheckCircle, XCircle } from 'lucide-react';
+import {
+  DollarSign, Target, TrendingUp, MousePointerClick, Eye, Percent,
+  RefreshCw, CheckCircle, XCircle, ShoppingCart, Globe,
+} from 'lucide-react';
 
-interface MarketingData {
+interface MetaMarketingData {
   kpis: {
     totalSpend: number;
     totalSpendOriginal: number | null;
@@ -30,9 +33,7 @@ interface MarketingData {
     topByRoas: Array<{ name: string; value: number }>;
   };
   lastSync: { at: string; rows: number } | null;
-  coverage: {
-    meta: { from: string; to: string; rows: number } | null;
-  };
+  coverage: { meta: { from: string; to: string; rows: number } | null };
   campaignTable: Array<{
     campaign_id: string;
     campaign_name: string;
@@ -48,9 +49,85 @@ interface MarketingData {
   }>;
 }
 
+interface GoogleAdsData {
+  kpis: {
+    totalSpend: number;
+    totalRevenue: number;
+    totalTransactions: number;
+    totalSessions: number;
+    totalClicks: number;
+    blendedRoas: number;
+    avgCpc: number;
+    avgCpm: number;
+    avgCtr: number;
+    convRate: number;
+  };
+  charts: {
+    spendVsRevenue: Array<{ date: string; spend: number; revenue: number }>;
+    roasTrend: Array<{ name: string; value: number }>;
+    spendByShop: Array<{ name: string; value: number }>;
+    topByRoas: Array<{ name: string; value: number }>;
+  };
+  campaignTable: Array<{
+    campaign: string;
+    hostname: string;
+    spend: number;
+    revenue: number;
+    clicks: number;
+    impressions: number;
+    transactions: number;
+    sessions: number;
+    ctr: number;
+    cpc: number;
+    roas: number;
+  }>;
+  coverage: { from: string; to: string; rows: number } | null;
+  lastSync: { at: string; rows: number } | null;
+}
+
+type TabKey = 'meta' | 'google';
+
 export default function MarketingPage() {
+  const [tab, setTab] = useState<TabKey>('meta');
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl font-semibold text-zinc-100">Marketing Performance</h1>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex items-center gap-1 border-b border-zinc-800">
+        {([
+          { key: 'meta' as const, label: 'Meta Ads', icon: <Target size={14} /> },
+          { key: 'google' as const, label: 'Google Ads', icon: <Globe size={14} /> },
+        ]).map(t => (
+          <button
+            key={t.key}
+            onClick={() => setTab(t.key)}
+            className={cn(
+              'flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors',
+              tab === t.key
+                ? 'border-blue-500 text-zinc-100'
+                : 'border-transparent text-zinc-500 hover:text-zinc-300',
+            )}
+          >
+            {t.icon}{t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'meta' ? <MetaTab /> : <GoogleAdsTab />}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Meta Ads
+// ─────────────────────────────────────────────────────────────────
+function MetaTab() {
   const { filters } = useDashboard();
-  const [data, setData] = useState<MarketingData | null>(null);
+  const [data, setData] = useState<MetaMarketingData | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -65,30 +142,13 @@ export default function MarketingPage() {
         const res = await fetch(`/api/dashboard/marketing?${params}`);
         const json = await res.json();
         setData(json);
-      } catch {
-        setData(null);
-      } finally {
-        setLoading(false);
-      }
+      } catch { setData(null); } finally { setLoading(false); }
     }
     fetchData();
   }, [filters]);
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-96">
-        <div className="animate-pulse text-zinc-500">Ładowanie danych...</div>
-      </div>
-    );
-  }
-
-  if (!data) {
-    return (
-      <div className="flex flex-col items-center justify-center h-96 gap-4">
-        <p className="text-zinc-500">Brak danych marketingowych. Dane zostaną załadowane z Meta/Pinterest API.</p>
-      </div>
-    );
-  }
+  if (loading) return <PanelLoading />;
+  if (!data) return <PanelEmpty hint="Brak danych Meta Ads. Zsynchronizuj Meta API." />;
 
   const campaignColumns: Column<(typeof data.campaignTable)[0]>[] = [
     { key: 'campaign_name', header: 'Kampania', accessor: r => r.campaign_name, className: 'max-w-[250px] truncate' },
@@ -100,19 +160,15 @@ export default function MarketingPage() {
     { key: 'cpc', header: 'CPC', accessor: r => r.cpc, align: 'right', format: v => `${(v as number).toFixed(2)} zł` },
     { key: 'conversions', header: 'Conv.', accessor: r => r.conversions, align: 'right' },
     { key: 'conversion_value', header: 'Revenue', accessor: r => r.conversion_value, align: 'right', format: v => formatCurrency(v as number) },
-    {
-      key: 'roas', header: 'ROAS', accessor: r => r.roas, align: 'right',
-      format: v => `${(v as number).toFixed(2)}x`,
-    },
+    { key: 'roas', header: 'ROAS', accessor: r => r.roas, align: 'right', format: v => `${(v as number).toFixed(2)}x` },
   ];
 
   return (
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-xl font-semibold text-zinc-100">Marketing Performance</h1>
           {data.coverage.meta && (
-            <p className="text-xs text-zinc-500 mt-1">
+            <p className="text-xs text-zinc-500">
               Meta: <span className="text-zinc-400">{data.coverage.meta.from}</span>
               {' → '}
               <span className="text-zinc-400">{data.coverage.meta.to}</span>
@@ -126,7 +182,6 @@ export default function MarketingPage() {
         <SyncMetaButton lastSync={data.lastSync} />
       </div>
 
-      {/* KPI Cards */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-4">
         <KpiCard
           title="Total Spend"
@@ -149,23 +204,10 @@ export default function MarketingPage() {
         <KpiCard title="Avg CTR" value={`${data.kpis.avgCtr.toFixed(2)}%`} icon={<Percent size={18} />} />
       </div>
 
-      {/* Spend vs Revenue */}
       <ChartCard title="Spend vs Revenue" subtitle="Dual-axis line chart">
-        <ResponsiveContainer width="100%" height={320}>
-          <LineChart data={data.charts.spendVsRevenue} margin={{ top: 5, right: 20, bottom: 5, left: 5 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
-            <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#71717a' }} tickLine={false} />
-            <YAxis yAxisId="left" tick={{ fontSize: 11, fill: '#71717a' }} tickLine={false} axisLine={false} />
-            <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11, fill: '#71717a' }} tickLine={false} axisLine={false} />
-            <Tooltip contentStyle={{ backgroundColor: '#18181b', border: '1px solid #3f3f46', borderRadius: '8px', fontSize: '12px' }} />
-            <Legend />
-            <Line yAxisId="left" type="monotone" dataKey="spend" name="Spend" stroke="#ef4444" strokeWidth={2} dot={false} />
-            <Line yAxisId="right" type="monotone" dataKey="revenue" name="Revenue" stroke="#10b981" strokeWidth={2} dot={false} />
-          </LineChart>
-        </ResponsiveContainer>
+        <SpendRevenueChart data={data.charts.spendVsRevenue} />
       </ChartCard>
 
-      {/* ROAS trend + Spend by platform */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <ChartCard title="ROAS Trend">
           <SimpleBarChart data={data.charts.roasTrend} barColor="#f59e0b" valueFormatter={v => `${v}x`} />
@@ -175,22 +217,159 @@ export default function MarketingPage() {
         </ChartCard>
       </div>
 
-      {/* Top campaigns by ROAS */}
       <ChartCard title="Top 10 kampanii wg ROAS" subtitle="Min. spend 100 PLN">
-        <SimpleBarChart
-          data={data.charts.topByRoas}
-          layout="horizontal"
-          barColor="#10b981"
-          valueFormatter={v => `${v}x`}
-          height={360}
-        />
+        <SimpleBarChart data={data.charts.topByRoas} layout="horizontal" barColor="#10b981" valueFormatter={v => `${v}x`} height={360} />
       </ChartCard>
 
-      {/* Campaign table */}
       <ChartCard title="Tabela kampanii">
         <DataTable data={data.campaignTable} columns={campaignColumns} pageSize={15} />
       </ChartCard>
     </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Google Ads
+// ─────────────────────────────────────────────────────────────────
+function GoogleAdsTab() {
+  const { filters } = useDashboard();
+  const [data, setData] = useState<GoogleAdsData | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchData() {
+      setLoading(true);
+      try {
+        const params = new URLSearchParams({
+          date_from: filters.dateFrom,
+          date_to: filters.dateTo,
+          shop: filters.shop,
+        });
+        const res = await fetch(`/api/dashboard/marketing/google?${params}`);
+        const json = await res.json();
+        setData(json);
+      } catch { setData(null); } finally { setLoading(false); }
+    }
+    fetchData();
+  }, [filters]);
+
+  if (loading) return <PanelLoading />;
+  if (!data) return <PanelEmpty hint="Brak danych Google Ads. Zsynchronizuj GA4." />;
+
+  const campaignColumns: Column<(typeof data.campaignTable)[0]>[] = [
+    { key: 'campaign', header: 'Kampania', accessor: r => r.campaign, className: 'max-w-[300px] truncate' },
+    { key: 'hostname', header: 'Sklep', accessor: r => r.hostname },
+    { key: 'spend', header: 'Spend', accessor: r => r.spend, align: 'right', format: v => formatCurrency(v as number) },
+    { key: 'impressions', header: 'Impressions', accessor: r => r.impressions, align: 'right', format: v => formatNumber(v as number) },
+    { key: 'clicks', header: 'Clicks', accessor: r => r.clicks, align: 'right', format: v => formatNumber(v as number) },
+    { key: 'ctr', header: 'CTR', accessor: r => r.ctr, align: 'right', format: v => `${(v as number).toFixed(2)}%` },
+    { key: 'cpc', header: 'CPC', accessor: r => r.cpc, align: 'right', format: v => `${(v as number).toFixed(2)} zł` },
+    { key: 'sessions', header: 'Sesje', accessor: r => r.sessions, align: 'right', format: v => formatNumber(v as number) },
+    { key: 'transactions', header: 'Trans.', accessor: r => r.transactions, align: 'right' },
+    { key: 'revenue', header: 'Revenue', accessor: r => r.revenue, align: 'right', format: v => formatCurrency(v as number) },
+    { key: 'roas', header: 'ROAS', accessor: r => r.roas, align: 'right', format: v => `${(v as number).toFixed(2)}x` },
+  ];
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          {data.coverage && (
+            <p className="text-xs text-zinc-500">
+              Google Ads (GA4 per-kampania): <span className="text-zinc-400">{data.coverage.from}</span>
+              {' → '}
+              <span className="text-zinc-400">{data.coverage.to}</span>
+              {' · '}
+              {daysBetween(data.coverage.from, data.coverage.to)} dni
+              {' · '}
+              {formatNumber(data.coverage.rows)} wierszy
+            </p>
+          )}
+          <p className="text-[11px] text-zinc-600 mt-0.5">
+            Źródło: fact_daily_traffic (GA4, source=google/medium=cpc). Dla mybed.de ad_cost
+            i revenue konwertowane EUR→PLN dziennymi kursami z fact_orders.
+          </p>
+        </div>
+        {data.lastSync && (
+          <span className="text-xs text-zinc-500">
+            GA4: {formatRelativeTime(data.lastSync.at)}
+          </span>
+        )}
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-4">
+        <KpiCard title="Total Spend" value={formatCurrency(data.kpis.totalSpend)} icon={<DollarSign size={18} />} />
+        <KpiCard
+          title="Google Revenue"
+          value={formatCurrency(data.kpis.totalRevenue)}
+          subLabel="ga_revenue (GA4 last-click)"
+          icon={<TrendingUp size={18} />}
+        />
+        <KpiCard title="Transakcje" value={formatNumber(data.kpis.totalTransactions)} icon={<ShoppingCart size={18} />} />
+        <KpiCard title="Blended ROAS" value={`${data.kpis.blendedRoas}x`} icon={<TrendingUp size={18} />} />
+        <KpiCard title="Avg CPC" value={`${data.kpis.avgCpc.toFixed(2)} zł`} icon={<MousePointerClick size={18} />} />
+        <KpiCard title="Conv. Rate" value={`${data.kpis.convRate.toFixed(2)}%`} icon={<Percent size={18} />} />
+        <KpiCard title="Avg CTR" value={`${data.kpis.avgCtr.toFixed(2)}%`} icon={<Eye size={18} />} />
+      </div>
+
+      <ChartCard title="Spend vs Revenue" subtitle="Dual-axis line chart">
+        <SpendRevenueChart data={data.charts.spendVsRevenue} />
+      </ChartCard>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <ChartCard title="ROAS Trend">
+          <SimpleBarChart data={data.charts.roasTrend} barColor="#f59e0b" valueFormatter={v => `${v}x`} />
+        </ChartCard>
+        <ChartCard title="Spend wg sklepu">
+          <SimplePieChart data={data.charts.spendByShop} />
+        </ChartCard>
+      </div>
+
+      <ChartCard title="Top 10 kampanii wg ROAS" subtitle="Min. spend 100 PLN">
+        <SimpleBarChart data={data.charts.topByRoas} layout="horizontal" barColor="#10b981" valueFormatter={v => `${v}x`} height={360} />
+      </ChartCard>
+
+      <ChartCard title="Tabela kampanii Google Ads">
+        <DataTable data={data.campaignTable} columns={campaignColumns} pageSize={15} />
+      </ChartCard>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Wspólne pomocniki
+// ─────────────────────────────────────────────────────────────────
+
+function PanelLoading() {
+  return (
+    <div className="flex items-center justify-center h-96">
+      <div className="animate-pulse text-zinc-500">Ładowanie danych...</div>
+    </div>
+  );
+}
+
+function PanelEmpty({ hint }: { hint: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center h-96 gap-4">
+      <p className="text-zinc-500">{hint}</p>
+    </div>
+  );
+}
+
+function SpendRevenueChart({ data }: { data: Array<{ date: string; spend: number; revenue: number }> }) {
+  return (
+    <ResponsiveContainer width="100%" height={320}>
+      <LineChart data={data} margin={{ top: 5, right: 20, bottom: 5, left: 5 }}>
+        <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
+        <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#71717a' }} tickLine={false} />
+        <YAxis yAxisId="left" tick={{ fontSize: 11, fill: '#71717a' }} tickLine={false} axisLine={false} />
+        <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11, fill: '#71717a' }} tickLine={false} axisLine={false} />
+        <Tooltip contentStyle={{ backgroundColor: '#18181b', border: '1px solid #3f3f46', borderRadius: '8px', fontSize: '12px' }} />
+        <Legend />
+        <Line yAxisId="left" type="monotone" dataKey="spend" name="Spend" stroke="#ef4444" strokeWidth={2} dot={false} />
+        <Line yAxisId="right" type="monotone" dataKey="revenue" name="Revenue" stroke="#10b981" strokeWidth={2} dot={false} />
+      </LineChart>
+    </ResponsiveContainer>
   );
 }
 
@@ -219,8 +398,6 @@ const BACKFILL_OPTIONS = [
   { value: 730, label: '2 lata' },
 ];
 
-// Split [today-N, today-1] into ≤90-day chunks so each POST fits within
-// Vercel Hobby's 60s function timeout. Returns newest chunk first.
 const CHUNK_DAYS = 90;
 function buildBackfillChunks(daysBack: number): Array<{ since: string; until: string }> {
   const fmt = (d: Date) => d.toISOString().split('T')[0];
@@ -243,9 +420,8 @@ function buildBackfillChunks(daysBack: number): Array<{ since: string; until: st
 
 async function parseJsonOrThrow(res: Response): Promise<{ totalRows?: number; error?: string }> {
   const text = await res.text();
-  try {
-    return JSON.parse(text);
-  } catch {
+  try { return JSON.parse(text); }
+  catch {
     throw new Error(res.status === 504 || text.startsWith('An error')
       ? 'Timeout Vercela (60s) — spróbuj mniejszego zakresu'
       : `Nieoczekiwana odpowiedź: ${text.slice(0, 80)}`);
@@ -259,9 +435,7 @@ function SyncMetaButton({ lastSync }: { lastSync: { at: string; rows: number } |
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
 
   async function handleSync() {
-    setSyncing(true);
-    setResult(null);
-    setProgress(null);
+    setSyncing(true); setResult(null); setProgress(null);
     try {
       const chunks = buildBackfillChunks(days);
       let totalRows = 0;
@@ -277,8 +451,7 @@ function SyncMetaButton({ lastSync }: { lastSync: { at: string; rows: number } |
     } catch (err) {
       setResult({ ok: false, message: err instanceof Error ? err.message : String(err) });
     } finally {
-      setSyncing(false);
-      setProgress(null);
+      setSyncing(false); setProgress(null);
     }
   }
 
@@ -294,9 +467,7 @@ function SyncMetaButton({ lastSync }: { lastSync: { at: string; rows: number } |
           {result.message}
         </span>
       ) : lastSync ? (
-        <span className="text-xs text-zinc-500">
-          Meta: {formatRelativeTime(lastSync.at)}
-        </span>
+        <span className="text-xs text-zinc-500">Meta: {formatRelativeTime(lastSync.at)}</span>
       ) : null}
       <select
         value={days}
@@ -304,9 +475,7 @@ function SyncMetaButton({ lastSync }: { lastSync: { at: string; rows: number } |
         disabled={syncing}
         className="bg-zinc-800 text-zinc-200 text-sm rounded-lg px-2 py-2 border border-zinc-700 disabled:opacity-50"
       >
-        {BACKFILL_OPTIONS.map(o => (
-          <option key={o.value} value={o.value}>{o.label}</option>
-        ))}
+        {BACKFILL_OPTIONS.map(o => (<option key={o.value} value={o.value}>{o.label}</option>))}
       </select>
       <button onClick={handleSync} disabled={syncing}
         className="flex items-center gap-2 px-3 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-sm rounded-lg transition-colors disabled:opacity-50">
