@@ -88,30 +88,45 @@ export async function GET(request: NextRequest) {
       revenue: gaToPln(r.hostname, Number(r.ga_revenue) || 0, String(r.date), eurRates),
     }));
 
-    // KPIs z __total__
-    const totals = totalNorm.reduce(
+    // KPIs:
+    //   COST side (spend/clicks/impressions/CPC/CPM/CTR) z __total__ — bo ad_cost
+    //     w GA4 jest atrybutywne tylko sesyjnie, ale w __total__ (bez dimensji)
+    //     dostajemy pełną kwotę z linka Google Ads.
+    //   REVENUE side (revenue/trans/sessions/ROAS/convRate) z google/cpc —
+    //     __total__ to revenue WSZYSTKICH źródeł (organic, direct, email, etc.),
+    //     a my chcemy revenue atrybuowany do kampanii Google Ads.
+    const costTotals = totalNorm.reduce(
       (a, r) => {
         a.spend += r.spend;
-        a.revenue += r.revenue;
         a.clicks += r.clicks;
         a.impressions += r.impressions;
+        return a;
+      },
+      { spend: 0, clicks: 0, impressions: 0 },
+    );
+    const revTotals = campNorm.reduce(
+      (a, r) => {
+        a.revenue += r.revenue;
         a.transactions += r.transactions;
         a.sessions += r.sessions;
         return a;
       },
-      { spend: 0, revenue: 0, clicks: 0, impressions: 0, transactions: 0, sessions: 0 },
+      { revenue: 0, transactions: 0, sessions: 0 },
     );
-    const blendedRoas = totals.spend > 0 ? totals.revenue / totals.spend : 0;
-    const avgCpc = totals.clicks > 0 ? totals.spend / totals.clicks : 0;
-    const avgCpm = totals.impressions > 0 ? (totals.spend / totals.impressions) * 1000 : 0;
-    const avgCtr = totals.impressions > 0 ? (totals.clicks / totals.impressions) * 100 : 0;
-    const convRate = totals.sessions > 0 ? (totals.transactions / totals.sessions) * 100 : 0;
+    const blendedRoas = costTotals.spend > 0 ? revTotals.revenue / costTotals.spend : 0;
+    const avgCpc = costTotals.clicks > 0 ? costTotals.spend / costTotals.clicks : 0;
+    const avgCpm = costTotals.impressions > 0 ? (costTotals.spend / costTotals.impressions) * 1000 : 0;
+    const avgCtr = costTotals.impressions > 0 ? (costTotals.clicks / costTotals.impressions) * 100 : 0;
+    const convRate = revTotals.sessions > 0 ? (revTotals.transactions / revTotals.sessions) * 100 : 0;
 
-    // Spend vs Revenue per dzień — z __total__
+    // Spend vs Revenue per dzień — spend z __total__, revenue z google/cpc
     const dailyMap: Record<string, { spend: number; revenue: number }> = {};
     for (const r of totalNorm) {
       if (!dailyMap[r.date]) dailyMap[r.date] = { spend: 0, revenue: 0 };
       dailyMap[r.date].spend += r.spend;
+    }
+    for (const r of campNorm) {
+      if (!dailyMap[r.date]) dailyMap[r.date] = { spend: 0, revenue: 0 };
       dailyMap[r.date].revenue += r.revenue;
     }
     const spendVsRevenue = Object.entries(dailyMap)
@@ -201,11 +216,11 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       kpis: {
-        totalSpend: Math.round(totals.spend),
-        totalRevenue: Math.round(totals.revenue),
-        totalTransactions: totals.transactions,
-        totalSessions: totals.sessions,
-        totalClicks: totals.clicks,
+        totalSpend: Math.round(costTotals.spend),
+        totalRevenue: Math.round(revTotals.revenue),
+        totalTransactions: revTotals.transactions,
+        totalSessions: revTotals.sessions,
+        totalClicks: costTotals.clicks,
         blendedRoas: Math.round(blendedRoas * 100) / 100,
         avgCpc: Math.round(avgCpc * 100) / 100,
         avgCpm: Math.round(avgCpm * 100) / 100,

@@ -287,8 +287,9 @@ function GoogleAdsTab() {
             </p>
           )}
           <p className="text-[11px] text-zinc-600 mt-0.5">
-            KPI z fact_daily_traffic (GA4, source=__total__) — to samo źródło, co widget
-            „Google Ads Spend”. Tabela kampanii z source=google/medium=cpc. Dla mybed.de
+            Spend/clicks/impressions z GA4 __total__ (zgodne z widgetem „Google Ads Spend”;
+            advertiserAdCost atrybutywne sesyjnie — typowo 1-3% mniej niż Google Ads UI).
+            Revenue/transakcje/sesje z atrybucji source=google/medium=cpc. Dla mybed.de
             ad_cost i revenue konwertowane EUR→PLN dziennymi kursami z fact_orders.
           </p>
         </div>
