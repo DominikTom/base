@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthUser, isAdmin } from '@/lib/auth';
 import { getSupabaseAdmin } from '@/lib/supabase';
-import { validateQuerySpec, type QuerySpec } from '@/lib/explorer-whitelist';
+import { validateQuerySpec, type QuerySpec, type PivotMetric } from '@/lib/explorer-whitelist';
 
 const TIERS = ['core', 'standard', 'experimental'];
 const VALUE_TYPES = ['currency', 'number', 'percent', 'ratio'];
 
 function normalizeSpec(raw: unknown): QuerySpec {
   const s = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
-  return {
+  const base: QuerySpec = {
     chart_type: String(s.chart_type || 'bar'),
     x_axis: String(s.x_axis || 'date'),
     y_axis: String(s.y_axis || 'revenue_gross'),
@@ -16,6 +16,12 @@ function normalizeSpec(raw: unknown): QuerySpec {
     granularity: String(s.granularity || 'month'),
     filters_advanced: Array.isArray(s.filters_advanced) ? s.filters_advanced : [],
   };
+  // Pivot extras — tylko gdy chart_type='pivot'.
+  if (base.chart_type === 'pivot') {
+    base.row_dims = Array.isArray(s.row_dims) ? (s.row_dims as unknown[]).map(String) : [];
+    base.metrics = Array.isArray(s.metrics) ? (s.metrics as PivotMetric[]) : [];
+  }
+  return base;
 }
 
 // GET → lista definicji KPI (opcjonalnie ?category=)
