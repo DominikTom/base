@@ -9,6 +9,8 @@ export const ALLOWED_X_AXES: string[] = [
   'date', 'source_shop', 'source_platform', 'supplier', 'delivery_city', 'status', 'coupon_code',
   // Z fact_order_items (ziarno pozycji)
   'product_category', 'fabric_collection', 'bed_size', 'mattress_type', 'headboard_height',
+  // Z Meta Ads / Google Ads (pivot)
+  'campaign', 'service_type',
 ];
 
 // y_axis decyduje też o zbiorze danych:
@@ -24,12 +26,15 @@ export const ALLOWED_Y_AXES: string[] = [
   'meta_ctr', 'meta_cpc', 'meta_roas',
   // Z ruchu / Google Ads
   'google_spend', 'sessions', 'users', 'transactions', 'ga_revenue', 'pageviews',
+  // Z fact_agency_costs
+  'agency_cost',
 ];
 
 export const ALLOWED_GROUP_BY: string[] = [
   'source_shop', 'source_platform', 'supplier',
   'product_category', 'fabric_collection', 'bed_size', 'mattress_type', 'headboard_height',
   'status', 'delivery_city',
+  'campaign', 'service_type',
 ];
 
 export const FILTERABLE_FIELDS: string[] = [
@@ -37,9 +42,10 @@ export const FILTERABLE_FIELDS: string[] = [
   'product_name', 'product_category', 'fabric_collection', 'fabric', 'bed_size',
   'mattress_type', 'headboard_height', 'storage_type',
   'total_gross_pln', 'quantity', 'is_sample',
+  'campaign', 'service_type', 'platform',
 ];
 
-export const ALLOWED_CHART_TYPES: string[] = ['bar', 'line', 'area', 'pie', 'table'];
+export const ALLOWED_CHART_TYPES: string[] = ['bar', 'line', 'area', 'pie', 'table', 'pivot'];
 
 export const ALLOWED_GRANULARITIES: string[] = ['day', 'week', 'month', 'quarter'];
 
@@ -56,12 +62,15 @@ export const META_ACCOUNT_TO_SHOP: Record<string, string> = {
   'act_797212915921530': 'mittohome.pl',
 };
 
-// Datasety y_axis → dyspozytor w eksploratorze.
+// Datasety y_axis → dyspozytor w eksploratorze i pivot.
 const META_MEASURES = new Set(['meta_spend', 'meta_revenue', 'meta_impressions', 'meta_clicks', 'meta_conversions', 'meta_ctr', 'meta_cpc', 'meta_roas']);
 const TRAFFIC_MEASURES = new Set(['google_spend', 'sessions', 'users', 'transactions', 'ga_revenue', 'pageviews']);
-export function measureDataset(y: string): 'meta' | 'traffic' | 'orders' {
+const AGENCY_MEASURES = new Set(['agency_cost']);
+export type Dataset = 'meta' | 'traffic' | 'orders' | 'agency';
+export function measureDataset(y: string): Dataset {
   if (META_MEASURES.has(y)) return 'meta';
   if (TRAFFIC_MEASURES.has(y)) return 'traffic';
+  if (AGENCY_MEASURES.has(y)) return 'agency';
   return 'orders';
 }
 
@@ -79,22 +88,29 @@ export interface QuerySpec {
   group_by?: string;
   granularity: string;
   filters_advanced?: AdvancedFilter[];
+  // Tryb pivot — kolumny mieszane (raw / template / computed). Pola
+  // x_axis/y_axis/group_by ignorowane gdy chart_type='pivot'.
+  row_dims?: string[];
+  metrics?: PivotMetric[];
 }
+
+// ── Pivot ────────────────────────────────────────────────────────
+export type PivotFormat = 'pln' | 'pct' | 'number' | 'ratio';
+export type PivotMetric =
+  | { kind: 'raw'; key: string; label?: string; format?: PivotFormat }
+  | { kind: 'template'; template: string; label?: string; format?: PivotFormat }
+  | { kind: 'computed'; label: string; expr: string; format?: PivotFormat };
+
+export const ALLOWED_PIVOT_TEMPLATES: string[] = [
+  'roas', 'marketing_pct', 'profit_after_mkt', 'cpa', 'cpm', 'conv_rate',
+];
+export const ALLOWED_PIVOT_FORMATS: string[] = ['pln', 'pct', 'number', 'ratio'];
 
 // Waliduje query_spec względem whitelist. Zwraca listę błędów (pusta = OK).
 export function validateQuerySpec(spec: Partial<QuerySpec> | null | undefined): string[] {
   const errors: string[] = [];
   if (!spec || typeof spec !== 'object') return ['query_spec jest wymagane'];
 
-  if (!ALLOWED_X_AXES.includes(String(spec.x_axis))) {
-    errors.push(`Niedozwolone x_axis: ${spec.x_axis}`);
-  }
-  if (!ALLOWED_Y_AXES.includes(String(spec.y_axis))) {
-    errors.push(`Niedozwolone y_axis: ${spec.y_axis}`);
-  }
-  if (spec.group_by && !ALLOWED_GROUP_BY.includes(String(spec.group_by))) {
-    errors.push(`Niedozwolone group_by: ${spec.group_by}`);
-  }
   if (!ALLOWED_CHART_TYPES.includes(String(spec.chart_type))) {
     errors.push(`Niedozwolony chart_type: ${spec.chart_type}`);
   }
@@ -107,6 +123,46 @@ export function validateQuerySpec(spec: Partial<QuerySpec> | null | undefined): 
     }
     if (!ALLOWED_FILTER_OPERATORS.includes(f.operator)) {
       errors.push(`Niedozwolony operator filtra: ${f.operator}`);
+    }
+  }
+
+  if (spec.chart_type === 'pivot') {
+    const dims = spec.row_dims || [];
+    if (!Array.isArray(dims) || dims.length === 0) {
+      errors.push('Pivot wymaga co najmniej jednego wymiaru (row_dims)');
+    }
+    for (const d of dims) {
+      if (!ALLOWED_X_AXES.includes(d)) errors.push(`Niedozwolony wymiar pivot: ${d}`);
+    }
+    const metrics = spec.metrics || [];
+    if (!Array.isArray(metrics) || metrics.length === 0) {
+      errors.push('Pivot wymaga co najmniej jednej metryki');
+    }
+    for (const m of metrics) {
+      if (!m || typeof m !== 'object') { errors.push('Niepoprawna metryka pivot'); continue; }
+      if (m.kind === 'raw') {
+        if (!ALLOWED_Y_AXES.includes(m.key)) errors.push(`Niedozwolona metryka raw: ${m.key}`);
+      } else if (m.kind === 'template') {
+        if (!ALLOWED_PIVOT_TEMPLATES.includes(m.template)) errors.push(`Niedozwolony template: ${m.template}`);
+      } else if (m.kind === 'computed') {
+        if (!m.label || !m.expr) errors.push('Computed metryka wymaga label i expr');
+      } else {
+        errors.push('Niepoprawny kind metryki pivot');
+      }
+      if (m.format && !ALLOWED_PIVOT_FORMATS.includes(m.format)) {
+        errors.push(`Niedozwolony format metryki: ${m.format}`);
+      }
+    }
+  } else {
+    // Klasyczny query_spec (1 metryka, 1 oś X).
+    if (!ALLOWED_X_AXES.includes(String(spec.x_axis))) {
+      errors.push(`Niedozwolone x_axis: ${spec.x_axis}`);
+    }
+    if (!ALLOWED_Y_AXES.includes(String(spec.y_axis))) {
+      errors.push(`Niedozwolone y_axis: ${spec.y_axis}`);
+    }
+    if (spec.group_by && !ALLOWED_GROUP_BY.includes(String(spec.group_by))) {
+      errors.push(`Niedozwolone group_by: ${spec.group_by}`);
     }
   }
   return errors;

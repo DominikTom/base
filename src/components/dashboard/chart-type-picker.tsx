@@ -9,6 +9,7 @@ const CHART_TYPES = [
   { value: 'area', label: 'Warstwowy' },
   { value: 'pie', label: 'Kołowy' },
   { value: 'table', label: 'Tabela' },
+  { value: 'pivot', label: 'Pivot' },
 ];
 
 function Thumb({ type }: { type: string }) {
@@ -43,6 +44,16 @@ function Thumb({ type }: { type: string }) {
           <line x1={28} y1={4} x2={28} y2={22} stroke="currentColor" strokeWidth={1.6} />
         </svg>
       );
+    case 'pivot':
+      return (
+        <svg {...common}>
+          <rect x={4} y={4} width={36} height={18} rx={1.5} fill="none" stroke="currentColor" strokeWidth={1.6} />
+          <line x1={4} y1={10} x2={40} y2={10} stroke="currentColor" strokeWidth={1.6} />
+          <line x1={14} y1={4} x2={14} y2={22} stroke="currentColor" strokeWidth={1.6} />
+          <line x1={4} y1={16} x2={40} y2={16} stroke="currentColor" strokeWidth={1.2} strokeDasharray="2 2" />
+          <text x={20} y={14.5} fontSize={5.5} fill="currentColor" fontWeight={700}>Σ fx</text>
+        </svg>
+      );
     case 'bar':
     default:
       return (
@@ -63,7 +74,7 @@ interface Props {
 
 export function ChartTypePicker({ value, onChange }: Props) {
   return (
-    <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+    <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
       {CHART_TYPES.map(t => {
         const active = value === t.value;
         return (

@@ -6,6 +6,7 @@ import { getWidgetDef } from '@/lib/widget-definitions';
 import { formatCurrency, formatNumber, SHOP_COLORS } from '@/lib/utils';
 import { SimpleBarChart } from '@/components/charts/bar-chart';
 import { SimplePieChart } from '@/components/charts/pie-chart';
+import { PivotRenderer } from '@/components/dashboard/pivot-renderer';
 import { AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { X, RefreshCw, ArrowUp, ArrowDown, Maximize2, Minimize2, HelpCircle } from 'lucide-react';
 
@@ -58,7 +59,22 @@ export function WidgetRenderer({ widgetType, widgetConfig, onRemove, onMoveUp, o
       setLoading(true);
       setError(null);
       try {
-        const res = widgetType === 'custom_explorer'
+        const isPivot = widgetType === 'custom_explorer' && widgetConfig?.chart_type === 'pivot';
+        const res = isPivot
+          ? await fetch('/api/dashboard/pivot', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              row_dims: widgetConfig?.row_dims || ['date'],
+              metrics: widgetConfig?.metrics || [],
+              granularity: widgetConfig?.granularity || 'month',
+              date_from: filters.dateFrom,
+              date_to: filters.dateTo,
+              filters: { shop: filters.shop !== 'all' ? [filters.shop] : [] },
+              filters_advanced: widgetConfig?.filters_advanced || [],
+            }),
+          })
+          : widgetType === 'custom_explorer'
           ? await fetch('/api/dashboard/explorer', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -88,7 +104,18 @@ export function WidgetRenderer({ widgetType, widgetConfig, onRemove, onMoveUp, o
         if (!cancelled) {
           const json = await res.json();
           if (!res.ok) setError(json.error || 'Błąd');
-          else if (widgetType === 'custom_explorer') {
+          else if (isPivot) {
+            setData({
+              type: 'pivot',
+              pivot: json,
+              debug: {
+                dateFrom: filters.dateFrom,
+                dateTo: filters.dateTo,
+                shop: filters.shop,
+                query: '/api/dashboard/pivot',
+              },
+            });
+          } else if (widgetType === 'custom_explorer') {
             setData({
               type: widgetConfig?.chart_type || 'bar',
               data: json.data || [],
@@ -174,6 +201,11 @@ export function WidgetRenderer({ widgetType, widgetConfig, onRemove, onMoveUp, o
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function WidgetContent({ type, data, onItemClick }: { type: string; data: any; onItemClick: (name: string) => void }) {
   const clickable = !!WIDGET_CLICK_FIELD[type];
+
+  // Pivot
+  if (data.type === 'pivot') {
+    return <PivotRenderer data={data.pivot} />;
+  }
 
   // KPI
   if (data.type === 'kpi') {

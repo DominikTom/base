@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Plus, X, Pencil, Trash2, LayoutDashboard, Check } from 'lucide-react';
 import { ExplorerQueryBuilder, EMPTY_QUERY_SPEC } from '@/components/dashboard/explorer-query-builder';
 import { ChartTypePicker } from '@/components/dashboard/chart-type-picker';
+import { PivotBuilder, EMPTY_PIVOT_SPEC } from '@/components/dashboard/pivot-builder';
 import { addWidgetToDashboard } from '@/lib/dashboard-actions';
 import { WIDGET_CATALOG, type WidgetDefinition } from '@/lib/widget-definitions';
 import type { QuerySpec } from '@/lib/explorer-whitelist';
@@ -365,15 +366,31 @@ export default function KpiPage() {
                     <label className="text-xs text-zinc-500 block mb-1.5">Typ wykresu</label>
                     <ChartTypePicker
                       value={draft.query_spec.chart_type}
-                      onChange={ct => patchSpec({ chart_type: ct })}
+                      onChange={ct => {
+                        // Przełączenie do/z pivota inicjalizuje odpowiedni szkielet specu.
+                        if (ct === 'pivot' && draft.query_spec.chart_type !== 'pivot') {
+                          setDraft(d => ({ ...d, query_spec: { ...EMPTY_PIVOT_SPEC, filters_advanced: d.query_spec.filters_advanced || [] } }));
+                        } else if (ct !== 'pivot' && draft.query_spec.chart_type === 'pivot') {
+                          setDraft(d => ({ ...d, query_spec: { ...EMPTY_QUERY_SPEC, chart_type: ct, filters_advanced: d.query_spec.filters_advanced || [] } }));
+                        } else {
+                          patchSpec({ chart_type: ct });
+                        }
+                      }}
                     />
                   </div>
                   <div>
                     <label className="text-xs text-zinc-500 block mb-1.5">Dane i filtry</label>
-                    <ExplorerQueryBuilder
-                      value={draft.query_spec}
-                      onChange={qs => setDraft(d => ({ ...d, query_spec: qs }))}
-                    />
+                    {draft.query_spec.chart_type === 'pivot' ? (
+                      <PivotBuilder
+                        value={draft.query_spec}
+                        onChange={qs => setDraft(d => ({ ...d, query_spec: qs }))}
+                      />
+                    ) : (
+                      <ExplorerQueryBuilder
+                        value={draft.query_spec}
+                        onChange={qs => setDraft(d => ({ ...d, query_spec: qs }))}
+                      />
+                    )}
                   </div>
                 </div>
               )}

@@ -29,6 +29,8 @@ export async function POST(request: NextRequest) {
         service_type: body.service_type,
         amount_pln: body.amount_pln,
         notes: body.notes,
+        source_shop: body.source_shop || null,
+        platform: body.platform || null,
       });
       if (error) return NextResponse.json({ error: error.message }, { status: 500 });
       return NextResponse.json({ success: true });

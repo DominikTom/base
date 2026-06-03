@@ -5,15 +5,7 @@ import {
   measureDataset, META_ACCOUNT_TO_SHOP,
 } from '@/lib/explorer-whitelist';
 import { fetchEurRatesByDate, gaToPln } from '@/lib/ad-cost';
-
-type ExplorerFilterOperator = 'eq' | 'neq' | 'contains' | 'not_contains' | 'starts_with' | 'ends_with' | 'in' | 'gt' | 'gte' | 'lt' | 'lte' | 'between' | 'is_null' | 'not_null';
-
-interface ExplorerFilter {
-  field: string;
-  operator: ExplorerFilterOperator;
-  value?: string | number | boolean | Array<string | number>;
-  value_to?: string | number;
-}
+import { applySbFilters, type ExplorerFilter } from '@/lib/explorer-filters';
 
 // Wymiary z poziomu pozycji zamówienia.
 const ITEM_LEVEL_DIMS = new Set(['product_category', 'fabric_collection', 'bed_size', 'mattress_type', 'headboard_height']);
@@ -239,11 +231,11 @@ async function handleOrderExplorer(params: ExplorerParams) {
 // ============================================================
 async function handleMetaAdsExplorer(params: ExplorerParams) {
   const db = getSupabaseAdmin();
-  let q = db.from('fact_daily_adspend')
-    .select('date, account_id, spend, conversion_value, impressions, clicks, conversions')
-    .eq('platform', 'meta')
-    .gte('date', params.date_from)
-    .lte('date', params.date_to);
+  const needsCampaign = params.x_axis === 'campaign' || params.group_by === 'campaign';
+  let q = needsCampaign
+    ? db.from('fact_daily_adspend').select('date, account_id, spend, conversion_value, impressions, clicks, conversions, campaign_name, campaign_id')
+    : db.from('fact_daily_adspend').select('date, account_id, spend, conversion_value, impressions, clicks, conversions');
+  q = q.eq('platform', 'meta').gte('date', params.date_from).lte('date', params.date_to);
 
   const shopFilter = collectShopFilter(params);
   if (shopFilter.length) {
@@ -270,6 +262,7 @@ async function handleMetaAdsExplorer(params: ExplorerParams) {
       case 'date': return dateKey(r.date, params.granularity);
       case 'source_shop': return META_ACCOUNT_TO_SHOP[r.account_id] || 'Inne';
       case 'source_platform': return 'meta';
+      case 'campaign': return String(r.campaign_name || r.campaign_id || '(unknown)');
       default: return 'Łącznie';
     }
   }
@@ -311,11 +304,16 @@ async function handleMetaAdsExplorer(params: ExplorerParams) {
 // ============================================================
 async function handleTrafficExplorer(params: ExplorerParams) {
   const db = getSupabaseAdmin();
-  let q = db.from('fact_daily_traffic')
-    .select('date, hostname, sessions, users, transactions, ga_revenue, pageviews, ad_cost')
-    .eq('source', '__total__')
-    .gte('date', params.date_from)
-    .lte('date', params.date_to);
+  // Per-kampania w GA4 żyje pod source='google'/medium='cpc' (a nie __total__,
+  // które jest agnostyczne wymiarowo). Przełączamy gdy wymiar = campaign.
+  const needsCampaign = params.x_axis === 'campaign' || params.group_by === 'campaign';
+  let q = needsCampaign
+    ? db.from('fact_daily_traffic').select('date, hostname, sessions, users, transactions, ga_revenue, pageviews, ad_cost, campaign')
+    : db.from('fact_daily_traffic').select('date, hostname, sessions, users, transactions, ga_revenue, pageviews, ad_cost');
+  q = q.gte('date', params.date_from).lte('date', params.date_to);
+  q = needsCampaign
+    ? q.eq('source', 'google').eq('medium', 'cpc')
+    : q.eq('source', '__total__');
 
   const shopFilter = collectShopFilter(params);
   if (shopFilter.length) q = q.in('hostname', shopFilter);
@@ -341,6 +339,7 @@ async function handleTrafficExplorer(params: ExplorerParams) {
       case 'date': return dateKey(r.date, params.granularity);
       case 'source_shop': return r.hostname || 'unknown';
       case 'source_platform': return 'google';
+      case 'campaign': return String(r.campaign || '(unknown)');
       default: return 'Łącznie';
     }
   }
@@ -422,30 +421,7 @@ function buildResponse<A>(
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function applySupabaseFilters(query: any, filters: ExplorerFilter[], allowedFields: string[]) {
-  for (const f of filters) {
-    if (!allowedFields.includes(f.field)) continue;
-    switch (f.operator) {
-      case 'eq': query = query.eq(f.field, f.value); break;
-      case 'neq': query = query.neq(f.field, f.value); break;
-      case 'contains': query = query.ilike(f.field, `%${String(f.value || '')}%`); break;
-      case 'not_contains': query = query.not(f.field, 'ilike', `%${String(f.value || '')}%`); break;
-      case 'starts_with': query = query.ilike(f.field, `${String(f.value || '')}%`); break;
-      case 'ends_with': query = query.ilike(f.field, `%${String(f.value || '')}`); break;
-      case 'in': {
-        const arr = Array.isArray(f.value) ? f.value : String(f.value || '').split(',').map(v => v.trim()).filter(Boolean);
-        if (arr.length) query = query.in(f.field, arr);
-        break;
-      }
-      case 'gt': query = query.gt(f.field, f.value); break;
-      case 'gte': query = query.gte(f.field, f.value); break;
-      case 'lt': query = query.lt(f.field, f.value); break;
-      case 'lte': query = query.lte(f.field, f.value); break;
-      case 'between': if (f.value != null && f.value_to != null) query = query.gte(f.field, f.value).lte(f.field, f.value_to); break;
-      case 'is_null': query = query.is(f.field, null); break;
-      case 'not_null': query = query.not(f.field, 'is', null); break;
-    }
-  }
-  return query;
+  return applySbFilters(query as never, filters, allowedFields);
 }
 
 function buildOrderIdFilterFromItemFilters(filters: ExplorerFilter[], items: Array<Record<string, unknown>>): Set<string> | null {

@@ -12,7 +12,12 @@ interface AgencyCost {
   service_type: string;
   amount_pln: number;
   notes: string | null;
+  source_shop: string | null;
+  platform: string | null;
 }
+
+const SHOPS = ['mybed.pl', 'mybed.de', 'mittohome.pl'];
+const PLATFORMS = ['meta', 'google'];
 
 export default function CostsPage() {
   const [costs, setCosts] = useState<AgencyCost[]>([]);
@@ -28,6 +33,8 @@ export default function CostsPage() {
   const [service, setService] = useState('');
   const [amount, setAmount] = useState('');
   const [notes, setNotes] = useState('');
+  const [shop, setShop] = useState('');
+  const [platform, setPlatform] = useState('');
 
   const fetchCosts = useCallback(async () => {
     setLoading(true);
@@ -55,10 +62,12 @@ export default function CostsPage() {
           service_type: service,
           amount_pln: parseFloat(amount),
           notes: notes || null,
+          source_shop: shop || null,
+          platform: platform || null,
         }),
       });
       if (res.ok) {
-        setAgency(''); setService(''); setAmount(''); setNotes('');
+        setAgency(''); setService(''); setAmount(''); setNotes(''); setShop(''); setPlatform('');
         fetchCosts();
       }
     } catch { /* ignore */ }
@@ -122,6 +131,20 @@ export default function CostsPage() {
             <input type="number" value={amount} onChange={e => setAmount(e.target.value)} placeholder="10000" className={inputClass} />
           </div>
           <div className="flex flex-col gap-1">
+            <label className="text-xs text-zinc-500">Sklep</label>
+            <select value={shop} onChange={e => setShop(e.target.value)} className={inputClass}>
+              <option value="">Ogólne</option>
+              {SHOPS.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs text-zinc-500">Platforma</label>
+            <select value={platform} onChange={e => setPlatform(e.target.value)} className={inputClass}>
+              <option value="">Inne</option>
+              {PLATFORMS.map(p => <option key={p} value={p}>{p}</option>)}
+            </select>
+          </div>
+          <div className="flex flex-col gap-1">
             <label className="text-xs text-zinc-500">Notatka</label>
             <input type="text" value={notes} onChange={e => setNotes(e.target.value)} placeholder="opcjonalnie" className={inputClass} />
           </div>
@@ -153,6 +176,8 @@ export default function CostsPage() {
                     <tr className="border-b border-zinc-800 text-zinc-400">
                       <th className="px-3 py-2 text-left font-medium">Agencja</th>
                       <th className="px-3 py-2 text-left font-medium">Usługa</th>
+                      <th className="px-3 py-2 text-left font-medium">Sklep</th>
+                      <th className="px-3 py-2 text-left font-medium">Platforma</th>
                       <th className="px-3 py-2 text-right font-medium">Kwota</th>
                       <th className="px-3 py-2 text-left font-medium">Notatka</th>
                       <th className="px-3 py-2 w-10"></th>
@@ -163,6 +188,8 @@ export default function CostsPage() {
                       <tr key={c.id} className="border-b border-zinc-800/30 hover:bg-zinc-800/30">
                         <td className="px-3 py-2 text-zinc-300">{c.agency_name}</td>
                         <td className="px-3 py-2 text-zinc-400">{c.service_type}</td>
+                        <td className="px-3 py-2 text-zinc-400 text-xs">{c.source_shop || '—'}</td>
+                        <td className="px-3 py-2 text-zinc-400 text-xs">{c.platform || '—'}</td>
                         <td className="px-3 py-2 text-right text-zinc-200">{formatCurrency(c.amount_pln)}</td>
                         <td className="px-3 py-2 text-zinc-500 text-xs">{c.notes || '—'}</td>
                         <td className="px-3 py-2">
