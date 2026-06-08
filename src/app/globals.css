@@ -99,55 +99,60 @@ body {
   font-family: var(--font-sans), system-ui, sans-serif;
 }
 
-/* Primary button — liquid glass z fioletowym neon glow. Ciemny panel
-   podświetlony od dołu i z krawędzi fioletową poświatą — feel jak
-   backlit panel/edge-lit screen. Tekst biały, subtelne :hover float. */
+/* Primary button — liquid glass na białym tle aplikacji. Body to mleczna
+   szyba (translucent white + backdrop-blur), krawędzie świecą fioletowym
+   neonem, dolna krawędź podświetlona mocniej (LED behind frosted glass).
+   Tekst ciemnofioletowy żeby był czytelny na jasnej szybie. */
 .btn-primary-gradient {
   position: relative;
   background:
-    /* Mocny fioletowy glow od dołu — symuluje LED behind glass */
-    radial-gradient(ellipse 80% 60% at 50% 100%, rgba(192, 132, 252, 0.55) 0%, rgba(168, 85, 247, 0.25) 35%, transparent 70%),
-    /* Drobniejszy highlight w lewym górnym (refleks szkła) */
-    radial-gradient(ellipse 60% 50% at 15% 0%, rgba(216, 180, 254, 0.20) 0%, transparent 60%),
-    /* Bazowy ciemny panel — granat-fiolet */
-    linear-gradient(165deg, #281648 0%, #170928 60%, #0a0218 100%);
-  border: 1px solid rgba(168, 85, 247, 0.32);
-  color: #ffffff;
+    /* Mocny fioletowy glow od dołu — przebija przez „szybę" */
+    radial-gradient(ellipse 75% 55% at 50% 100%, rgba(168, 85, 247, 0.45) 0%, rgba(192, 132, 252, 0.18) 40%, transparent 75%),
+    /* Subtelny refleks w lewym górnym (krawędź szkła) */
+    radial-gradient(ellipse 50% 50% at 15% 5%, rgba(255, 255, 255, 0.55) 0%, transparent 60%),
+    /* Body: mleczna biała szyba z odrobiną fioletu */
+    linear-gradient(165deg, rgba(255, 255, 255, 0.72) 0%, rgba(243, 232, 255, 0.55) 100%);
+  backdrop-filter: blur(14px) saturate(180%);
+  -webkit-backdrop-filter: blur(14px) saturate(180%);
+  border: 1px solid rgba(168, 85, 247, 0.45);
+  color: var(--color-primary-800);
+  font-weight: 600;
   box-shadow:
-    /* Outer neon glow */
-    0 4px 24px rgba(168, 85, 247, 0.40),
-    0 0 0 1px rgba(168, 85, 247, 0.15),
-    /* Inner top: cieniutka biała linia (krawędź szkła) */
-    inset 0 1px 0 0 rgba(255, 255, 255, 0.14),
-    /* Inner bottom: fioletowy glow podświetlający dolną krawędź */
-    inset 0 -16px 24px -16px rgba(216, 180, 254, 0.55);
-  text-shadow: 0 1px 6px rgba(168, 85, 247, 0.6);
+    /* Outer neon glow — halo fioletowe */
+    0 6px 28px rgba(168, 85, 247, 0.38),
+    0 0 0 1px rgba(168, 85, 247, 0.18),
+    /* Inner top: cienki biały refleks (krawędź szkła) */
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.85),
+    /* Inner bottom: silny fioletowy glow podświetlający dół */
+    inset 0 -18px 28px -16px rgba(168, 85, 247, 0.55);
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.7);
   transition: transform 0.18s ease, box-shadow 0.25s ease, filter 0.18s ease;
 }
 .btn-primary-gradient:hover {
   transform: translateY(-1px);
-  filter: brightness(1.08);
+  filter: brightness(1.04);
   box-shadow:
-    0 8px 36px rgba(168, 85, 247, 0.55),
-    0 0 0 1px rgba(168, 85, 247, 0.30),
-    inset 0 1px 0 0 rgba(255, 255, 255, 0.20),
-    inset 0 -20px 28px -16px rgba(216, 180, 254, 0.70);
+    0 10px 40px rgba(168, 85, 247, 0.55),
+    0 0 0 1px rgba(168, 85, 247, 0.32),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.92),
+    inset 0 -22px 32px -16px rgba(168, 85, 247, 0.70);
 }
 .btn-primary-gradient:active {
   transform: translateY(0);
-  filter: brightness(0.95);
+  filter: brightness(0.96);
 }
 .btn-primary-gradient:disabled,
 .btn-primary-gradient[disabled] {
   background:
-    linear-gradient(165deg, #2a2030 0%, #1a141f 100%);
+    linear-gradient(165deg, rgba(255, 255, 255, 0.55) 0%, rgba(245, 245, 248, 0.55) 100%);
   border-color: rgba(168, 85, 247, 0.12);
+  color: var(--color-muted);
   box-shadow:
-    inset 0 1px 0 0 rgba(255, 255, 255, 0.05),
-    inset 0 -8px 12px -8px rgba(168, 85, 247, 0.15);
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.5),
+    inset 0 -6px 12px -8px rgba(168, 85, 247, 0.10);
   text-shadow: none;
   cursor: not-allowed;
-  opacity: 0.55;
+  opacity: 0.7;
   filter: none;
   transform: none;
 }
