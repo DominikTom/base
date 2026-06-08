@@ -114,35 +114,44 @@ export async function GET(request: NextRequest) {
     for (const loc of Object.values(WEATHER_LOCATIONS)) {
       const allRows: UpsertRow[] = [];
 
-      // 1) Archive — wszystko poza ostatnimi 7 dniami.
-      const archiveTo = new Date(today); archiveTo.setDate(today.getDate() - 7);
-      const archiveToStr = fmt(archiveTo);
-      const useArchive = from <= archiveToStr;
-      if (useArchive) {
-        const j = await fetchArchive(loc, from, archiveToStr < to ? archiveToStr : to);
+      // Nie nakładaj Archive i Forecast — wcześniejszy split miał overlap
+      // ~7 dni (Archive do today-7, Forecast past_days=14), co rzucało
+      // „ON CONFLICT DO UPDATE command cannot affect row a second time"
+      // gdy dedup zawiódł (np. różnice timezone w obu API).
+      //
+      //   Archive: [from .. today-15]    — dane historyczne, archive API
+      //   Forecast: [today-14 .. today]  — ostatnie 2 tyg., forecast API
+      //
+      // Granica today-15/today-14 → zero overlapu, brak duplikatów PK.
+      const archiveCutoff = new Date(today); archiveCutoff.setDate(today.getDate() - 15);
+      const archiveCutoffStr = fmt(archiveCutoff);
+
+      if (from <= archiveCutoffStr) {
+        const archiveEndStr = archiveCutoffStr < to ? archiveCutoffStr : to;
+        const j = await fetchArchive(loc, from, archiveEndStr);
         allRows.push(...rowsFromResponse(j, loc.key));
       }
 
-      // 2) Forecast — ostatnie 14 dni (zawsze, zachodzi z archive ale upsert je deduplikuje).
+      // Forecast ciągnie zawsze 14 dni wstecz — pokrywa lukę archive
+      // (Archive ma ~5 dni lagu) i daje świeże dane na dziś/jutro.
       const j2 = await fetchForecast(loc, 14);
       allRows.push(...rowsFromResponse(j2, loc.key));
 
       // Trim do zakresu from..to (forecast może dosłać poza zakres).
       const filtered = allRows.filter(r => r.date >= from && r.date <= to);
 
-      // Dedup po (date, location_key) — Archive (data sprzed 7+ dni) i
-      // Forecast (ostatnie 14 dni) zachodzą na zakładkę ~7 dni. Bez tego
-      // pojedynczy upsert ma 2 wiersze tego samego PK → Postgres rzuca
-      // „ON CONFLICT DO UPDATE command cannot affect row a second time".
-      // Późniejszy push wygrywa (forecast jest świeższy = bardziej aktualny).
+      // Dedup po (date, location_key) — belt-and-suspenders. Po split'cie
+      // overlapu nie powinno być, ale gdyby Open-Meteo coś zwróciło 2× to
+      // i tak złapiemy. Późniejszy push wygrywa (świeższe forecast).
       const dedupMap = new Map<string, UpsertRow>();
       for (const r of filtered) dedupMap.set(`${r.date}|${r.location_key}`, r);
       const finalRows = [...dedupMap.values()];
 
       if (finalRows.length > 0) {
-        // Upsert w pakietach po 500.
-        for (let i = 0; i < finalRows.length; i += 500) {
-          const chunk = finalRows.slice(i, i + 500);
+        // Mniejsze batche (200) — jeden problem psuje cały chunk, więc mniej
+        // = niższy promień rażenia. Plus per-batch retry by-pass duplikatów.
+        for (let i = 0; i < finalRows.length; i += 200) {
+          const chunk = finalRows.slice(i, i + 200);
           const { error } = await db.from('weather_daily').upsert(chunk, {
             onConflict: 'date,location_key',
             ignoreDuplicates: false,
