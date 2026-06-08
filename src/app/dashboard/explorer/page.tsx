@@ -218,7 +218,7 @@ export default function ExplorerPage() {
         <button
           onClick={runQuery}
           disabled={loading}
-          className="px-5 py-2 bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
+          className="px-5 py-2 btn-primary-gradient text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
         >
           {loading ? 'Ładowanie...' : 'Uruchom'}
         </button>

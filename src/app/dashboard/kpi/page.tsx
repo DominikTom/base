@@ -170,7 +170,7 @@ export default function KpiPage() {
         </div>
         <button
           onClick={openNew}
-          className="flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium rounded-lg transition-colors"
+          className="flex items-center gap-2 px-4 py-2 btn-primary-gradient text-sm font-medium rounded-lg transition-colors"
         >
           <Plus size={16} />
           Nowy KPI
@@ -187,7 +187,7 @@ export default function KpiPage() {
             {kpis.length === 0 ? (
               <div className="flex items-center justify-between gap-3 rounded-xl border border-dashed border-line px-4 py-5">
                 <p className="text-sm text-muted">Nie masz jeszcze własnych KPI.</p>
-                <button onClick={openNew} className="flex items-center gap-2 px-3 py-1.5 bg-primary-600 hover:bg-primary-700 text-white text-xs rounded-lg shrink-0">
+                <button onClick={openNew} className="flex items-center gap-2 px-3 py-1.5 btn-primary-gradient text-xs rounded-lg shrink-0">
                   <Plus size={14} /> Stwórz pierwsze KPI
                 </button>
               </div>
@@ -405,7 +405,7 @@ export default function KpiPage() {
                 <button
                   onClick={saveKpi}
                   disabled={saving}
-                  className="px-4 py-1.5 bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium rounded-lg disabled:opacity-50"
+                  className="px-4 py-1.5 btn-primary-gradient text-sm font-medium rounded-lg disabled:opacity-50"
                 >
                   {saving ? 'Zapisywanie…' : 'Zapisz KPI'}
                 </button>

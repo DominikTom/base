@@ -179,7 +179,7 @@ export function ChatThread({ messages, loading, onSend }: ChatThreadProps) {
           <button
             onClick={submit}
             disabled={loading || !input.trim()}
-            className="p-1.5 rounded-lg bg-primary-600 text-white hover:bg-primary-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            className="p-1.5 rounded-lg btn-primary-gradient disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             title="Wyślij"
           >
             <Send size={16} />

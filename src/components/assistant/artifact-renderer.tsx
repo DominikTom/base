@@ -237,7 +237,7 @@ function ChartArtifact({ artifact }: { artifact: Extract<Artifact, { type: 'char
               <button
                 onClick={saveAsKpi}
                 disabled={mode === 'saving' || !name.trim()}
-                className="px-3 py-1.5 rounded bg-primary-600 hover:bg-primary-700 text-white text-xs font-medium disabled:opacity-50"
+                className="px-3 py-1.5 rounded btn-primary-gradient text-xs font-medium disabled:opacity-50"
               >
                 {mode === 'saving' ? 'Zapisywanie…' : 'Zapisz'}
               </button>

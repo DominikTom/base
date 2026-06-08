@@ -377,7 +377,7 @@ export default function AdminPage() {
             <button
               onClick={handleManualGdriveSync}
               disabled={gdriveSyncing}
-              className="flex items-center gap-2 px-4 py-2.5 bg-primary-600 hover:bg-primary-700 disabled:bg-blue-900/50 disabled:cursor-not-allowed text-white font-medium rounded-lg transition-colors text-sm"
+              className="flex items-center gap-2 px-4 py-2.5 btn-primary-gradient disabled:bg-blue-900/50 disabled:cursor-not-allowed text-white font-medium rounded-lg transition-colors text-sm"
             >
               {gdriveSyncing ? <RefreshCw size={16} className="animate-spin" /> : <FolderSync size={16} />}
               {gdriveSyncing ? 'Synchronizacja...' : 'Pobierz z Google Drive teraz'}
@@ -504,7 +504,7 @@ export default function AdminPage() {
           {file && !isUploading && phase !== 'done' && (
             <button
               onClick={handleUpload}
-              className="w-full px-5 py-3 bg-primary-600 hover:bg-primary-700 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
+              className="w-full px-5 py-3 btn-primary-gradient font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
             >
               <Upload size={18} />
               Importuj CSV

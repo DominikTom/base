@@ -160,7 +160,7 @@ function LoginPageInner() {
             <button
               type="submit"
               disabled={loading || googleLoading}
-              className="w-full px-6 py-3 bg-primary-600 hover:bg-primary-700 text-white font-medium rounded-pill transition-colors disabled:opacity-50"
+              className="w-full px-6 py-3 btn-primary-gradient font-medium rounded-pill transition-colors disabled:opacity-50"
             >
               {loading ? 'Logowanie…' : 'Zaloguj się'}
             </button>

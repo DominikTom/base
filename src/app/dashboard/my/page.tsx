@@ -402,7 +402,7 @@ export default function MyDashboardPage() {
             className="px-3 py-1.5 rounded bg-surface border border-line text-sm text-fg focus:outline-none focus:ring-2 focus:ring-primary-400"
             autoFocus
           />
-          <button onClick={handleRename} className="px-3 py-1.5 bg-primary-600 hover:bg-primary-700 text-white text-xs rounded transition-colors">
+          <button onClick={handleRename} className="px-3 py-1.5 btn-primary-gradient text-xs rounded transition-colors">
             Zapisz
           </button>
           <button onClick={() => setRenameId(null)} className="px-3 py-1.5 text-muted hover:text-fg-soft text-xs">
@@ -428,7 +428,7 @@ export default function MyDashboardPage() {
           <button
             onClick={handleSaveAs}
             disabled={!newLayoutName.trim()}
-            className="px-3 py-1.5 bg-primary-600 hover:bg-primary-700 text-white text-xs rounded transition-colors disabled:opacity-50"
+            className="px-3 py-1.5 btn-primary-gradient text-xs rounded transition-colors disabled:opacity-50"
           >
             Zapisz
           </button>
@@ -454,7 +454,7 @@ export default function MyDashboardPage() {
                 : saveStatus === 'error'
                 ? 'bg-red-600 text-white'
                 : hasUnsavedChanges
-                ? 'bg-primary-600 hover:bg-primary-700 text-white'
+                ? 'btn-primary-gradient'
                 : 'text-fg-soft hover:text-fg hover:bg-bg'
             }`}
           >
@@ -473,7 +473,7 @@ export default function MyDashboardPage() {
           </button>
           <button
             onClick={() => setLibraryOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium rounded-lg transition-colors"
+            className="flex items-center gap-2 px-4 py-2 btn-primary-gradient text-sm font-medium rounded-lg transition-colors"
           >
             <Plus size={16} />
             Dodaj widget
@@ -510,7 +510,7 @@ export default function MyDashboardPage() {
           <p className="text-muted">Twój dashboard jest pusty</p>
           <button
             onClick={() => setLibraryOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium rounded-lg transition-colors"
+            className="flex items-center gap-2 px-4 py-2 btn-primary-gradient text-sm font-medium rounded-lg transition-colors"
           >
             <Plus size={16} />
             Dodaj widgety

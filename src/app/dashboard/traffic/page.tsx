@@ -124,7 +124,7 @@ export default function TrafficPage() {
         <div className="flex items-center justify-between">
           <h1 className="text-xl font-semibold text-fg">Ruch (GA4)</h1>
           <button onClick={handleSync} disabled={syncing}
-            className="flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50">
+            className="flex items-center gap-2 px-4 py-2 btn-primary-gradient text-sm font-medium rounded-lg transition-colors disabled:opacity-50">
             {syncing ? <RefreshCw size={16} className="animate-spin" /> : <RefreshCw size={16} />}
             {syncing ? 'Synchronizacja...' : 'Sync GA4'}
           </button>

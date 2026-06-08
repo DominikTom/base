@@ -17,7 +17,7 @@ export function ConversationList({ conversations, activeId, onSelect, onNew, onD
       <div className="p-3">
         <button
           onClick={onNew}
-          className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium transition-colors"
+          className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg btn-primary-gradient text-sm font-medium transition-colors"
         >
           <Plus size={16} />
           Nowa rozmowa
