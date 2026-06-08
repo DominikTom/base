@@ -43,6 +43,14 @@ export default function WeatherPage() {
   const [yAxis, setYAxis] = useState<'revenue' | 'orders'>('revenue');
   const [data, setData] = useState<WeatherResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  // Sync może wykonać tylko admin (server-side guard w /api/jobs/sync-weather).
+  // Ukrywamy przycisk dla nie-adminów żeby nie wyświetlał błędu 403.
+  const [isAdminUser, setIsAdminUser] = useState(false);
+  useEffect(() => {
+    fetch('/api/user').then(r => r.ok ? r.json() : null).then(j => {
+      setIsAdminUser(j?.profile?.role === 'admin');
+    }).catch(() => {});
+  }, []);
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
 
@@ -122,15 +130,15 @@ export default function WeatherPage() {
             <option value="revenue">Przychód</option>
             <option value="orders">Zamówienia</option>
           </select>
-          <button
+          {isAdminUser && <button
             onClick={syncWeather}
             disabled={syncing}
             className="flex items-center gap-2 px-3 py-2 rounded-pill bg-accent-bg text-accent-fg text-sm font-medium hover:opacity-90 disabled:opacity-50"
-            title="Pobierz brakujące dni z Open-Meteo"
+            title="Pobierz brakujące dni z Open-Meteo (tylko admin)"
           >
             <RefreshCw size={14} className={syncing ? 'animate-spin' : ''} />
             {syncing ? 'Synchronizuję…' : 'Sync pogody'}
-          </button>
+          </button>}
         </div>
       </div>
       {syncMsg && <div className="text-xs text-fg-soft bg-bg border border-line rounded-pill px-4 py-2 inline-flex">{syncMsg}</div>}

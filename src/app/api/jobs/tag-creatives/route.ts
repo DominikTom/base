@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAdmin } from '@/lib/auth';
 import { getSupabaseAdmin } from '@/lib/supabase';
 import { classifyCreative, insightsToTags } from '@/lib/creative-tagger';
 
@@ -7,6 +8,8 @@ export const maxDuration = 60;
 // POST — manual trigger (default batch 10)
 // ?limit=N to override, ?retry_failed=1 to also pick 'failed' rows
 export async function POST(request: NextRequest) {
+  const _guard = await requireAdmin();
+  if (_guard) return _guard;
   const { searchParams } = new URL(request.url);
   const limitParam = parseInt(searchParams.get('limit') || '10', 10);
   const limit = Number.isFinite(limitParam) && limitParam > 0 && limitParam <= 50
@@ -17,6 +20,8 @@ export async function POST(request: NextRequest) {
 
 // GET — cron-safe (sprawdza ETL_CRON_SECRET)
 export async function GET(request: NextRequest) {
+  const _guard = await requireAdmin();
+  if (_guard) return _guard;
   const isVercelCron = request.headers.get('x-vercel-cron') === '1';
   const cronSecret = process.env.ETL_CRON_SECRET;
   const authHeader = request.headers.get('authorization');

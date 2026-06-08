@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAdmin } from '@/lib/auth';
 import { getSupabaseAdmin } from '@/lib/supabase';
 
 const TABLES = [
@@ -21,6 +22,8 @@ const TABLES = [
 
 export async function GET(request: NextRequest) {
   try {
+    const _guard = await requireAdmin();
+    if (_guard) return _guard;
     const db = getSupabaseAdmin();
     const { searchParams } = new URL(request.url);
     const action = searchParams.get('action') || 'tables';

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAdmin } from '@/lib/auth';
 import { getSupabaseAdmin } from '@/lib/supabase';
 import { fetchCreativeMeta } from '@/lib/meta-ads';
 
@@ -13,6 +14,8 @@ export const maxDuration = 60;
 // Default: refresh WSZYSTKICH (najnowsze najpierw) — podmienia low-res/expired URL-e.
 // ?only_missing=1 — tylko te z thumbnail_url IS NULL.
 export async function POST(request: NextRequest) {
+  const _guard = await requireAdmin();
+  if (_guard) return _guard;
   const { searchParams } = new URL(request.url);
   const limitParam = parseInt(searchParams.get('limit') || '100', 10);
   const limit = Number.isFinite(limitParam) && limitParam > 0 && limitParam <= 100 ? limitParam : 100;
@@ -21,6 +24,8 @@ export async function POST(request: NextRequest) {
 }
 
 export async function GET(request: NextRequest) {
+  const _guard = await requireAdmin();
+  if (_guard) return _guard;
   const isVercelCron = request.headers.get('x-vercel-cron') === '1';
   const cronSecret = process.env.ETL_CRON_SECRET;
   const authHeader = request.headers.get('authorization');

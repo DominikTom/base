@@ -38,3 +38,19 @@ export async function isAdmin(
     .single();
   return data?.role === 'admin';
 }
+
+// Strażnik admin-only API. Zwraca null gdy OK; gdy nie-admin / nie-zalogowany
+// zwraca gotowy NextResponse z odpowiednim kodem 401/403.
+// Użycie w POST/GET routes:
+//   const guard = await requireAdmin();
+//   if (guard) return guard;
+//   // ... reszta handlera, user jest adminem
+import { NextResponse } from 'next/server';
+export async function requireAdmin(): Promise<NextResponse | null> {
+  const { user, supabase } = await getAuthUser();
+  if (!user) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
+  if (!(await isAdmin(supabase, user.id))) {
+    return NextResponse.json({ error: 'Forbidden — wymagana rola admin' }, { status: 403 });
+  }
+  return null;
+}

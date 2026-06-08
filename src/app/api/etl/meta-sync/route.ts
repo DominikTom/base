@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAdmin } from '@/lib/auth';
 import { getSupabaseAdmin } from '@/lib/supabase';
 import { fetchCampaignInsights, getAdAccountIds } from '@/lib/meta-ads';
 import { getEurPlnRates } from '@/lib/nbp';
@@ -10,6 +11,8 @@ export const maxDuration = 60;
 // Range mode lets the client chunk a long backfill across multiple calls,
 // each fitting within Vercel Hobby's 60s function timeout.
 export async function POST(request: NextRequest) {
+  const _guard = await requireAdmin();
+  if (_guard) return _guard;
   const { searchParams } = new URL(request.url);
   const since = searchParams.get('since');
   const until = searchParams.get('until');
@@ -27,6 +30,8 @@ export async function POST(request: NextRequest) {
 
 // GET — Vercel Cron daily at 5:00 UTC (Hobby plan = daily minimum)
 export async function GET(request: NextRequest) {
+  const _guard = await requireAdmin();
+  if (_guard) return _guard;
   const isVercelCron = request.headers.get('x-vercel-cron') === '1';
   const cronSecret = process.env.ETL_CRON_SECRET;
   const authHeader = request.headers.get('authorization');

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAdmin } from '@/lib/auth';
 import { syncShowroomSales } from '@/lib/sensmax/sales';
 
 export const maxDuration = 120;
@@ -14,6 +15,8 @@ async function run() {
 
 // Vercel Cron triggers a GET request.
 export async function GET(request: NextRequest) {
+  const _guard = await requireAdmin();
+  if (_guard) return _guard;
   const authHeader = request.headers.get('authorization');
   const cronSecret = process.env.ETL_CRON_SECRET || process.env.SENSMAX_CRON_SECRET;
   const isVercelCron = request.headers.get('x-vercel-cron') === '1';
@@ -24,5 +27,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST() {
+  const _guard = await requireAdmin();
+  if (_guard) return _guard;
   return run();
 }

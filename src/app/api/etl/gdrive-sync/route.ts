@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAdmin } from '@/lib/auth';
 import Papa from 'papaparse';
 import { parseErpCsv, type RawCsvRow } from '@/lib/erp-parser';
 import { listCsvFiles, downloadFileAsText } from '@/lib/google-drive';
@@ -27,6 +28,8 @@ const ITEMS_CHUNK = 500;
  */
 export async function GET(request: NextRequest) {
   try {
+    const _guard = await requireAdmin();
+    if (_guard) return _guard;
     const { searchParams } = new URL(request.url);
     const mode = searchParams.get('mode') || 'manual';
 

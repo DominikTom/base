@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAdmin } from '@/lib/auth';
 import { getSupabaseAdmin } from '@/lib/supabase';
 import { WEATHER_LOCATIONS, type WeatherLocation } from '@/lib/weather';
 
@@ -101,6 +102,8 @@ function rowsFromResponse(j: OpenMeteoDaily, location_key: string): UpsertRow[] 
 
 export async function GET(request: NextRequest) {
   try {
+    const _guard = await requireAdmin();
+    if (_guard) return _guard;
     const url = new URL(request.url);
     const today = new Date(); today.setHours(0, 0, 0, 0);
     const defaultFrom = new Date(today); defaultFrom.setDate(today.getDate() - 365);

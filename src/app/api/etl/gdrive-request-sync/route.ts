@@ -1,10 +1,13 @@
 import { NextResponse } from 'next/server';
+import { requireAdmin } from '@/lib/auth';
 import { getSupabaseAdmin } from '@/lib/supabase';
 
 // Queue manual Google Drive sync request.
 // Actual heavy sync is executed by cron poll route to avoid request timeout in UI.
 export async function POST() {
   try {
+    const _guard = await requireAdmin();
+    if (_guard) return _guard;
     const db = getSupabaseAdmin();
 
     // If there is already queued/running manual request, avoid duplicates.

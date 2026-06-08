@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAdmin } from '@/lib/auth';
 import { getSupabaseAdmin } from '@/lib/supabase';
 import { fetchGA4Report, fetchGA4DailyTotals, getPropertyIds, getHostname } from '@/lib/ga4';
 
@@ -6,11 +7,15 @@ export const maxDuration = 60;
 
 // POST — manual trigger: 365 days of daily totals (fast, no ads)
 export async function POST() {
+  const _guard = await requireAdmin();
+  if (_guard) return _guard;
   return syncGA4({ daysBack: 365, totalsOnly: true });
 }
 
 // GET — Vercel Cron: totals + detail for last 7 days
 export async function GET(request: NextRequest) {
+  const _guard = await requireAdmin();
+  if (_guard) return _guard;
   const authHeader = request.headers.get('authorization');
   const cronSecret = process.env.ETL_CRON_SECRET;
   const isVercelCron = request.headers.get('x-vercel-cron') === '1';

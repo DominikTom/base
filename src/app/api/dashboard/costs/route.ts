@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAdmin } from '@/lib/auth';
 import { getSupabaseAdmin } from '@/lib/supabase';
 
 export async function GET() {
   try {
+    const _guard = await requireAdmin();
+    if (_guard) return _guard;
     const db = getSupabaseAdmin();
     const { data, error } = await db
       .from('fact_agency_costs')
@@ -19,6 +22,8 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
+    const _guard = await requireAdmin();
+    if (_guard) return _guard;
     const db = getSupabaseAdmin();
     const body = await request.json();
 
