@@ -15,6 +15,7 @@ import {
   type DashboardData,
 } from '@/lib/dashboard-store';
 import { Plus, RotateCcw, X, Save, Star, Trash2, Pencil, Check } from 'lucide-react';
+import { InsightsCard } from '@/components/dashboard/insights-card';
 
 const MAX_LAYOUTS = 5;
 
@@ -253,7 +254,10 @@ export default function MyDashboardPage() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
+      {/* AI Wskazówki — nad resztą dashboardu */}
+      <InsightsCard />
+
       {/* Layout tabs */}
       <div className="flex items-center gap-1 border-b border-line pb-0">
         {dashData.layouts.map(l => (
