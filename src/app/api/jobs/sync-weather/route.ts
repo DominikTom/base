@@ -130,10 +130,19 @@ export async function GET(request: NextRequest) {
       // Trim do zakresu from..to (forecast może dosłać poza zakres).
       const filtered = allRows.filter(r => r.date >= from && r.date <= to);
 
-      if (filtered.length > 0) {
+      // Dedup po (date, location_key) — Archive (data sprzed 7+ dni) i
+      // Forecast (ostatnie 14 dni) zachodzą na zakładkę ~7 dni. Bez tego
+      // pojedynczy upsert ma 2 wiersze tego samego PK → Postgres rzuca
+      // „ON CONFLICT DO UPDATE command cannot affect row a second time".
+      // Późniejszy push wygrywa (forecast jest świeższy = bardziej aktualny).
+      const dedupMap = new Map<string, UpsertRow>();
+      for (const r of filtered) dedupMap.set(`${r.date}|${r.location_key}`, r);
+      const finalRows = [...dedupMap.values()];
+
+      if (finalRows.length > 0) {
         // Upsert w pakietach po 500.
-        for (let i = 0; i < filtered.length; i += 500) {
-          const chunk = filtered.slice(i, i + 500);
+        for (let i = 0; i < finalRows.length; i += 500) {
+          const chunk = finalRows.slice(i, i + 500);
           const { error } = await db.from('weather_daily').upsert(chunk, {
             onConflict: 'date,location_key',
             ignoreDuplicates: false,
@@ -141,7 +150,7 @@ export async function GET(request: NextRequest) {
           if (error) throw new Error(`Upsert ${loc.key}: ${error.message}`);
         }
       }
-      totalsPerLocation[loc.key] = filtered.length;
+      totalsPerLocation[loc.key] = finalRows.length;
     }
 
     return NextResponse.json({
