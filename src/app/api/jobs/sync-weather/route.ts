@@ -148,13 +148,27 @@ export async function GET(request: NextRequest) {
       const finalRows = [...dedupMap.values()];
 
       if (finalRows.length > 0) {
-        // Mniejsze batche (200) — jeden problem psuje cały chunk, więc mniej
-        // = niższy promień rażenia. Plus per-batch retry by-pass duplikatów.
+        // DELETE okno forecast (ostatnie 14 dni) per lokalizacja, żeby
+        // świeże wartości forecast nadpisały starsze. Historyczne (poza
+        // tym oknem) zostają — i tak są niezmienne.
+        const forecastWindowStart = new Date(today);
+        forecastWindowStart.setDate(today.getDate() - 14);
+        const fwStartStr = fmt(forecastWindowStart);
+        await db.from('weather_daily')
+          .delete()
+          .eq('location_key', loc.key)
+          .gte('date', fwStartStr);
+
+        // INSERT z ON CONFLICT DO NOTHING (ignoreDuplicates=true). Nawet
+        // jeśli Open-Meteo zwróci ten sam dzień 2× w jednej odpowiedzi
+        // (zdarza się przy timezone edge'ach), Postgres po prostu pomija
+        // duplikat zamiast rzucać błąd „ON CONFLICT cannot affect row
+        // a second time" (specyficzny dla DO UPDATE).
         for (let i = 0; i < finalRows.length; i += 200) {
           const chunk = finalRows.slice(i, i + 200);
           const { error } = await db.from('weather_daily').upsert(chunk, {
             onConflict: 'date,location_key',
-            ignoreDuplicates: false,
+            ignoreDuplicates: true,
           });
           if (error) throw new Error(`Upsert ${loc.key}: ${error.message}`);
         }
