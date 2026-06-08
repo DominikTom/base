@@ -100,7 +100,10 @@ export function WidgetRenderer({ widgetType, widgetConfig, onRemove, onMoveUp, o
               dateFrom: filters.dateFrom,
               dateTo: filters.dateTo,
               shop: filters.shop,
-              limit: 20,
+              // Rankings dostają wyższy limit — karta i tak scrolluje przez
+              // overflow-y-auto, więc widzisz wszystkie pozycje. KPI/wykresy
+              // tego limitu nie używają, więc bezpiecznie podbić globalnie.
+              limit: 1000,
               crossFilters,
             }),
           });
