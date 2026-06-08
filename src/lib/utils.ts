@@ -60,26 +60,28 @@ export function getDateRange(preset: string): { from: string; to: string } {
   }
 }
 
+// Palety serii — odcienie primary (fiolet). Sklepy/kategorie zachowują
+// własne kolory (ich identyfikacja), ale teraz w spójnej rodzinie.
 export const SHOP_COLORS: Record<string, string> = {
-  'mybed.pl': '#3b82f6',
-  'mybed.de': '#f59e0b',
-  'mittohome.pl': '#10b981',
-  'showroom': '#8b5cf6',
-  'amazon.de': '#f97316',
-  'allegro.pl': '#ef4444',
-  'kaufland.de': '#06b6d4',
+  'mybed.pl':     '#7E22CE',  // primary-700 — główny sklep
+  'mybed.de':     '#A855F7',  // primary-500
+  'mittohome.pl': '#C084FC',  // primary-400
+  'showroom':    '#581C87',  // primary-900 — głęboki
+  'amazon.de':   '#9333EA',  // primary-600
+  'allegro.pl':  '#D8B4FE',  // primary-300
+  'kaufland.de': '#6B21A8',  // primary-800
 };
 
 export const CATEGORY_COLORS: Record<string, string> = {
-  'łóżko': '#3b82f6',
-  'materac': '#10b981',
-  'kołdra': '#f59e0b',
-  'poduszka': '#8b5cf6',
-  'sofa': '#ef4444',
-  'fotel': '#f97316',
-  'pufa': '#06b6d4',
-  'meble': '#84cc16',
-  'koc': '#ec4899',
-  'dekoracje': '#14b8a6',
-  'inne': '#6b7280',
+  'łóżko':      '#7E22CE',  // primary-700 — flagship
+  'materac':    '#A855F7',  // primary-500
+  'kołdra':     '#C084FC',  // primary-400
+  'poduszka':   '#D8B4FE',  // primary-300
+  'sofa':       '#9333EA',  // primary-600
+  'fotel':      '#6B21A8',  // primary-800
+  'pufa':       '#581C87',  // primary-900
+  'meble':      '#E9D5FF',  // primary-200
+  'koc':        '#F3E8FF',  // primary-100
+  'dekoracje':  '#7C3AED',  // accent fiolet
+  'inne':       '#0F1310',  // czarny akcent dla „inne"
 };
