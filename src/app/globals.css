@@ -99,62 +99,34 @@ body {
   font-family: var(--font-sans), system-ui, sans-serif;
 }
 
-/* Primary button — liquid glass na białym tle aplikacji. Body to mleczna
-   szyba (translucent white + backdrop-blur), krawędzie świecą fioletowym
-   neonem, dolna krawędź podświetlona mocniej (LED behind frosted glass).
-   Tekst ciemnofioletowy żeby był czytelny na jasnej szybie. */
+/* Primary button — płaski gradient fioletowy. Lewy górny róg: jasnofioletowy
+   z delikatnym biało-fioletowym refleksem. Prawy dolny: ciemny fiolet.
+   Bez neon glow, bez liquid glass — czysty, spójny z resztą UI. */
 .btn-primary-gradient {
-  position: relative;
-  background:
-    /* Mocny fioletowy glow od dołu — przebija przez „szybę" */
-    radial-gradient(ellipse 75% 55% at 50% 100%, rgba(168, 85, 247, 0.45) 0%, rgba(192, 132, 252, 0.18) 40%, transparent 75%),
-    /* Subtelny refleks w lewym górnym (krawędź szkła) */
-    radial-gradient(ellipse 50% 50% at 15% 5%, rgba(255, 255, 255, 0.55) 0%, transparent 60%),
-    /* Body: mleczna biała szyba z odrobiną fioletu */
-    linear-gradient(165deg, rgba(255, 255, 255, 0.72) 0%, rgba(243, 232, 255, 0.55) 100%);
-  backdrop-filter: blur(14px) saturate(180%);
-  -webkit-backdrop-filter: blur(14px) saturate(180%);
-  border: 1px solid rgba(168, 85, 247, 0.45);
-  color: var(--color-primary-800);
-  font-weight: 600;
-  box-shadow:
-    /* Outer neon glow — halo fioletowe */
-    0 6px 28px rgba(168, 85, 247, 0.38),
-    0 0 0 1px rgba(168, 85, 247, 0.18),
-    /* Inner top: cienki biały refleks (krawędź szkła) */
-    inset 0 1px 0 0 rgba(255, 255, 255, 0.85),
-    /* Inner bottom: silny fioletowy glow podświetlający dół */
-    inset 0 -18px 28px -16px rgba(168, 85, 247, 0.55);
-  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.7);
-  transition: transform 0.18s ease, box-shadow 0.25s ease, filter 0.18s ease;
+  background-image:
+    /* Cienki biało-fioletowy refleks w lewym górnym */
+    linear-gradient(135deg, rgba(255, 255, 255, 0.22) 0%, rgba(255, 255, 255, 0) 38%),
+    /* Bazowy gradient fioletu */
+    linear-gradient(135deg, var(--color-primary-400) 0%, var(--color-primary-600) 55%, var(--color-primary-700) 100%);
+  color: #ffffff;
+  transition: filter 0.18s ease, box-shadow 0.18s ease;
 }
 .btn-primary-gradient:hover {
-  transform: translateY(-1px);
-  filter: brightness(1.04);
-  box-shadow:
-    0 10px 40px rgba(168, 85, 247, 0.55),
-    0 0 0 1px rgba(168, 85, 247, 0.32),
-    inset 0 1px 0 0 rgba(255, 255, 255, 0.92),
-    inset 0 -22px 32px -16px rgba(168, 85, 247, 0.70);
+  filter: brightness(1.06);
+  box-shadow: 0 4px 12px rgba(147, 51, 234, 0.20);
 }
 .btn-primary-gradient:active {
-  transform: translateY(0);
   filter: brightness(0.96);
 }
 .btn-primary-gradient:disabled,
 .btn-primary-gradient[disabled] {
-  background:
-    linear-gradient(165deg, rgba(255, 255, 255, 0.55) 0%, rgba(245, 245, 248, 0.55) 100%);
-  border-color: rgba(168, 85, 247, 0.12);
-  color: var(--color-muted);
-  box-shadow:
-    inset 0 1px 0 0 rgba(255, 255, 255, 0.5),
-    inset 0 -6px 12px -8px rgba(168, 85, 247, 0.10);
-  text-shadow: none;
+  background-image:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.18) 0%, rgba(255, 255, 255, 0) 42%),
+    linear-gradient(135deg, var(--color-primary-200) 0%, var(--color-primary-300) 100%);
   cursor: not-allowed;
-  opacity: 0.7;
+  opacity: 0.65;
   filter: none;
-  transform: none;
+  box-shadow: none;
 }
 
 /* react-grid-layout — placeholder fiolet + resize handle styled */
