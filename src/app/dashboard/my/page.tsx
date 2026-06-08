@@ -2,7 +2,7 @@
 
 import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useState } from 'react';
 import { Responsive as ResponsiveGridLayout, type Layout, type LayoutItem } from 'react-grid-layout';
 import { useDashboard } from '@/lib/dashboard-context';
 import { WidgetRenderer } from '@/components/dashboard/widget-renderer';
@@ -36,24 +36,29 @@ export default function MyDashboardPage() {
   // Czy aktywujemy zakładkę z filtrami z bazy — wtedy NIE chcemy by
   // ten apply propagował się z powrotem jako „zmiana usera" do zapisu.
   const [applyingFromLayout, setApplyingFromLayout] = useState(false);
-  // Szerokość gridu (D&D). Własny ResizeObserver + window.resize fallback —
-  // wbudowany useContainerWidth z RGL na niektórych szerokich monitorach
-  // dawał off-by-half (initialWidth=1280 utykało).
-  const gridRef = useRef<HTMLDivElement>(null);
-  const [gridWidth, setGridWidth] = useState(1200);
-  useEffect(() => {
-    const el = gridRef.current;
-    if (!el) return;
-    const measure = () => {
-      const w = el.getBoundingClientRect().width;
+  // Szerokość gridu (D&D). Callback ref + useLayoutEffect — wcześniejszy
+  // pattern z useRef+useEffect odpalał się raz, na placeholderze loadingu
+  // (gdy ref był null), więc nigdy nie łapał faktycznej szerokości po mounted.
+  // setState trigger callback ref → effect re-fires → ResizeObserver get się
+  // właściwego elementu.
+  const [gridEl, setGridEl] = useState<HTMLDivElement | null>(null);
+  const [gridWidth, setGridWidth] = useState(0);
+  useLayoutEffect(() => {
+    if (!gridEl) return;
+    const update = () => {
+      // Mierzymy parent, NIE wrapper — RGL ustawia explicit `width` na swoim
+      // root divie, co potrafi „przykryć" rzeczywistą szerokość wrappera
+      // i zamrozić pomiar na początkowej wartości.
+      const target = gridEl.parentElement ?? gridEl;
+      const w = target.getBoundingClientRect().width;
       if (w > 0) setGridWidth(w);
     };
-    measure();
-    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null;
-    ro?.observe(el);
-    window.addEventListener('resize', measure);
-    return () => { ro?.disconnect(); window.removeEventListener('resize', measure); };
-  }, []);
+    update();
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(update) : null;
+    ro?.observe(gridEl.parentElement ?? gridEl);
+    window.addEventListener('resize', update);
+    return () => { ro?.disconnect(); window.removeEventListener('resize', update); };
+  }, [gridEl]);
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
@@ -512,8 +517,8 @@ export default function MyDashboardPage() {
           </button>
         </div>
       ) : (
-        <div ref={gridRef} style={{ width: '100%' }}>
-        <ResponsiveGridLayout
+        <div ref={setGridEl} style={{ width: '100%' }}>
+        {gridWidth > 0 && <ResponsiveGridLayout
           className="layout"
           width={gridWidth}
           layouts={{
@@ -559,7 +564,7 @@ export default function MyDashboardPage() {
               />
             </div>
           ))}
-        </ResponsiveGridLayout>
+        </ResponsiveGridLayout>}
         </div>
       )}
 
