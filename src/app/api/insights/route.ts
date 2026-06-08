@@ -23,7 +23,7 @@ function getAnthropic(): Anthropic | null {
   return cachedAnthropic;
 }
 
-type Range = '7d' | '30d';
+type Range = '7d' | '30d' | 'quarter';
 type InsightKind = 'positive' | 'negative' | 'neutral' | 'alert';
 interface Insight {
   title: string;
@@ -36,7 +36,10 @@ export async function GET(request: NextRequest) {
   try {
     const url = new URL(request.url);
     const shop = (url.searchParams.get('shop') || 'all').toLowerCase();
-    const range: Range = url.searchParams.get('range') === '30d' ? '30d' : '7d';
+    const rangeParam = url.searchParams.get('range');
+    const range: Range = rangeParam === 'quarter' ? 'quarter'
+      : rangeParam === '7d' ? '7d'
+      : '30d';   // domyślnie 30 dni — 7 dni dało za mało próbki na sensowne wskazówki
     const force = url.searchParams.get('force') === '1';
     const scope_key = `dashboard:${shop}:${range}`;
 
@@ -63,7 +66,7 @@ export async function GET(request: NextRequest) {
     }
 
     // ── Daty okresu ────────────────────────────────────────────────
-    const days = range === '30d' ? 30 : 7;
+    const days = range === 'quarter' ? 90 : range === '30d' ? 30 : 7;
     const today = new Date();
     const fmt = (d: Date) => d.toISOString().split('T')[0];
     const curTo = new Date(today); curTo.setHours(23, 59, 59, 999);
@@ -257,7 +260,11 @@ async function generateInsightsWithLLM(metrics: MetricsBundle, range: Range): Pr
   const anthropic = getAnthropic();
   if (!anthropic) throw new Error('no ANTHROPIC_API_KEY');
 
-  const period = range === '30d' ? 'ostatnie 30 dni vs poprzednie 30 dni' : 'ostatnie 7 dni vs poprzednie 7 dni';
+  const period = range === 'quarter'
+    ? 'ostatni kwartał (90 dni) vs poprzedni kwartał'
+    : range === '30d'
+    ? 'ostatnie 30 dni vs poprzednie 30 dni'
+    : 'ostatnie 7 dni vs poprzednie 7 dni';
 
   const systemPrompt = `Jesteś analitykiem MyBed Group. Piszesz krótkie, konkretne wskazówki po polsku — bez wody, bez "wnioski są takie", bez dukania.
 

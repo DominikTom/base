@@ -18,7 +18,7 @@ interface InsightsResponse {
   generated_at?: string;
   age_minutes?: number;
   cached?: boolean;
-  range: '7d' | '30d';
+  range: '7d' | '30d' | 'quarter';
   shop: string;
   error?: string;
 }
@@ -35,7 +35,7 @@ export function InsightsCard() {
   const [data, setData] = useState<InsightsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [range, setRange] = useState<'7d' | '30d'>('7d');
+  const [range, setRange] = useState<'7d' | '30d' | 'quarter'>('30d');
 
   async function load(force = false) {
     setLoading(!data); setRefreshing(force);
@@ -78,7 +78,13 @@ export function InsightsCard() {
           <div>
             <h2 className="text-lg font-semibold text-fg">Wskazówki AI</h2>
             <p className="text-xs text-muted mt-0.5">
-              Analiza ostatnich {range === '30d' ? '30' : '7'} dni vs poprzedni okres
+              Sklep:{' '}
+              <span className="font-medium text-fg-soft">
+                {filters.shop === 'all' ? 'wszystkie sklepy' : filters.shop}
+              </span>
+              {' · '}
+              {range === 'quarter' ? 'ostatni kwartał (90 dni)' : `ostatnie ${range === '30d' ? '30' : '7'} dni`}
+              {' vs poprzedni okres'}
               {data?.cached && data.age_minutes != null && (
                 <span className="ml-2 text-muted/70">· cache {data.age_minutes}m</span>
               )}
@@ -87,24 +93,22 @@ export function InsightsCard() {
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <div className="inline-flex items-center bg-bg border border-line rounded-pill p-1">
-            <button
-              onClick={() => setRange('7d')}
-              className={cn(
-                'px-3 py-1 text-xs font-medium rounded-pill transition-colors',
-                range === '7d' ? 'bg-accent-bg text-accent-fg' : 'text-fg-soft hover:text-fg',
-              )}
-            >
-              7 dni
-            </button>
-            <button
-              onClick={() => setRange('30d')}
-              className={cn(
-                'px-3 py-1 text-xs font-medium rounded-pill transition-colors',
-                range === '30d' ? 'bg-accent-bg text-accent-fg' : 'text-fg-soft hover:text-fg',
-              )}
-            >
-              30 dni
-            </button>
+            {([
+              { key: '7d', label: '7 dni' },
+              { key: '30d', label: '30 dni' },
+              { key: 'quarter', label: 'Kwartał' },
+            ] as const).map(opt => (
+              <button
+                key={opt.key}
+                onClick={() => setRange(opt.key)}
+                className={cn(
+                  'px-3 py-1 text-xs font-medium rounded-pill transition-colors',
+                  range === opt.key ? 'bg-accent-bg text-accent-fg' : 'text-fg-soft hover:text-fg',
+                )}
+              >
+                {opt.label}
+              </button>
+            ))}
           </div>
           <button
             onClick={() => load(true)}

@@ -8,7 +8,6 @@ import {
 } from 'recharts';
 import { LayoutDashboard, BarChart3, AlertTriangle, Check } from 'lucide-react';
 import { formatNumber } from '@/lib/utils';
-import { addWidgetToDashboard } from '@/lib/dashboard-actions';
 import type { Artifact } from '@/lib/assistant/types';
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#f97316', '#06b6d4', '#ec4899', '#84cc16', '#14b8a6'];
@@ -28,13 +27,16 @@ export function ArtifactRenderer({ artifact }: { artifact: Artifact }) {
   }
 
   if (artifact.type === 'widget_created') {
+    // Legacy artifact (z poprzedniej wersji, gdy create_widget dodawał
+    // od razu na dashboard). Nowe sesje używają kpi_created. Zostawiam
+    // render, ale kieruje do zakładki KPI — spójnie z nową filozofią.
     return (
       <Link
-        href="/dashboard/my"
-        className="flex items-center gap-2 rounded-lg border border-emerald-900/50 bg-emerald-950/30 px-3 py-2 text-xs text-emerald-300 hover:bg-emerald-950/50 transition-colors"
+        href="/dashboard/kpi"
+        className="flex items-center gap-2 rounded-lg border border-line bg-primary-50 px-3 py-2 text-xs text-primary-700 hover:bg-primary-100 transition-colors"
       >
         <LayoutDashboard size={14} className="shrink-0" />
-        <span>Dodano widget <strong>{artifact.title}</strong> do dashboardu „{artifact.layoutName}”. Otwórz „Mój Dashboard”.</span>
+        <span>Zapisano widget <strong>{artifact.title}</strong>. Otwórz „KPI", żeby podejrzeć i dodać na dashboard.</span>
       </Link>
     );
   }
@@ -99,13 +101,6 @@ function ChartArtifact({ artifact }: { artifact: Extract<Artifact, { type: 'char
   const [name, setName] = useState(title);
   const [category, setCategory] = useState('Ogólne');
   const [error, setError] = useState<string | null>(null);
-  const [dashAdded, setDashAdded] = useState(false);
-
-  async function addToDash() {
-    if (!query_spec) return;
-    const r = await addWidgetToDashboard('custom_explorer', { title: name.trim() || title, ...query_spec });
-    if (r.ok) setDashAdded(true);
-  }
 
   async function saveAsKpi() {
     if (!name.trim() || !query_spec) return;
@@ -231,16 +226,9 @@ function ChartArtifact({ artifact }: { artifact: Extract<Artifact, { type: 'char
               <span className="inline-flex items-center gap-1.5 text-[11px] text-emerald-400">
                 <Check size={13} /> Zapisano jako KPI „{name}”.
               </span>
-              <Link href="/dashboard/kpi" className="text-[11px] text-primary-700 hover:underline">
-                Zakładka KPI
+              <Link href="/dashboard/kpi" className="text-[11px] text-primary-700 hover:underline font-medium">
+                → Otwórz w zakładce KPI (edytuj, dodaj na dashboard)
               </Link>
-              {dashAdded ? (
-                <span className="text-[11px] text-emerald-400">Dodano na dashboard</span>
-              ) : (
-                <button onClick={addToDash} className="text-[11px] text-primary-700 hover:underline">
-                  + Dodaj na dashboard
-                </button>
-              )}
             </div>
           ) : mode === 'form' || mode === 'saving' ? (
             <div className="flex flex-wrap items-center gap-2">

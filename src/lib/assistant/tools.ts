@@ -85,7 +85,7 @@ export const TOOL_DEFINITIONS: Anthropic.Tool[] = [
   {
     name: 'create_widget',
     description:
-      'Dodaje widget na dashboardzie użytkownika ("Mój Dashboard"). Wywołuj tylko, gdy użytkownik wprost prosi o dodanie/zapisanie widgetu.',
+      'Zapisuje widget w katalogu KPI (nie dodaje od razu na dashboard). Użytkownik wejdzie na zakładkę „KPI", podejrzy/edytuje i dopiero stamtąd doda na dashboard. Wywołuj gdy użytkownik prosi o stworzenie/zapisanie widgetu.',
     input_schema: {
       type: 'object',
       properties: {
@@ -227,6 +227,10 @@ function handleShowChart(input: Record<string, unknown>): ToolOutcome {
   };
 }
 
+// Tool `create_widget` z poziomu asystenta NIE dodaje już bezpośrednio na
+// dashboard — zapisuje do katalogu KPI. User przegląda/edytuje na zakładce
+// „KPI" i dopiero stamtąd ręcznie dodaje na „Mój Dashboard". Daje to czas
+// na review i ogranicza śmieci na dashboardzie z prób-i-błędów chat'u.
 async function handleCreateWidget(input: Record<string, unknown>, ctx: ToolContext): Promise<ToolOutcome> {
   const spec = {
     chart_type: String(input.chart_type || 'bar'),
@@ -240,40 +244,33 @@ async function handleCreateWidget(input: Record<string, unknown>, ctx: ToolConte
   const errors = validateQuerySpec(spec);
   if (errors.length) return err(`Niepoprawna konfiguracja widgetu: ${errors.join('; ')}`);
 
-  const dashData = await loadDashboardData(ctx.userId);
-  const layout = dashData.layouts.find(l => l.id === dashData.defaultLayoutId) || dashData.layouts[0];
-  if (!layout) return err('Brak układu dashboardu do zapisania widgetu.');
-
   const title = String(input.title || 'Widget AI');
-  const def = getWidgetDef('custom_explorer');
-  const widget: WidgetInstance = {
-    id: generateWidgetId(),
-    type: 'custom_explorer',
-    x: 0,
-    y: Infinity,
-    w: def?.defaultSize.w ?? 8,
-    h: def?.defaultSize.h ?? 5,
-    config: { title, ...spec },
-  };
-  layout.widgets = [...layout.widgets, widget];
-  layout.updatedAt = new Date().toISOString();
 
-  const { error } = await getSupabaseAdmin()
-    .from('user_profiles')
-    .upsert({ user_id: ctx.userId, email: ctx.userEmail, dashboard_layout: dashData }, { onConflict: 'user_id' });
-  if (error) return err(`Nie udało się zapisać widgetu: ${error.message}`);
+  const { data, error } = await getSupabaseAdmin()
+    .from('kpi_definitions')
+    .insert({
+      name: title,
+      description: 'Stworzony przez asystenta AI',
+      category: 'AI',
+      tier: 'standard',
+      value_type: 'number',
+      query_spec: spec,
+      created_by: ctx.userId,
+    })
+    .select('id, name, category')
+    .single();
+  if (error) return err(`Nie udało się zapisać KPI: ${error.message}`);
 
   return {
-    content: JSON.stringify({ ok: true, message: `Widget "${title}" dodany do "${layout.name}".` }),
-    artifact: { type: 'widget_created', title, layoutName: layout.name },
-    step: { kind: 'widget', label: title },
+    content: JSON.stringify({ ok: true, message: `KPI „${data.name}" zapisany. Otwórz zakładkę „KPI", aby podejrzeć i dodać na dashboard.` }),
+    artifact: { type: 'kpi_created', kpiId: data.id, name: data.name, category: data.category },
+    step: { kind: 'kpi', label: data.name },
   };
 }
 
 async function handleCreateKpi(input: Record<string, unknown>, ctx: ToolContext): Promise<ToolOutcome> {
-  if (!ctx.isAdmin) {
-    return err('Tylko administrator może dodawać definicje KPI do wspólnego rejestru.');
-  }
+  // Admin gate zdjęty — KPI mogą tworzyć wszyscy (zgodnie z RLS dodanym
+  // w migracji 012_kpi_definitions_open_write).
   const rawSpec = (input.query_spec || {}) as Record<string, unknown>;
   const spec = {
     chart_type: String(rawSpec.chart_type || 'bar'),

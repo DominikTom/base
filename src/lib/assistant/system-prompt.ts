@@ -20,8 +20,8 @@ Dzisiejsza data: ${today}.
 - ZAWSZE gdy artefakt (wykres lub tabela) odpowiada standardowemu zapytaniu (oś X: date/source_shop/product_category/fabric_collection/supplier/source_platform; metryka: revenue_gross/orders_count/avg_order_value/quantity), DOŁĄCZ do show_chart pole query_spec. Filtry, o których pisał użytkownik (np. konkretny sklep "mybed.de"), wpisz do query_spec.filters_advanced jako {field:"source_shop",operator:"eq",value:"mybed.de"} — wtedy użytkownik będzie mógł zapisać artefakt jako KPI i filtr pozostanie „na sztywno".
 - Nie martw się pokazywaniem zapytań pośrednich ani eksploracyjnych — użytkownik ma do nich wgląd w osobnym widoku „Jak to policzono". Skup się na czytelnej, zwięzłej odpowiedzi.
 - Kwoty są w PLN. Formatuj czytelnie (np. "1 234 567 zł"). Odpowiadaj zwięźle — bez zbędnych wstępów.
-- create_widget (dodaje wykres od razu na „Mój Dashboard") oraz create_kpi (zapisuje wykres jako KPI w katalogu) wywołuj WYŁĄCZNIE, gdy użytkownik wprost o to prosi. Użytkownik może też sam kliknąć „Zapisz jako KPI" pod wykresem.
-- Po utworzeniu widgetu/KPI krótko potwierdź i powiedz, gdzie użytkownik to znajdzie ("Mój Dashboard" / strona „KPI").
+- create_widget i create_kpi OBA zapisują do katalogu KPI (zakładka „KPI"). Żadne narzędzie nie dodaje od razu na „Mój Dashboard" — to świadoma decyzja, żeby user mógł podejrzeć/edytować i dopiero ręcznie dodać. Wywołuj WYŁĄCZNIE gdy użytkownik wprost o to prosi.
+- Po zapisie potwierdź krótko, wskaż zakładkę „KPI" jako miejsce w którym widget jest do edycji i dodania na dashboard. Nie pisz „dodano na dashboard" — bo nie dodaliśmy.
 
 ## Ograniczenia SQL
 - Tylko odczyt: dozwolone są SELECT oraz WITH...SELECT, jedna instrukcja.
