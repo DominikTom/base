@@ -1,6 +1,9 @@
 'use client';
 
+import 'react-grid-layout/css/styles.css';
+import 'react-resizable/css/styles.css';
 import { useCallback, useEffect, useState } from 'react';
+import { Responsive as ResponsiveGridLayout, useContainerWidth, type Layout, type LayoutItem } from 'react-grid-layout';
 import { useDashboard } from '@/lib/dashboard-context';
 import { WidgetRenderer } from '@/components/dashboard/widget-renderer';
 import { WidgetLibrary } from '@/components/dashboard/widget-library';
@@ -13,16 +16,27 @@ import {
   type WidgetInstance,
   type DashboardLayout,
   type DashboardData,
+  type LayoutFilters,
 } from '@/lib/dashboard-store';
+import type { Shop, CompareMode } from '@/types/database';
+
 import { Plus, RotateCcw, X, Save, Star, Trash2, Pencil, Check } from 'lucide-react';
 import { InsightsCard } from '@/components/dashboard/insights-card';
 
 const MAX_LAYOUTS = 5;
 
 export default function MyDashboardPage() {
-  const { crossFilters, removeCrossFilter, clearCrossFilters } = useDashboard();
+  const {
+    filters: ctxFilters, crossFilters, removeCrossFilter, clearCrossFilters,
+    setDateRange, setShop, setCompare,
+  } = useDashboard();
   const [dashData, setDashData] = useState<DashboardData | null>(null);
   const [activeLayoutId, setActiveLayoutId] = useState<string>('');
+  // Czy aktywujemy zakładkę z filtrami z bazy — wtedy NIE chcemy by
+  // ten apply propagował się z powrotem jako „zmiana usera" do zapisu.
+  const [applyingFromLayout, setApplyingFromLayout] = useState(false);
+  // Szerokość gridu (D&D) — z hooka react-grid-layout v2.x.
+  const { width: gridWidth, containerRef: gridRef } = useContainerWidth();
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
@@ -59,6 +73,41 @@ export default function MyDashboardPage() {
   }, []);
 
   const activeLayout = dashData?.layouts.find(l => l.id === activeLayoutId) || dashData?.layouts[0] || null;
+
+  // (1) Apply filtrów zakładki do kontekstu przy przełączeniu zakładki.
+  // Robi to bez zaznaczania „unsaved changes" — to NIE jest user-edit, tylko
+  // odtworzenie zapisanego stanu.
+  useEffect(() => {
+    if (!mounted || !activeLayout?.filters) return;
+    setApplyingFromLayout(true);
+    const f = activeLayout.filters;
+    setDateRange(f.dateFrom, f.dateTo);
+    setShop(f.shop as Shop);
+    setCompare(f.compare as CompareMode);
+    // Zwolnij flagę po następnym tick — żeby watcher poniżej nie zareagował.
+    const t = setTimeout(() => setApplyingFromLayout(false), 0);
+    return () => clearTimeout(t);
+  }, [activeLayoutId, mounted, activeLayout?.filters, setDateRange, setShop, setCompare]);
+
+  // (2) Watcher: gdy user RĘCZNIE zmienił filtr (topbar), zapisz do bieżącej
+  // zakładki jako jej snapshot. Debounce żeby nie spamić save'em przy
+  // przesuwaniu daty.
+  useEffect(() => {
+    if (!mounted || !activeLayout || applyingFromLayout) return;
+    const next: LayoutFilters = {
+      dateFrom: ctxFilters.dateFrom,
+      dateTo: ctxFilters.dateTo,
+      shop: ctxFilters.shop,
+      compare: ctxFilters.compare,
+    };
+    const cur = activeLayout.filters;
+    if (cur && cur.dateFrom === next.dateFrom && cur.dateTo === next.dateTo && cur.shop === next.shop && cur.compare === next.compare) return;
+    const handle = setTimeout(() => {
+      updateLayout({ ...activeLayout, filters: next, updatedAt: new Date().toISOString() });
+    }, 400);
+    return () => clearTimeout(handle);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ctxFilters.dateFrom, ctxFilters.dateTo, ctxFilters.shop, ctxFilters.compare, mounted, applyingFromLayout, activeLayoutId]);
 
   // Persist to DB with feedback
   const saveToDB = useCallback(async (data: DashboardData, showFeedback = false) => {
@@ -441,19 +490,54 @@ export default function MyDashboardPage() {
           </button>
         </div>
       ) : (
-        <div className="grid grid-cols-12 gap-3">
-          {activeLayout.widgets.map((w, i) => (
-            <div key={w.id} className={`${widgetSpan(w.w)} ${widgetHeight(w.h)}`}>
+        <div ref={gridRef}>
+        <ResponsiveGridLayout
+          className="layout"
+          width={gridWidth}
+          layouts={{
+            lg: activeLayout.widgets.map(w => ({ i: w.id, x: w.x, y: w.y, w: w.w, h: w.h, minW: 3, minH: 2 })),
+            md: activeLayout.widgets.map(w => ({ i: w.id, x: w.x, y: w.y, w: w.w, h: w.h, minW: 3, minH: 2 })),
+            sm: activeLayout.widgets.map(w => ({ i: w.id, x: 0, y: w.y, w: 12, h: w.h, minW: 3, minH: 2 })),
+          }}
+          breakpoints={{ lg: 1200, md: 996, sm: 0 }}
+          cols={{ lg: 12, md: 12, sm: 12 }}
+          rowHeight={64}
+          margin={[16, 16]}
+          containerPadding={[0, 0]}
+          dragConfig={{
+            enabled: true,
+            bounded: false,
+            handle: '.widget-drag-handle',
+            cancel: '.widget-no-drag',
+            threshold: 3,
+          }}
+          onLayoutChange={(newLayout: Layout) => {
+            if (!activeLayout) return;
+            const map = new Map<string, LayoutItem>(newLayout.map(l => [l.i, l]));
+            let changed = false;
+            const newWidgets = activeLayout.widgets.map(w => {
+              const l = map.get(w.id);
+              if (!l) return w;
+              if (l.x !== w.x || l.y !== w.y || l.w !== w.w || l.h !== w.h) {
+                changed = true;
+                return { ...w, x: l.x, y: l.y, w: l.w, h: l.h };
+              }
+              return w;
+            });
+            if (changed) updateLayout({ ...activeLayout, widgets: newWidgets, updatedAt: new Date().toISOString() });
+          }}
+        >
+          {activeLayout.widgets.map(w => (
+            <div key={w.id}>
               <WidgetRenderer
                 widgetType={w.type}
                 widgetConfig={w.config}
                 onRemove={() => handleRemoveWidget(w.id)}
-                onMoveUp={i > 0 ? () => handleMove(w.id, -1) : undefined}
-                onMoveDown={i < activeLayout.widgets.length - 1 ? () => handleMove(w.id, 1) : undefined}
                 onResize={(delta) => handleResize(w.id, delta)}
               />
             </div>
           ))}
+        </ResponsiveGridLayout>
         </div>
       )}
 

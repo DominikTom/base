@@ -8,7 +8,7 @@ import { SimpleBarChart } from '@/components/charts/bar-chart';
 import { SimplePieChart } from '@/components/charts/pie-chart';
 import { PivotRenderer } from '@/components/dashboard/pivot-renderer';
 import { AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
-import { X, RefreshCw, ArrowUp, ArrowDown, Maximize2, Minimize2, HelpCircle } from 'lucide-react';
+import { X, RefreshCw, ArrowUp, ArrowDown, Maximize2, Minimize2, HelpCircle, TrendingUp, TrendingDown } from 'lucide-react';
 
 // Map widget types to cross-filter fields they produce when clicked
 const WIDGET_CLICK_FIELD: Record<string, string> = {
@@ -52,6 +52,9 @@ export function WidgetRenderer({ widgetType, widgetConfig, onRemove, onMoveUp, o
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showDebug, setShowDebug] = useState(false);
+  // Wartość poprzedniego okresu — tylko dla widgetów typu kpi_*. Pokazujemy
+  // jako badge ze zmianą % pod główną liczbą.
+  const [prevValue, setPrevValue] = useState<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -141,6 +144,41 @@ export function WidgetRenderer({ widgetType, widgetConfig, onRemove, onMoveUp, o
     return () => { cancelled = true; };
   }, [widgetType, widgetConfig, filters.dateFrom, filters.dateTo, filters.shop, crossFilters]);
 
+  // Poprzedni okres (long-running silent fetch) — tylko dla KPI.
+  // Dzieli okres po długości current i pyta API jeszcze raz.
+  useEffect(() => {
+    if (!widgetType.startsWith('kpi_')) { setPrevValue(null); return; }
+    let cancelled = false;
+    const fromD = new Date(filters.dateFrom);
+    const toD = new Date(filters.dateTo);
+    if (Number.isNaN(fromD.getTime()) || Number.isNaN(toD.getTime())) return;
+    const days = Math.max(1, Math.round((toD.getTime() - fromD.getTime()) / 86400000) + 1);
+    const prevTo = new Date(fromD); prevTo.setDate(prevTo.getDate() - 1);
+    const prevFrom = new Date(prevTo); prevFrom.setDate(prevFrom.getDate() - (days - 1));
+    const fmt = (d: Date) => d.toISOString().split('T')[0];
+    async function fetchPrev() {
+      try {
+        const res = await fetch('/api/dashboard/widgets', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            widget: widgetType,
+            dateFrom: fmt(prevFrom),
+            dateTo: fmt(prevTo),
+            shop: filters.shop,
+            limit: 20,
+            crossFilters,
+          }),
+        });
+        const j = await res.json();
+        if (cancelled) return;
+        setPrevValue(res.ok && typeof j.value === 'number' ? j.value : null);
+      } catch { if (!cancelled) setPrevValue(null); }
+    }
+    fetchPrev();
+    return () => { cancelled = true; };
+  }, [widgetType, filters.dateFrom, filters.dateTo, filters.shop, crossFilters]);
+
   const handleItemClick = (name: string) => {
     const field = WIDGET_CLICK_FIELD[widgetType];
     if (!field) return;
@@ -162,16 +200,17 @@ export function WidgetRenderer({ widgetType, widgetConfig, onRemove, onMoveUp, o
   if (!def) return <div className="p-4 text-danger">Nieznany widget: {widgetType}</div>;
 
   return (
-    <div className="h-full flex flex-col rounded-xl border border-line bg-surface overflow-hidden">
-      {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-line shrink-0">
+    <div className="h-full flex flex-col rounded-card border border-line bg-surface overflow-hidden shadow-card hover:shadow-card-hover transition-shadow">
+      {/* Header — drag handle dla react-grid-layout (selector `.widget-drag-handle`) */}
+      <div className="widget-drag-handle flex items-center justify-between px-3 py-2 border-b border-line shrink-0 cursor-move select-none">
         <span className="text-xs font-medium text-fg-soft truncate">{String(widgetConfig?.title || def.name)}</span>
-        <div className="flex items-center gap-0.5">
+        {/* Przyciski — `widget-no-drag` żeby klik w nie nie inicjował drag */}
+        <div className="widget-no-drag flex items-center gap-0.5">
           <button onClick={() => setShowDebug(d => !d)} className={`p-1 ${showDebug ? 'text-primary-700' : 'text-muted'} hover:text-primary-700`} title="Debug info"><HelpCircle size={12} /></button>
           {onMoveUp && <button onClick={onMoveUp} className="p-1 text-muted hover:text-fg-soft"><ArrowUp size={12} /></button>}
           {onMoveDown && <button onClick={onMoveDown} className="p-1 text-muted hover:text-fg-soft"><ArrowDown size={12} /></button>}
-          {onResize && <button onClick={() => onResize(3)} className="p-1 text-muted hover:text-fg-soft"><Maximize2 size={12} /></button>}
-          {onResize && <button onClick={() => onResize(-3)} className="p-1 text-muted hover:text-fg-soft"><Minimize2 size={12} /></button>}
+          {onResize && <button onClick={() => onResize(3)} className="p-1 text-muted hover:text-fg-soft" title="Powiększ"><Maximize2 size={12} /></button>}
+          {onResize && <button onClick={() => onResize(-3)} className="p-1 text-muted hover:text-fg-soft" title="Zmniejsz"><Minimize2 size={12} /></button>}
           <button onClick={onRemove} className="p-1 text-muted hover:text-danger"><X size={12} /></button>
         </div>
       </div>
@@ -199,19 +238,20 @@ export function WidgetRenderer({ widgetType, widgetConfig, onRemove, onMoveUp, o
         ) : error ? (
           <div className="h-full flex items-center justify-center text-xs text-danger">{error}</div>
         ) : data ? (
-          <WidgetContent type={widgetType} data={data} onItemClick={handleItemClick} activeValues={activeValues} />
+          <WidgetContent type={widgetType} data={data} onItemClick={handleItemClick} activeValues={activeValues} prevValue={prevValue} />
         ) : null}
       </div>
     </div>
   );
 }
 
-function WidgetContent({ type, data, onItemClick, activeValues }: {
+function WidgetContent({ type, data, onItemClick, activeValues, prevValue }: {
   type: string;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   data: any;
   onItemClick: (name: string) => void;
   activeValues: Set<string>;
+  prevValue: number | null;
 }) {
   const clickable = !!WIDGET_CLICK_FIELD[type];
 
@@ -227,9 +267,24 @@ function WidgetContent({ type, data, onItemClick, activeValues }: {
       : data.format === 'percent' ? `${data.value.toFixed(1)}%`
       : data.format === 'mer' ? `${data.value.toFixed(2)}x`
       : formatNumber(data.value);
+    // Zmiana vs poprzedni okres — pokazujemy gdy mamy prev i abs >= 0.1%.
+    const change = (typeof prevValue === 'number' && prevValue !== 0)
+      ? ((Number(data.value) - prevValue) / Math.abs(prevValue)) * 100
+      : null;
+    const showChange = change !== null && Math.abs(change) >= 0.1;
+    const positive = (change ?? 0) >= 0;
     return (
-      <div className="h-full flex flex-col items-center justify-center">
+      <div className="h-full flex flex-col items-center justify-center gap-2">
         <div className="text-3xl font-bold text-fg">{formatted}</div>
+        {showChange && (
+          <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-pill ${
+            positive ? 'bg-green-100 text-success' : 'bg-rose-100 text-danger'
+          }`}>
+            {positive ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
+            {positive ? '+' : ''}{change!.toFixed(1)}%
+            <span className="opacity-60 ml-0.5 font-normal">vs poprz.</span>
+          </span>
+        )}
       </div>
     );
   }

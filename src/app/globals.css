@@ -99,24 +99,37 @@ body {
   font-family: var(--font-sans), system-ui, sans-serif;
 }
 
-/* react-grid-layout — placeholder w primary fiolet */
+/* react-grid-layout — placeholder fiolet + resize handle styled */
 .react-grid-item.react-grid-placeholder {
   background: var(--color-primary-500) !important;
-  opacity: 0.12 !important;
-  border-radius: 16px !important;
+  opacity: 0.14 !important;
+  border-radius: 20px !important;
 }
 .react-grid-item > .react-resizable-handle {
   background: none !important;
+  width: 14px !important;
+  height: 14px !important;
+  z-index: 2;
 }
 .react-grid-item > .react-resizable-handle::after {
   content: '' !important;
   position: absolute;
-  right: 6px;
-  bottom: 6px;
+  right: 4px;
+  bottom: 4px;
   width: 8px;
   height: 8px;
   border-right: 2px solid var(--color-muted);
   border-bottom: 2px solid var(--color-muted);
+  opacity: 0.5;
+  transition: opacity 0.15s ease;
+}
+.react-grid-item:hover > .react-resizable-handle::after {
+  opacity: 1;
+}
+.react-grid-item.react-draggable-dragging {
+  z-index: 10;
+  opacity: 0.92;
+  cursor: grabbing !important;
 }
 .react-grid-item.resizing {
   opacity: 0.85;

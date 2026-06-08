@@ -8,11 +8,22 @@ export interface WidgetInstance {
   config?: Record<string, unknown>;
 }
 
+// Filtry per-zakładka — gdy ustawione, override'ują globalny stan
+// (dateFrom/dateTo/shop/compare) przy aktywacji zakładki. Pozwala mieć
+// równolegle zakładki dla różnych okresów / sklepów.
+export interface LayoutFilters {
+  dateFrom: string;
+  dateTo: string;
+  shop: string;
+  compare: string;
+}
+
 export interface DashboardLayout {
   id: string;
   name: string;
   widgets: WidgetInstance[];
   updatedAt: string;
+  filters?: LayoutFilters;
 }
 
 export interface DashboardData {
