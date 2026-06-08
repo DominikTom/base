@@ -123,16 +123,29 @@ async function computeMetrics(
   shop: string,
   ranges: { current: { from: string; to: string }; previous: { from: string; to: string } },
 ): Promise<MetricsBundle> {
+  // PostgREST ma twardy server-side cap 1000 wierszy/zapytanie — `.limit()` go
+  // nie omija. Paginujemy przez `.range()` w pętli.
+  const PAGE = 1000;
+
   // Helper — pobiera zamówienia + sumy revenue i count
   async function fetchOrdersWindow(from: string, to: string) {
-    let q = db.from('fact_orders')
-      .select('order_id, total_gross_pln')
-      .gte('order_date', from)
-      .lte('order_date', `${to}T23:59:59`);
-    if (shop !== 'all') q = q.eq('source_shop', shop);
-    const { data, error } = await q.limit(100000);
-    if (error) throw new Error(error.message);
-    const orders = data || [];
+    const orders: Array<{ order_id: string; total_gross_pln: number | null }> = [];
+    let offset = 0;
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      let q = db.from('fact_orders')
+        .select('order_id, total_gross_pln')
+        .gte('order_date', from)
+        .lte('order_date', `${to}T23:59:59`)
+        .range(offset, offset + PAGE - 1);
+      if (shop !== 'all') q = q.eq('source_shop', shop);
+      const { data, error } = await q;
+      if (error) throw new Error(error.message);
+      if (!data || data.length === 0) break;
+      orders.push(...(data as typeof orders));
+      if (data.length < PAGE) break;
+      offset += PAGE;
+    }
     const revenue = orders.reduce((s, r) => s + (Number(r.total_gross_pln) || 0), 0);
     return { orders, revenue, count: orders.length };
   }
@@ -142,19 +155,27 @@ async function computeMetrics(
     fetchOrdersWindow(ranges.previous.from, ranges.previous.to),
   ]);
 
-  // Item-level: top produkty + kategoria
+  // Item-level: top produkty + kategoria. Paginujemy w obrębie każdego chunka
+  // order_id — chunk=500 zamówień może mieć >1000 pozycji.
   async function fetchItems(orderIds: string[]): Promise<Array<{ order_id: string; product_name: string; product_category: string; quantity: number }>> {
     if (orderIds.length === 0) return [];
     const out: Array<{ order_id: string; product_name: string; product_category: string; quantity: number }> = [];
     const CHUNK = 500;
     for (let i = 0; i < orderIds.length; i += CHUNK) {
       const chunk = orderIds.slice(i, i + CHUNK);
-      const { data } = await db.from('v_order_items')
-        .select('order_id, product_name, product_category, quantity')
-        .in('order_id', chunk)
-        .not('item_type', 'in', '("shipping","service","surcharge")')
-        .limit(20000);
-      if (data) out.push(...(data as Array<{ order_id: string; product_name: string; product_category: string; quantity: number }>));
+      let offset = 0;
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        const { data } = await db.from('v_order_items')
+          .select('order_id, product_name, product_category, quantity')
+          .in('order_id', chunk)
+          .not('item_type', 'in', '("shipping","service","surcharge")')
+          .range(offset, offset + PAGE - 1);
+        if (!data || data.length === 0) break;
+        out.push(...(data as Array<{ order_id: string; product_name: string; product_category: string; quantity: number }>));
+        if (data.length < PAGE) break;
+        offset += PAGE;
+      }
     }
     return out;
   }
