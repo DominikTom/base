@@ -78,8 +78,8 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="flex h-[calc(100vh-8rem)] rounded-xl border border-zinc-800 overflow-hidden bg-zinc-950">
-      <aside className="w-60 border-r border-zinc-800 shrink-0">
+    <div className="flex h-[calc(100vh-8rem)] rounded-xl border border-line overflow-hidden bg-bg">
+      <aside className="w-60 border-r border-line shrink-0">
         <ConversationList
           conversations={conversations}
           activeId={activeId}

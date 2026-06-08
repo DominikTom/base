@@ -84,8 +84,8 @@ export function ChartTypePicker({ value, onChange }: Props) {
             onClick={() => onChange(t.value)}
             className={`flex flex-col items-center gap-1.5 rounded-lg border px-2 py-2.5 transition-colors ${
               active
-                ? 'border-blue-500 bg-blue-600/10 text-blue-300'
-                : 'border-zinc-700 bg-zinc-900 text-zinc-500 hover:border-zinc-600 hover:text-zinc-300'
+                ? 'border-primary-500 bg-primary-600/10 text-primary-700'
+                : 'border-line bg-surface text-muted hover:border-line hover:text-fg-soft'
             }`}
           >
             <Thumb type={t.value} />

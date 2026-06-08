@@ -13,14 +13,14 @@ import type { Artifact } from '@/lib/assistant/types';
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#f97316', '#06b6d4', '#ec4899', '#84cc16', '#14b8a6'];
 const AXIS = { fontSize: 11, fill: '#71717a' };
-const TOOLTIP = { backgroundColor: '#18181b', border: '1px solid #3f3f46', borderRadius: '8px', fontSize: '12px' };
+const TOOLTIP = { backgroundColor: '#FFFFFF', border: '1px solid #ECEDEB', borderRadius: '8px', fontSize: '12px' };
 
 const TABLE_PREVIEW_ROWS = 50;
 
 export function ArtifactRenderer({ artifact }: { artifact: Artifact }) {
   if (artifact.type === 'error') {
     return (
-      <div className="flex items-start gap-2 rounded-lg border border-red-900/50 bg-red-950/30 px-3 py-2 text-xs text-red-300">
+      <div className="flex items-start gap-2 rounded-lg border border-red-900/50 bg-red-950/30 px-3 py-2 text-xs text-danger">
         <AlertTriangle size={14} className="mt-0.5 shrink-0" />
         <span>{artifact.message}</span>
       </div>
@@ -54,25 +54,25 @@ export function ArtifactRenderer({ artifact }: { artifact: Artifact }) {
   if (artifact.type === 'table') {
     const rows = artifact.rows.slice(0, TABLE_PREVIEW_ROWS);
     if (!artifact.columns.length) {
-      return <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 px-3 py-2 text-xs text-zinc-500">Zapytanie nie zwróciło wierszy.</div>;
+      return <div className="rounded-lg border border-line bg-surface px-3 py-2 text-xs text-muted">Zapytanie nie zwróciło wierszy.</div>;
     }
     return (
-      <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 overflow-auto max-h-80">
+      <div className="rounded-lg border border-line bg-surface overflow-auto max-h-80">
         <table className="w-full text-xs">
-          <thead className="sticky top-0 bg-zinc-900">
-            <tr className="border-b border-zinc-700">
+          <thead className="sticky top-0 bg-surface">
+            <tr className="border-b border-line">
               {artifact.columns.map(c => (
-                <th key={c} className="py-1.5 px-2 text-left text-zinc-400 font-medium whitespace-nowrap">{c}</th>
+                <th key={c} className="py-1.5 px-2 text-left text-fg-soft font-medium whitespace-nowrap">{c}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {rows.map((row, i) => (
-              <tr key={i} className="border-b border-zinc-800/30">
+              <tr key={i} className="border-b border-line">
                 {artifact.columns.map(c => {
                   const v = row[c];
                   return (
-                    <td key={c} className="py-1.5 px-2 text-zinc-300 whitespace-nowrap">
+                    <td key={c} className="py-1.5 px-2 text-fg-soft whitespace-nowrap">
                       {typeof v === 'number' ? formatNumber(v) : v == null ? '—' : String(v)}
                     </td>
                   );
@@ -82,7 +82,7 @@ export function ArtifactRenderer({ artifact }: { artifact: Artifact }) {
           </tbody>
         </table>
         {(artifact.rows.length > TABLE_PREVIEW_ROWS || artifact.truncated) && (
-          <div className="px-3 py-1.5 text-[11px] text-zinc-500 border-t border-zinc-800">
+          <div className="px-3 py-1.5 text-[11px] text-muted border-t border-line">
             Pokazano {rows.length} z {artifact.rows.length}{artifact.truncated ? '+ (wynik ucięty do 1000)' : ''} wierszy.
           </div>
         )}
@@ -132,31 +132,31 @@ function ChartArtifact({ artifact }: { artifact: Extract<Artifact, { type: 'char
     }
   }
 
-  const fieldCls = 'px-2.5 py-1.5 rounded bg-zinc-950 border border-zinc-700 text-xs text-zinc-200';
+  const fieldCls = 'px-2.5 py-1.5 rounded bg-bg border border-line text-xs text-fg';
 
   const tableColumns = chart_type === 'table' ? [x_key, ...series] : [];
   const tableRows = chart_type === 'table' ? data.slice(0, 100) : [];
 
   return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 p-3">
-      <div className="text-xs font-medium text-zinc-300 mb-2">{title}</div>
+    <div className="rounded-lg border border-line bg-surface p-3">
+      <div className="text-xs font-medium text-fg-soft mb-2">{title}</div>
       {chart_type === 'table' ? (
-        <div className="overflow-auto max-h-80 rounded-md border border-zinc-800">
+        <div className="overflow-auto max-h-80 rounded-md border border-line">
           <table className="w-full text-xs">
-            <thead className="sticky top-0 bg-zinc-900">
-              <tr className="border-b border-zinc-700">
+            <thead className="sticky top-0 bg-surface">
+              <tr className="border-b border-line">
                 {tableColumns.map(c => (
-                  <th key={c} className="py-1.5 px-2 text-left text-zinc-400 font-medium whitespace-nowrap">{c}</th>
+                  <th key={c} className="py-1.5 px-2 text-left text-fg-soft font-medium whitespace-nowrap">{c}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {tableRows.map((row, i) => (
-                <tr key={i} className="border-b border-zinc-800/30">
+                <tr key={i} className="border-b border-line">
                   {tableColumns.map(c => {
                     const v = row[c];
                     return (
-                      <td key={c} className="py-1.5 px-2 text-zinc-300 whitespace-nowrap">
+                      <td key={c} className="py-1.5 px-2 text-fg-soft whitespace-nowrap">
                         {typeof v === 'number' ? formatNumber(v) : v == null ? '—' : String(v)}
                       </td>
                     );
@@ -166,7 +166,7 @@ function ChartArtifact({ artifact }: { artifact: Extract<Artifact, { type: 'char
             </tbody>
           </table>
           {data.length > tableRows.length && (
-            <div className="px-3 py-1.5 text-[11px] text-zinc-500 border-t border-zinc-800">
+            <div className="px-3 py-1.5 text-[11px] text-muted border-t border-line">
               Pokazano {tableRows.length} z {data.length} wierszy.
             </div>
           )}
@@ -189,7 +189,7 @@ function ChartArtifact({ artifact }: { artifact: Extract<Artifact, { type: 'char
           </PieChart>
         ) : chart_type === 'line' ? (
           <LineChart data={data} margin={{ top: 5, right: 20, bottom: 5, left: 5 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
+            <CartesianGrid strokeDasharray="3 3" stroke="#EAEBE8" />
             <XAxis dataKey={x_key} tick={AXIS} tickLine={false} />
             <YAxis tick={AXIS} tickLine={false} axisLine={false} />
             <Tooltip contentStyle={TOOLTIP} />
@@ -200,7 +200,7 @@ function ChartArtifact({ artifact }: { artifact: Extract<Artifact, { type: 'char
           </LineChart>
         ) : chart_type === 'area' ? (
           <AreaChart data={data} margin={{ top: 5, right: 20, bottom: 5, left: 5 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
+            <CartesianGrid strokeDasharray="3 3" stroke="#EAEBE8" />
             <XAxis dataKey={x_key} tick={AXIS} tickLine={false} />
             <YAxis tick={AXIS} tickLine={false} axisLine={false} />
             <Tooltip contentStyle={TOOLTIP} />
@@ -211,7 +211,7 @@ function ChartArtifact({ artifact }: { artifact: Extract<Artifact, { type: 'char
           </AreaChart>
         ) : (
           <BarChart data={data} margin={{ top: 5, right: 20, bottom: 5, left: 5 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
+            <CartesianGrid strokeDasharray="3 3" stroke="#EAEBE8" />
             <XAxis dataKey={x_key} tick={AXIS} tickLine={false} />
             <YAxis tick={AXIS} tickLine={false} axisLine={false} />
             <Tooltip contentStyle={TOOLTIP} />
@@ -225,19 +225,19 @@ function ChartArtifact({ artifact }: { artifact: Extract<Artifact, { type: 'char
       )}
 
       {query_spec && (
-        <div className="mt-2 pt-2 border-t border-zinc-800">
+        <div className="mt-2 pt-2 border-t border-line">
           {mode === 'saved' ? (
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
               <span className="inline-flex items-center gap-1.5 text-[11px] text-emerald-400">
                 <Check size={13} /> Zapisano jako KPI „{name}”.
               </span>
-              <Link href="/dashboard/kpi" className="text-[11px] text-blue-400 hover:underline">
+              <Link href="/dashboard/kpi" className="text-[11px] text-primary-700 hover:underline">
                 Zakładka KPI
               </Link>
               {dashAdded ? (
                 <span className="text-[11px] text-emerald-400">Dodano na dashboard</span>
               ) : (
-                <button onClick={addToDash} className="text-[11px] text-blue-400 hover:underline">
+                <button onClick={addToDash} className="text-[11px] text-primary-700 hover:underline">
                   + Dodaj na dashboard
                 </button>
               )}
@@ -249,19 +249,19 @@ function ChartArtifact({ artifact }: { artifact: Extract<Artifact, { type: 'char
               <button
                 onClick={saveAsKpi}
                 disabled={mode === 'saving' || !name.trim()}
-                className="px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium disabled:opacity-50"
+                className="px-3 py-1.5 rounded bg-primary-600 hover:bg-primary-700 text-white text-xs font-medium disabled:opacity-50"
               >
                 {mode === 'saving' ? 'Zapisywanie…' : 'Zapisz'}
               </button>
-              <button onClick={() => setMode('idle')} className="px-2 py-1.5 text-xs text-zinc-500 hover:text-zinc-300">
+              <button onClick={() => setMode('idle')} className="px-2 py-1.5 text-xs text-muted hover:text-fg-soft">
                 Anuluj
               </button>
-              {error && <span className="text-[11px] text-red-400 w-full">{error}</span>}
+              {error && <span className="text-[11px] text-danger w-full">{error}</span>}
             </div>
           ) : (
             <button
               onClick={() => setMode('form')}
-              className="inline-flex items-center gap-1.5 text-[11px] text-zinc-400 hover:text-blue-400 transition-colors"
+              className="inline-flex items-center gap-1.5 text-[11px] text-fg-soft hover:text-primary-700 transition-colors"
             >
               <BarChart3 size={12} /> Zapisz jako KPI
             </button>

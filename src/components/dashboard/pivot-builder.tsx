@@ -69,7 +69,7 @@ interface TemplateInfo {
   expr: string;
 }
 
-const SELECT_BASE = 'px-3 py-2 rounded bg-zinc-900 border border-zinc-700 text-sm text-zinc-200';
+const SELECT_BASE = 'px-3 py-2 rounded bg-surface border border-line text-sm text-fg';
 
 export function PivotBuilder({ value, onChange }: Props) {
   const [templates, setTemplates] = useState<TemplateInfo[]>([]);
@@ -157,7 +157,7 @@ export function PivotBuilder({ value, onChange }: Props) {
     <div className="space-y-5">
       {/* Granularity (gdy 'date' jest w wymiarach) */}
       <div className="flex items-center gap-3">
-        <label className="text-xs text-zinc-500">Granulacja daty</label>
+        <label className="text-xs text-muted">Granulacja daty</label>
         <select value={value.granularity} onChange={e => patch({ granularity: e.target.value })} className={SELECT_BASE}>
           <option value="day">Dzień</option>
           <option value="week">Tydzień</option>
@@ -165,19 +165,19 @@ export function PivotBuilder({ value, onChange }: Props) {
           <option value="quarter">Kwartał</option>
         </select>
         {!rowDims.includes('date') && (
-          <span className="text-[11px] text-zinc-500">(używana tylko gdy „Data” jest wymiarem)</span>
+          <span className="text-[11px] text-muted">(używana tylko gdy „Data” jest wymiarem)</span>
         )}
       </div>
 
       {/* Wymiary (wiersze) */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <div className="text-xs font-medium text-zinc-300">Wymiary (wiersze)</div>
+          <div className="text-xs font-medium text-fg-soft">Wymiary (wiersze)</div>
           <button
             type="button"
             onClick={addDim}
             disabled={rowDims.length >= ROW_DIMS.length}
-            className="text-xs px-2 py-1 rounded bg-zinc-700 hover:bg-zinc-600 text-zinc-200 disabled:opacity-40"
+            className="text-xs px-2 py-1 rounded bg-line hover:bg-zinc-600 text-fg disabled:opacity-40"
           >
             + dodaj wymiar
           </button>
@@ -187,9 +187,9 @@ export function PivotBuilder({ value, onChange }: Props) {
             <select value={d} onChange={e => updateDim(idx, e.target.value)} className={`col-span-8 ${SELECT_BASE}`}>
               {ROW_DIMS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
-            <button type="button" onClick={() => moveDim(idx, -1)} disabled={idx === 0} className="col-span-1 p-2 text-zinc-500 hover:text-zinc-200 disabled:opacity-30"><ArrowUp size={14} /></button>
-            <button type="button" onClick={() => moveDim(idx, 1)} disabled={idx === rowDims.length - 1} className="col-span-1 p-2 text-zinc-500 hover:text-zinc-200 disabled:opacity-30"><ArrowDown size={14} /></button>
-            <button type="button" onClick={() => removeDim(idx)} disabled={rowDims.length <= 1} className="col-span-2 px-3 py-2 rounded bg-red-950/50 border border-red-800 text-xs text-red-300 disabled:opacity-30">Usuń</button>
+            <button type="button" onClick={() => moveDim(idx, -1)} disabled={idx === 0} className="col-span-1 p-2 text-muted hover:text-fg disabled:opacity-30"><ArrowUp size={14} /></button>
+            <button type="button" onClick={() => moveDim(idx, 1)} disabled={idx === rowDims.length - 1} className="col-span-1 p-2 text-muted hover:text-fg disabled:opacity-30"><ArrowDown size={14} /></button>
+            <button type="button" onClick={() => removeDim(idx)} disabled={rowDims.length <= 1} className="col-span-2 px-3 py-2 rounded bg-red-50 border border-red-200 text-xs text-danger disabled:opacity-30">Usuń</button>
           </div>
         ))}
       </div>
@@ -197,16 +197,16 @@ export function PivotBuilder({ value, onChange }: Props) {
       {/* Metryki (kolumny) */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <div className="text-xs font-medium text-zinc-300">Kolumny (metryki)</div>
+          <div className="text-xs font-medium text-fg-soft">Kolumny (metryki)</div>
           <div className="flex gap-1">
-            <button type="button" onClick={() => addMetric('raw')} className="text-xs px-2 py-1 rounded bg-zinc-700 hover:bg-zinc-600 text-zinc-200">+ metryka</button>
-            <button type="button" onClick={() => addMetric('template')} className="text-xs px-2 py-1 rounded bg-blue-700/30 hover:bg-blue-700/50 text-blue-200 border border-blue-700/40">+ szablon</button>
-            <button type="button" onClick={() => addMetric('computed')} className="text-xs px-2 py-1 rounded bg-purple-700/30 hover:bg-purple-700/50 text-purple-200 border border-purple-700/40">+ formuła</button>
+            <button type="button" onClick={() => addMetric('raw')} className="text-xs px-2 py-1 rounded bg-line hover:bg-zinc-600 text-fg">+ metryka</button>
+            <button type="button" onClick={() => addMetric('template')} className="text-xs px-2 py-1 rounded bg-primary-100 hover:bg-primary-700/50 text-primary-700 border border-primary-300">+ szablon</button>
+            <button type="button" onClick={() => addMetric('computed')} className="text-xs px-2 py-1 rounded bg-primary-100 hover:bg-primary-200 text-primary-700 border border-primary-300">+ formuła</button>
           </div>
         </div>
 
         {metrics.length === 0 && (
-          <div className="text-xs text-zinc-500 italic px-2 py-3">
+          <div className="text-xs text-muted italic px-2 py-3">
             Dodaj przynajmniej jedną metrykę. „Metryka” = surowa kolumna z bazy. „Szablon” = gotowa formuła (ROAS, Profit, itd.). „Formuła” = własne wyrażenie po nazwach kolumn.
           </div>
         )}
@@ -231,8 +231,8 @@ export function PivotBuilder({ value, onChange }: Props) {
       {/* Filtry (uproszczone — jeden field/op/value) */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <div className="text-xs font-medium text-zinc-300">Filtry</div>
-          <button type="button" onClick={addFilter} className="text-xs px-2 py-1 rounded bg-zinc-700 hover:bg-zinc-600 text-zinc-200">+ filtr</button>
+          <div className="text-xs font-medium text-fg-soft">Filtry</div>
+          <button type="button" onClick={addFilter} className="text-xs px-2 py-1 rounded bg-line hover:bg-zinc-600 text-fg">+ filtr</button>
         </div>
         {filters.map((f, idx) => (
           <div key={idx} className="grid grid-cols-12 gap-2">
@@ -258,7 +258,7 @@ export function PivotBuilder({ value, onChange }: Props) {
               placeholder={f.operator === 'in' ? 'np. mybed.pl, mybed.de' : 'wartość'}
               className={`col-span-4 ${SELECT_BASE} text-xs`}
             />
-            <button type="button" onClick={() => removeFilter(idx)} className="col-span-2 px-3 py-2 rounded bg-red-950/50 border border-red-800 text-xs text-red-300">Usuń</button>
+            <button type="button" onClick={() => removeFilter(idx)} className="col-span-2 px-3 py-2 rounded bg-red-50 border border-red-200 text-xs text-danger">Usuń</button>
           </div>
         ))}
       </div>
@@ -288,18 +288,18 @@ function MetricRow({
   const kindLabel = metric.kind === 'raw' ? 'metryka'
     : metric.kind === 'template' ? 'szablon'
     : 'formuła';
-  const kindColor = metric.kind === 'raw' ? 'bg-zinc-800 text-zinc-300'
-    : metric.kind === 'template' ? 'bg-blue-700/30 text-blue-200 border border-blue-700/40'
-    : 'bg-purple-700/30 text-purple-200 border border-purple-700/40';
+  const kindColor = metric.kind === 'raw' ? 'bg-bg text-fg-soft'
+    : metric.kind === 'template' ? 'bg-primary-100 text-primary-700 border border-primary-300'
+    : 'bg-primary-100 text-primary-700 border border-primary-300';
 
   return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-3 space-y-2">
+    <div className="rounded-lg border border-line bg-surface p-3 space-y-2">
       <div className="flex items-center gap-2">
         <span className={`px-2 py-0.5 rounded text-[10px] font-medium uppercase ${kindColor}`}>{kindLabel}</span>
         <div className="flex-1" />
-        <button type="button" onClick={onMoveUp} disabled={!canMoveUp} className="p-1 text-zinc-500 hover:text-zinc-200 disabled:opacity-30"><ArrowUp size={14} /></button>
-        <button type="button" onClick={onMoveDown} disabled={!canMoveDown} className="p-1 text-zinc-500 hover:text-zinc-200 disabled:opacity-30"><ArrowDown size={14} /></button>
-        <button type="button" onClick={onRemove} className="p-1 text-zinc-500 hover:text-red-400"><X size={14} /></button>
+        <button type="button" onClick={onMoveUp} disabled={!canMoveUp} className="p-1 text-muted hover:text-fg disabled:opacity-30"><ArrowUp size={14} /></button>
+        <button type="button" onClick={onMoveDown} disabled={!canMoveDown} className="p-1 text-muted hover:text-fg disabled:opacity-30"><ArrowDown size={14} /></button>
+        <button type="button" onClick={onRemove} className="p-1 text-muted hover:text-danger"><X size={14} /></button>
       </div>
 
       {metric.kind === 'raw' && (
@@ -337,7 +337,7 @@ function MetricRow({
             {ALLOWED_PIVOT_FORMATS.map(f => <option key={f} value={f}>{FORMAT_LABELS[f as PivotFormat]}</option>)}
           </select>
           {templates.find(t => t.key === metric.template) && (
-            <div className="col-span-12 text-[11px] text-zinc-500 font-mono px-1">
+            <div className="col-span-12 text-[11px] text-muted font-mono px-1">
               {templates.find(t => t.key === metric.template)?.expr}
             </div>
           )}
@@ -377,16 +377,16 @@ function ComputedRow({
         onChange={e => onChange({ expr: e.target.value })}
         placeholder="np. revenue_gross - meta_spend - google_spend - agency_cost"
         rows={2}
-        className="w-full px-3 py-2 rounded bg-zinc-900 border border-zinc-700 text-xs text-zinc-200 font-mono"
+        className="w-full px-3 py-2 rounded bg-surface border border-line text-xs text-fg font-mono"
       />
       {errors.length > 0 && (
-        <div className="flex items-start gap-1.5 text-[11px] text-red-400">
+        <div className="flex items-start gap-1.5 text-[11px] text-danger">
           <AlertCircle size={12} className="mt-0.5 shrink-0" />
           <span>{errors.join('; ')}</span>
         </div>
       )}
-      <details className="text-[11px] text-zinc-500">
-        <summary className="cursor-pointer hover:text-zinc-300">Dostępne nazwy</summary>
+      <details className="text-[11px] text-muted">
+        <summary className="cursor-pointer hover:text-fg-soft">Dostępne nazwy</summary>
         <div className="mt-1 font-mono leading-relaxed">{allowedScope.join(', ')}</div>
       </details>
     </div>

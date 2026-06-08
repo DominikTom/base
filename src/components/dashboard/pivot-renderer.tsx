@@ -103,25 +103,25 @@ export function PivotRenderer({ data }: { data: PivotResponse }) {
   }
 
   if (rows.length === 0) {
-    return <div className="text-center text-zinc-500 py-12 text-sm">Brak danych dla wybranych filtrów.</div>;
+    return <div className="text-center text-muted py-12 text-sm">Brak danych dla wybranych filtrów.</div>;
   }
 
   return (
     <div className="space-y-2">
       <div className="flex justify-end">
-        <button onClick={downloadCsv} className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700">
+        <button onClick={downloadCsv} className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded bg-bg hover:bg-line text-fg-soft border border-line">
           <Download size={12} /> CSV
         </button>
       </div>
-      <div className="overflow-auto rounded border border-zinc-800">
+      <div className="overflow-auto rounded border border-line">
         <table className="w-full text-xs">
-          <thead className="bg-zinc-900 sticky top-0">
+          <thead className="bg-surface sticky top-0">
             <tr>
               {row_dims.map((d, idx) => (
                 <th
                   key={d}
                   onClick={() => clickSort(`__dim_${idx}`)}
-                  className="px-3 py-2 text-left font-medium text-zinc-400 cursor-pointer hover:text-zinc-200 select-none"
+                  className="px-3 py-2 text-left font-medium text-fg-soft cursor-pointer hover:text-fg select-none"
                 >
                   <span className="flex items-center gap-1">
                     {DIM_LABELS[d] || d}
@@ -133,7 +133,7 @@ export function PivotRenderer({ data }: { data: PivotResponse }) {
                 <th
                   key={c.key}
                   onClick={() => clickSort(c.key)}
-                  className="px-3 py-2 text-right font-medium text-zinc-400 cursor-pointer hover:text-zinc-200 select-none"
+                  className="px-3 py-2 text-right font-medium text-fg-soft cursor-pointer hover:text-fg select-none"
                 >
                   <span className="inline-flex items-center gap-1">
                     {c.label}
@@ -145,23 +145,23 @@ export function PivotRenderer({ data }: { data: PivotResponse }) {
           </thead>
           <tbody>
             {sortedRows.map((r, i) => (
-              <tr key={i} className="border-t border-zinc-800/40 hover:bg-zinc-800/30">
+              <tr key={i} className="border-t border-line hover:bg-bg">
                 {r.dim_values.map((v, j) => (
-                  <td key={j} className="px-3 py-1.5 text-zinc-300">{v || '—'}</td>
+                  <td key={j} className="px-3 py-1.5 text-fg-soft">{v || '—'}</td>
                 ))}
                 {columns.map(c => (
-                  <td key={c.key} className="px-3 py-1.5 text-right text-zinc-200 tabular-nums">
+                  <td key={c.key} className="px-3 py-1.5 text-right text-fg tabular-nums">
                     {formatValue(r.metrics[c.key] || 0, c.format)}
                   </td>
                 ))}
               </tr>
             ))}
           </tbody>
-          <tfoot className="bg-zinc-900/70 border-t border-zinc-700">
+          <tfoot className="bg-surface/95 border-t border-line">
             <tr>
-              <td colSpan={row_dims.length} className="px-3 py-2 font-semibold text-zinc-200">TOTAL</td>
+              <td colSpan={row_dims.length} className="px-3 py-2 font-semibold text-fg">TOTAL</td>
               {columns.map(c => (
-                <td key={c.key} className="px-3 py-2 text-right font-semibold text-zinc-100 tabular-nums">
+                <td key={c.key} className="px-3 py-2 text-right font-semibold text-fg tabular-nums">
                   {formatValue(totals[c.label] ?? 0, c.format)}
                 </td>
               ))}

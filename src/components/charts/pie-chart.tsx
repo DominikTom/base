@@ -52,8 +52,8 @@ export function SimplePieChart({
         </Pie>
         <Tooltip
           contentStyle={{
-            backgroundColor: '#18181b',
-            border: '1px solid #3f3f46',
+            backgroundColor: '#FFFFFF',
+            border: '1px solid #ECEDEB',
             borderRadius: '8px',
             fontSize: '12px',
           }}

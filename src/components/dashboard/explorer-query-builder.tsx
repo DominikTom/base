@@ -81,7 +81,7 @@ interface Props {
   onChange: (next: QuerySpec) => void;
 }
 
-const SELECT = 'px-3 py-2 rounded bg-zinc-900 border border-zinc-700 text-sm text-zinc-200';
+const SELECT = 'px-3 py-2 rounded bg-surface border border-line text-sm text-fg';
 
 // Współdzielony kreator zapytania (oś X/Y, grupowanie, granulacja, filtry).
 // Używany przez kreator widgetów ("Mój Dashboard") i modal "Nowy KPI".
@@ -137,8 +137,8 @@ export function ExplorerQueryBuilder({ value, onChange }: Props) {
 
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <div className="text-xs text-zinc-400">Filtry zaawansowane</div>
-          <button onClick={addFilter} className="text-xs px-2 py-1 rounded bg-zinc-700 hover:bg-zinc-600 text-zinc-200">
+          <div className="text-xs text-fg-soft">Filtry zaawansowane</div>
+          <button onClick={addFilter} className="text-xs px-2 py-1 rounded bg-line hover:bg-zinc-600 text-fg">
             + filtr
           </button>
         </div>
@@ -162,14 +162,14 @@ export function ExplorerQueryBuilder({ value, onChange }: Props) {
                     value_to: '',
                   });
                 }}
-                className="md:col-span-3 px-3 py-2 rounded bg-zinc-900 border border-zinc-700 text-xs text-zinc-200"
+                className="md:col-span-3 px-3 py-2 rounded bg-surface border border-line text-xs text-fg"
               >
                 {dimensions.map(d => <option key={d.field} value={d.field}>{d.label}</option>)}
               </select>
               <select
                 value={f.operator}
                 onChange={e => updateFilter(idx, { operator: e.target.value })}
-                className="md:col-span-2 px-3 py-2 rounded bg-zinc-900 border border-zinc-700 text-xs text-zinc-200"
+                className="md:col-span-2 px-3 py-2 rounded bg-surface border border-line text-xs text-fg"
               >
                 {operators.map(op => <option key={op} value={op}>{op}</option>)}
               </select>
@@ -177,7 +177,7 @@ export function ExplorerQueryBuilder({ value, onChange }: Props) {
                 <select
                   value={f.value || 'true'}
                   onChange={e => updateFilter(idx, { value: e.target.value })}
-                  className="md:col-span-3 px-3 py-2 rounded bg-zinc-900 border border-zinc-700 text-xs text-zinc-200"
+                  className="md:col-span-3 px-3 py-2 rounded bg-surface border border-line text-xs text-fg"
                 >
                   <option value="true">Tak</option>
                   <option value="false">Nie</option>
@@ -188,7 +188,7 @@ export function ExplorerQueryBuilder({ value, onChange }: Props) {
                   value={f.value || ''}
                   onChange={e => updateFilter(idx, { value: e.target.value })}
                   placeholder={isIn ? 'np. sofa, łóżko, materac' : 'wartość'}
-                  className="md:col-span-3 px-3 py-2 rounded bg-zinc-900 border border-zinc-700 text-xs text-zinc-200"
+                  className="md:col-span-3 px-3 py-2 rounded bg-surface border border-line text-xs text-fg"
                 />
               )}
               {needsTo && (
@@ -196,13 +196,13 @@ export function ExplorerQueryBuilder({ value, onChange }: Props) {
                   value={f.value_to || ''}
                   onChange={e => updateFilter(idx, { value_to: e.target.value })}
                   placeholder="do"
-                  className="md:col-span-2 px-3 py-2 rounded bg-zinc-900 border border-zinc-700 text-xs text-zinc-200"
+                  className="md:col-span-2 px-3 py-2 rounded bg-surface border border-line text-xs text-fg"
                 />
               )}
-              {hideValue && <div className="md:col-span-5 text-[11px] text-zinc-500">Ten operator nie wymaga wartości.</div>}
+              {hideValue && <div className="md:col-span-5 text-[11px] text-muted">Ten operator nie wymaga wartości.</div>}
               <button
                 onClick={() => removeFilter(idx)}
-                className="md:col-span-2 px-3 py-2 rounded bg-red-950/50 border border-red-800 text-xs text-red-300"
+                className="md:col-span-2 px-3 py-2 rounded bg-red-50 border border-red-200 text-xs text-danger"
               >
                 Usuń
               </button>
@@ -210,7 +210,7 @@ export function ExplorerQueryBuilder({ value, onChange }: Props) {
           );
         })}
         {filters.length > 0 && (
-          <p className="text-[11px] text-zinc-500">Tip: dla operatora „in” podaj wiele wartości oddzielonych przecinkiem.</p>
+          <p className="text-[11px] text-muted">Tip: dla operatora „in” podaj wiele wartości oddzielonych przecinkiem.</p>
         )}
       </div>
     </div>

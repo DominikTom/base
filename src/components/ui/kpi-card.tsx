@@ -45,34 +45,34 @@ export function KpiCard({ title, value, change, changeLabel, subLabel, icon, spa
 
   return (
     <div className={cn(
-      'rounded-xl border border-zinc-800 bg-zinc-900/50 p-5 flex flex-col gap-2',
+      'rounded-card border border-line bg-surface p-6 flex flex-col gap-3 shadow-card hover:shadow-card-hover transition-shadow',
       className
     )}>
       <div className="flex items-center justify-between">
-        <span className="text-sm font-medium text-zinc-400">{title}</span>
-        {icon && <span className="text-zinc-500">{icon}</span>}
+        <span className="text-[11px] font-medium text-muted uppercase tracking-wider">{title}</span>
+        {icon && <span className="text-muted">{icon}</span>}
       </div>
       <div className="flex items-end justify-between gap-4">
         <div>
-          <div className="text-2xl font-bold text-zinc-100">{value}</div>
+          <div className="text-3xl font-bold text-fg tracking-tight">{value}</div>
           {subLabel && (
-            <div className="text-xs text-zinc-500 mt-0.5">{subLabel}</div>
+            <div className="text-xs text-muted mt-1">{subLabel}</div>
           )}
           {!isNeutral && (
-            <div className={cn(
-              'flex items-center gap-1 text-sm mt-1',
-              isPositive ? 'text-emerald-400' : 'text-red-400'
+            <span className={cn(
+              'inline-flex items-center gap-1 text-xs font-semibold mt-2 px-2 py-0.5 rounded-pill',
+              isPositive ? 'bg-green-100 text-success' : 'bg-rose-100 text-danger'
             )}>
-              {isPositive ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
+              {isPositive ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
               <span>{change! >= 0 ? '+' : ''}{change!.toFixed(1)}%</span>
-              {changeLabel && <span className="text-zinc-500 ml-1">{changeLabel}</span>}
-            </div>
+              {changeLabel && <span className="ml-1 opacity-75">{changeLabel}</span>}
+            </span>
           )}
           {isNeutral && changeLabel && (
-            <div className="flex items-center gap-1 text-sm mt-1 text-zinc-500">
-              <Minus size={14} />
+            <span className="inline-flex items-center gap-1 text-xs mt-2 text-muted">
+              <Minus size={12} />
               <span>{changeLabel}</span>
-            </div>
+            </span>
           )}
         </div>
         {sparkline && sparkline.length > 1 && (

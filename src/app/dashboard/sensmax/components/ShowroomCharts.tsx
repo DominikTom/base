@@ -49,7 +49,7 @@ interface SingleResponse {
   error?: string;
 }
 
-const tooltipStyle = { backgroundColor: '#18181b', border: '1px solid #3f3f46', borderRadius: 8, fontSize: 12 } as const;
+const tooltipStyle = { backgroundColor: '#FFFFFF', border: '1px solid #ECEDEB', borderRadius: 8, fontSize: 12 } as const;
 const axisTick = { fontSize: 10, fill: '#71717a' } as const;
 const plNum = (n: number) => n.toLocaleString('pl-PL');
 const plMoney = (n: number) => `${Math.round(n).toLocaleString('pl-PL')} zł`;
@@ -360,9 +360,9 @@ export function ShowroomCharts() {
   const detailConv = detailVisits > 0 && detailMatchedOrders > 0 ? Math.round((detailMatchedOrders / detailVisits) * 1000) / 10 : null;
 
   const emptyNote = (
-    <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6 text-sm text-zinc-400">
+    <div className="rounded-xl border border-line bg-surface p-6 text-sm text-fg-soft">
       Brak danych historycznych w tym zakresie. Zmień zakres dat u góry, uruchom synchronizację (
-      <code className="text-zinc-300">POST /api/sensmax/sync</code>) lub poczekaj na nocny cron.
+      <code className="text-fg-soft">POST /api/sensmax/sync</code>) lub poczekaj na nocny cron.
     </div>
   );
 
@@ -378,20 +378,20 @@ export function ShowroomCharts() {
 
       {/* sales basis toggle */}
       <div className="flex flex-wrap items-center gap-2 text-xs">
-        <span className="text-zinc-400">Zamówienia liczone jako:</span>
-        <div className="flex rounded-md border border-zinc-700">
+        <span className="text-fg-soft">Zamówienia liczone jako:</span>
+        <div className="flex rounded-md border border-line">
           {(['all', 'booked'] as const).map((b) => (
             <button
               key={b}
               type="button"
               onClick={() => setSalesBasis(b)}
-              className={`px-3 py-1 ${salesBasis === b ? 'bg-zinc-700 text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'}`}
+              className={`px-3 py-1 ${salesBasis === b ? 'bg-line text-fg' : 'text-fg-soft hover:text-fg'}`}
             >
               {b === 'all' ? 'wszystkie' : 'tylko zaksięgowane'}
             </button>
           ))}
         </div>
-        <span className="text-zinc-600">konwersja = zamówienia ÷ wejścia (wejścia jak w panelu SensMax — odczyt czujnika ÷ 2)</span>
+        <span className="text-muted">konwersja = zamówienia ÷ wejścia (wejścia jak w panelu SensMax — odczyt czujnika ÷ 2)</span>
       </div>
 
       {/* ── Porównanie wejść ──────────────────────────────────────────────── */}
@@ -399,13 +399,13 @@ export function ShowroomCharts() {
         title="Porównanie wejść"
         subtitle={all ? `${all.from} – ${all.to}` : undefined}
         action={
-          <div className="flex rounded-md border border-zinc-700 text-xs">
+          <div className="flex rounded-md border border-line text-xs">
             {(['daily', 'weekly'] as const).map((a) => (
               <button
                 key={a}
                 type="button"
                 onClick={() => setAgg(a)}
-                className={`px-3 py-1 ${agg === a ? 'bg-zinc-700 text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'}`}
+                className={`px-3 py-1 ${agg === a ? 'bg-line text-fg' : 'text-fg-soft hover:text-fg'}`}
               >
                 {a === 'daily' ? 'Dziennie' : 'Tygodniowo'}
               </button>
@@ -413,7 +413,7 @@ export function ShowroomCharts() {
           </div>
         }
       >
-        {loadingAll && <div className="text-sm text-zinc-500">Ładowanie…</div>}
+        {loadingAll && <div className="text-sm text-muted">Ładowanie…</div>}
         {!loadingAll && !allHasData && emptyNote}
         {!loadingAll && allHasData && (
           <>
@@ -426,7 +426,7 @@ export function ShowroomCharts() {
                     type="button"
                     onClick={() => toggleShowroom(s)}
                     className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors ${
-                      off ? 'border-zinc-800 text-zinc-600' : 'border-zinc-700 text-zinc-200 hover:bg-zinc-800'
+                      off ? 'border-line text-muted' : 'border-line text-fg hover:bg-bg'
                     }`}
                   >
                     <span className="h-2 w-2 rounded-full" style={{ backgroundColor: off ? '#52525b' : SHOWROOM_COLORS[s] }} />
@@ -437,9 +437,9 @@ export function ShowroomCharts() {
             </div>
             <ResponsiveContainer width="100%" height={300}>
               <LineChart data={compareData} margin={{ top: 5, right: 8, bottom: 5, left: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
+                <CartesianGrid strokeDasharray="3 3" stroke="#EAEBE8" />
                 <XAxis dataKey="name" tick={axisTick} tickLine={false} axisLine={{ stroke: '#3f3f46' }} interval="preserveStartEnd" minTickGap={24} />
-                <YAxis tick={{ fontSize: 11, fill: '#71717a' }} tickLine={false} axisLine={false} allowDecimals={false} />
+                <YAxis tick={{ fontSize: 11, fill: '#8B908C' }} tickLine={false} axisLine={false} allowDecimals={false} />
                 <Tooltip contentStyle={tooltipStyle} />
                 {activeShowrooms.map((s) => (
                   <Line key={s} type="monotone" dataKey={s} name={SHOWROOM_LABELS[s]} stroke={SHOWROOM_COLORS[s]} strokeWidth={2} dot={compareData.length <= 1} hide={hidden.has(s)} connectNulls />
@@ -462,7 +462,7 @@ export function ShowroomCharts() {
                   type="button"
                   onClick={() => toggleShowroom(s)}
                   className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors ${
-                    off ? 'border-zinc-800 text-zinc-600' : 'border-zinc-700 text-zinc-200 hover:bg-zinc-800'
+                    off ? 'border-line text-muted' : 'border-line text-fg hover:bg-bg'
                   }`}
                 >
                   <span className="h-2 w-2 rounded-full" style={{ backgroundColor: off ? '#52525b' : SHOWROOM_COLORS[s] }} />
@@ -473,9 +473,9 @@ export function ShowroomCharts() {
           </div>
           <ResponsiveContainer width="100%" height={280}>
             <LineChart data={conversionData} margin={{ top: 5, right: 8, bottom: 5, left: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
+              <CartesianGrid strokeDasharray="3 3" stroke="#EAEBE8" />
               <XAxis dataKey="name" tick={axisTick} tickLine={false} axisLine={{ stroke: '#3f3f46' }} interval="preserveStartEnd" minTickGap={24} />
-              <YAxis tick={{ fontSize: 11, fill: '#71717a' }} tickLine={false} axisLine={false} unit="%" />
+              <YAxis tick={{ fontSize: 11, fill: '#8B908C' }} tickLine={false} axisLine={false} unit="%" />
               <Tooltip contentStyle={tooltipStyle} formatter={(v) => [`${v}%`, '']} />
               {salesShowrooms.map((s) => (
                 <Line key={s} type="monotone" dataKey={s} name={SHOWROOM_LABELS[s]} stroke={SHOWROOM_COLORS[s]} strokeWidth={2} dot={conversionData.length <= 1} hide={hidden.has(s)} connectNulls />
@@ -488,13 +488,13 @@ export function ShowroomCharts() {
       {/* ── Zestawienie ───────────────────────────────────────────────────── */}
       {allHasData && (
         <div>
-          <h3 className="mb-2 text-sm font-medium text-zinc-200">
+          <h3 className="mb-2 text-sm font-medium text-fg">
             Zestawienie ({all!.from} – {all!.to}) — zamówienia: {salesBasis === 'all' ? 'wszystkie' : 'tylko zaksięgowane'}
           </h3>
           <div className="overflow-x-auto">
             <DataTable data={summaryRows} columns={summaryColumns} onRowClick={(r) => setSelected(r.showroom)} />
           </div>
-          <p className="mt-1.5 text-xs text-zinc-500">
+          <p className="mt-1.5 text-xs text-muted">
             Myślnik w kolumnach sprzedażowych = brak arkusza dla danego showroomu. Konwersja liczona jest tylko z dni, dla których są też dane z czujników
             (arkusze mają zwykle dłuższą historię niż czujniki). Kliknij wiersz, aby zobaczyć szczegóły poniżej.
           </p>
@@ -504,11 +504,11 @@ export function ShowroomCharts() {
       {/* ── Szczegóły wybranego showroomu ─────────────────────────────────── */}
       <div className="space-y-4">
         <div className="flex flex-wrap items-center gap-3">
-          <span className="text-sm font-medium text-zinc-200">Szczegóły:</span>
+          <span className="text-sm font-medium text-fg">Szczegóły:</span>
           <select
             value={selected}
             onChange={(e) => setSelected(e.target.value as Showroom)}
-            className="rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100"
+            className="rounded-md border border-line bg-surface px-3 py-1.5 text-sm text-fg"
           >
             {SHOWROOMS.map((s) => (
               <option key={s} value={s}>
@@ -517,7 +517,7 @@ export function ShowroomCharts() {
             ))}
           </select>
           {detailHasData && (
-            <span className="text-sm text-zinc-500">
+            <span className="text-sm text-muted">
               {plNum(detailVisits)} wejść · {plNum(detailMatchedOrders)} zam.{detailConv !== null ? ` · konw. ${detailConv}%` : ''} · {single!.from} – {single!.to}
             </span>
           )}
@@ -525,22 +525,22 @@ export function ShowroomCharts() {
             href={`/dashboard/showroomy/raport?showroom=${selected}&from=${dateFrom}&to=${dateTo}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="ml-auto rounded-md border border-zinc-700 px-3 py-1.5 text-sm text-zinc-200 hover:bg-zinc-800"
+            className="ml-auto rounded-md border border-line px-3 py-1.5 text-sm text-fg hover:bg-bg"
           >
             Raport PDF — {SHOWROOM_LABELS[selected]}
           </a>
         </div>
 
-        {loadingSingle && <div className="text-sm text-zinc-500">Ładowanie…</div>}
+        {loadingSingle && <div className="text-sm text-muted">Ładowanie…</div>}
         {!loadingSingle && !detailHasData && emptyNote}
         {!loadingSingle && detailHasData && (
           <div className="grid gap-4 lg:grid-cols-2">
             <ChartCard title="Wejścia i zamówienia dziennie" subtitle={`${single!.from} – ${single!.to}`}>
               <ResponsiveContainer width="100%" height={300}>
                 <BarChart data={detailDaily} margin={{ top: 5, right: 5, bottom: 5, left: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
+                  <CartesianGrid strokeDasharray="3 3" stroke="#EAEBE8" />
                   <XAxis dataKey="name" tick={axisTick} tickLine={false} axisLine={{ stroke: '#3f3f46' }} interval="preserveStartEnd" minTickGap={20} />
-                  <YAxis tick={{ fontSize: 11, fill: '#71717a' }} tickLine={false} axisLine={false} allowDecimals={false} />
+                  <YAxis tick={{ fontSize: 11, fill: '#8B908C' }} tickLine={false} axisLine={false} allowDecimals={false} />
                   <Tooltip contentStyle={tooltipStyle} />
                   <Bar dataKey="visits" name="wejścia" fill={SHOWROOM_COLORS[selected]} radius={[3, 3, 0, 0]} maxBarSize={28} />
                   <Bar dataKey="orders" name="zamówienia" fill="#f59e0b" radius={[3, 3, 0, 0]} maxBarSize={14} />
@@ -551,9 +551,9 @@ export function ShowroomCharts() {
             <ChartCard title="Średni rozkład godzinowy" subtitle={`średnia z okresu ${single!.hourlyFrom} – ${single!.to}`}>
               <ResponsiveContainer width="100%" height={300}>
                 <BarChart data={detailHourlyAvg} margin={{ top: 5, right: 5, bottom: 5, left: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
+                  <CartesianGrid strokeDasharray="3 3" stroke="#EAEBE8" />
                   <XAxis dataKey="name" tick={axisTick} tickLine={false} axisLine={{ stroke: '#3f3f46' }} interval={1} />
-                  <YAxis tick={{ fontSize: 11, fill: '#71717a' }} tickLine={false} axisLine={false} />
+                  <YAxis tick={{ fontSize: 11, fill: '#8B908C' }} tickLine={false} axisLine={false} />
                   <Tooltip contentStyle={tooltipStyle} />
                   <Bar dataKey="visits" fill="#10b981" radius={[3, 3, 0, 0]} maxBarSize={16} />
                 </BarChart>
@@ -565,7 +565,7 @@ export function ShowroomCharts() {
                 title="Heatmapa godzinowa"
                 subtitle={`${single!.hourlyFrom} – ${single!.to} (intensywność = liczba wejść)`}
                 action={
-                  <div className="flex items-center gap-1.5 text-[10px] text-zinc-500">
+                  <div className="flex items-center gap-1.5 text-[10px] text-muted">
                     <span>0</span>
                     <span className="h-3 w-3 rounded-[2px]" style={{ backgroundColor: '#27272a' }} />
                     <span className="h-3 w-3 rounded-[2px]" style={{ backgroundColor: 'rgba(59,130,246,0.4)' }} />
@@ -579,13 +579,13 @@ export function ShowroomCharts() {
                   <div className="inline-grid items-center gap-[2px]" style={{ gridTemplateColumns: 'auto repeat(24, 16px)' }}>
                     <div />
                     {Array.from({ length: 24 }, (_, h) => (
-                      <div key={`h${h}`} className="text-center text-[9px] text-zinc-600">
+                      <div key={`h${h}`} className="text-center text-[9px] text-muted">
                         {h}
                       </div>
                     ))}
                     {heat.dates.map((date) => (
                       <Fragment key={date}>
-                        <div className="whitespace-nowrap pr-2 text-right text-[9px] text-zinc-500">{dayLabel(date)}</div>
+                        <div className="whitespace-nowrap pr-2 text-right text-[9px] text-muted">{dayLabel(date)}</div>
                         {heat.byDate.get(date)!.map((v, h) => {
                           const intensity = v / heat.max;
                           return (

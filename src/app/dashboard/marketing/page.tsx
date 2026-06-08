@@ -94,11 +94,11 @@ export default function MarketingPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-zinc-100">Marketing Performance</h1>
+        <h1 className="text-xl font-semibold text-fg">Marketing Performance</h1>
       </div>
 
       {/* Tabs */}
-      <div className="flex items-center gap-1 border-b border-zinc-800">
+      <div className="flex items-center gap-1 border-b border-line">
         {([
           { key: 'meta' as const, label: 'Meta Ads', icon: <Target size={14} /> },
           { key: 'google' as const, label: 'Google Ads', icon: <Globe size={14} /> },
@@ -109,8 +109,8 @@ export default function MarketingPage() {
             className={cn(
               'flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors',
               tab === t.key
-                ? 'border-blue-500 text-zinc-100'
-                : 'border-transparent text-zinc-500 hover:text-zinc-300',
+                ? 'border-primary-500 text-fg'
+                : 'border-transparent text-muted hover:text-fg-soft',
             )}
           >
             {t.icon}{t.label}
@@ -169,10 +169,10 @@ function MetaTab() {
       <div className="flex items-start justify-between gap-4">
         <div>
           {data.coverage.meta && (
-            <p className="text-xs text-zinc-500">
-              Meta: <span className="text-zinc-400">{data.coverage.meta.from}</span>
+            <p className="text-xs text-muted">
+              Meta: <span className="text-fg-soft">{data.coverage.meta.from}</span>
               {' → '}
-              <span className="text-zinc-400">{data.coverage.meta.to}</span>
+              <span className="text-fg-soft">{data.coverage.meta.to}</span>
               {' · '}
               {daysBetween(data.coverage.meta.from, data.coverage.meta.to)} dni
               {' · '}
@@ -211,7 +211,7 @@ function MetaTab() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <ChartCard title="ROAS Trend">
-          <SimpleBarChart data={data.charts.roasTrend} barColor="#f59e0b" valueFormatter={v => `${v}x`} />
+          <SimpleBarChart data={data.charts.roasTrend} barColor="#9333EA" valueFormatter={v => `${v}x`} />
         </ChartCard>
         <ChartCard title="Spend wg platformy">
           <SimplePieChart data={data.charts.spendByPlatform} />
@@ -219,7 +219,7 @@ function MetaTab() {
       </div>
 
       <ChartCard title="Top 10 kampanii wg ROAS" subtitle="Min. spend 100 PLN">
-        <SimpleBarChart data={data.charts.topByRoas} layout="horizontal" barColor="#10b981" valueFormatter={v => `${v}x`} height={360} />
+        <SimpleBarChart data={data.charts.topByRoas} layout="horizontal" barColor="#16A34A" valueFormatter={v => `${v}x`} height={360} />
       </ChartCard>
 
       <ChartCard title="Tabela kampanii">
@@ -276,17 +276,17 @@ function GoogleAdsTab() {
       <div className="flex items-start justify-between gap-4">
         <div>
           {data.coverage && (
-            <p className="text-xs text-zinc-500">
-              Google Ads (GA4 per-kampania): <span className="text-zinc-400">{data.coverage.from}</span>
+            <p className="text-xs text-muted">
+              Google Ads (GA4 per-kampania): <span className="text-fg-soft">{data.coverage.from}</span>
               {' → '}
-              <span className="text-zinc-400">{data.coverage.to}</span>
+              <span className="text-fg-soft">{data.coverage.to}</span>
               {' · '}
               {daysBetween(data.coverage.from, data.coverage.to)} dni
               {' · '}
               {formatNumber(data.coverage.rows)} wierszy
             </p>
           )}
-          <p className="text-[11px] text-zinc-600 mt-0.5">
+          <p className="text-[11px] text-muted mt-0.5">
             Spend/clicks/impressions z GA4 __total__ (zgodne z widgetem „Google Ads Spend”;
             advertiserAdCost atrybutywne sesyjnie — typowo 1-3% mniej niż Google Ads UI).
             Revenue/transakcje/sesje z atrybucji source=google/medium=cpc. Dla mybed.de
@@ -294,7 +294,7 @@ function GoogleAdsTab() {
           </p>
         </div>
         {data.lastSync && (
-          <span className="text-xs text-zinc-500">
+          <span className="text-xs text-muted">
             GA4: {formatRelativeTime(data.lastSync.at)}
           </span>
         )}
@@ -321,7 +321,7 @@ function GoogleAdsTab() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <ChartCard title="ROAS Trend">
-          <SimpleBarChart data={data.charts.roasTrend} barColor="#f59e0b" valueFormatter={v => `${v}x`} />
+          <SimpleBarChart data={data.charts.roasTrend} barColor="#9333EA" valueFormatter={v => `${v}x`} />
         </ChartCard>
         <ChartCard title="Spend wg sklepu">
           <SimplePieChart data={data.charts.spendByShop} />
@@ -329,7 +329,7 @@ function GoogleAdsTab() {
       </div>
 
       <ChartCard title="Top 10 kampanii wg ROAS" subtitle="Min. spend 100 PLN">
-        <SimpleBarChart data={data.charts.topByRoas} layout="horizontal" barColor="#10b981" valueFormatter={v => `${v}x`} height={360} />
+        <SimpleBarChart data={data.charts.topByRoas} layout="horizontal" barColor="#16A34A" valueFormatter={v => `${v}x`} height={360} />
       </ChartCard>
 
       <ChartCard
@@ -353,7 +353,7 @@ function GoogleAdsTab() {
 function PanelLoading() {
   return (
     <div className="flex items-center justify-center h-96">
-      <div className="animate-pulse text-zinc-500">Ładowanie danych...</div>
+      <div className="animate-pulse text-muted">Ładowanie danych...</div>
     </div>
   );
 }
@@ -361,7 +361,7 @@ function PanelLoading() {
 function PanelEmpty({ hint }: { hint: string }) {
   return (
     <div className="flex flex-col items-center justify-center h-96 gap-4">
-      <p className="text-zinc-500">{hint}</p>
+      <p className="text-muted">{hint}</p>
     </div>
   );
 }
@@ -370,11 +370,11 @@ function SpendRevenueChart({ data }: { data: Array<{ date: string; spend: number
   return (
     <ResponsiveContainer width="100%" height={320}>
       <LineChart data={data} margin={{ top: 5, right: 20, bottom: 5, left: 5 }}>
-        <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
-        <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#71717a' }} tickLine={false} />
-        <YAxis yAxisId="left" tick={{ fontSize: 11, fill: '#71717a' }} tickLine={false} axisLine={false} />
-        <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11, fill: '#71717a' }} tickLine={false} axisLine={false} />
-        <Tooltip contentStyle={{ backgroundColor: '#18181b', border: '1px solid #3f3f46', borderRadius: '8px', fontSize: '12px' }} />
+        <CartesianGrid strokeDasharray="3 3" stroke="#EAEBE8" />
+        <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#8B908C' }} tickLine={false} />
+        <YAxis yAxisId="left" tick={{ fontSize: 11, fill: '#8B908C' }} tickLine={false} axisLine={false} />
+        <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11, fill: '#8B908C' }} tickLine={false} axisLine={false} />
+        <Tooltip contentStyle={{ backgroundColor: '#FFFFFF', border: '1px solid #ECEDEB', borderRadius: '8px', fontSize: '12px' }} />
         <Legend />
         <Line yAxisId="left" type="monotone" dataKey="spend" name="Spend" stroke="#ef4444" strokeWidth={2} dot={false} />
         <Line yAxisId="right" type="monotone" dataKey="revenue" name="Revenue" stroke="#10b981" strokeWidth={2} dot={false} />
@@ -468,27 +468,27 @@ function SyncMetaButton({ lastSync }: { lastSync: { at: string; rows: number } |
   return (
     <div className="flex items-center gap-3">
       {progress ? (
-        <span className="text-xs text-zinc-400 flex items-center gap-1">
+        <span className="text-xs text-fg-soft flex items-center gap-1">
           Chunk {progress.current}/{progress.total}…
         </span>
       ) : result ? (
-        <span className={`text-xs flex items-center gap-1 ${result.ok ? 'text-emerald-400' : 'text-red-400'}`}>
+        <span className={`text-xs flex items-center gap-1 ${result.ok ? 'text-emerald-400' : 'text-danger'}`}>
           {result.ok ? <CheckCircle size={14} /> : <XCircle size={14} />}
           {result.message}
         </span>
       ) : lastSync ? (
-        <span className="text-xs text-zinc-500">Meta: {formatRelativeTime(lastSync.at)}</span>
+        <span className="text-xs text-muted">Meta: {formatRelativeTime(lastSync.at)}</span>
       ) : null}
       <select
         value={days}
         onChange={e => setDays(parseInt(e.target.value, 10))}
         disabled={syncing}
-        className="bg-zinc-800 text-zinc-200 text-sm rounded-lg px-2 py-2 border border-zinc-700 disabled:opacity-50"
+        className="bg-bg text-fg text-sm rounded-lg px-2 py-2 border border-line disabled:opacity-50"
       >
         {BACKFILL_OPTIONS.map(o => (<option key={o.value} value={o.value}>{o.label}</option>))}
       </select>
       <button onClick={handleSync} disabled={syncing}
-        className="flex items-center gap-2 px-3 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-sm rounded-lg transition-colors disabled:opacity-50">
+        className="flex items-center gap-2 px-3 py-2 bg-bg hover:bg-line text-fg text-sm rounded-lg transition-colors disabled:opacity-50">
         {syncing ? <RefreshCw size={14} className="animate-spin" /> : <RefreshCw size={14} />}
         {syncing ? 'Sync...' : 'Sync Meta'}
       </button>

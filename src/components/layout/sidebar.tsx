@@ -66,24 +66,24 @@ export function Sidebar() {
 
   return (
     <aside className={cn(
-      'fixed top-0 left-0 h-screen bg-zinc-950 border-r border-zinc-800 flex flex-col transition-all duration-200 z-40',
+      'fixed top-0 left-0 h-screen bg-surface border-r border-line flex flex-col transition-all duration-200 z-40',
       collapsed ? 'w-16' : 'w-60'
     )}>
       {/* Logo */}
-      <div className="flex items-center gap-3 px-4 h-16 border-b border-zinc-800 shrink-0">
-        <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white font-bold text-sm">
+      <div className="flex items-center gap-3 px-4 h-16 border-b border-line shrink-0">
+        <div className="w-9 h-9 rounded-xl bg-accent-bg flex items-center justify-center text-accent-fg font-bold text-sm">
           MB
         </div>
         {!collapsed && (
           <div className="flex flex-col">
-            <span className="text-sm font-semibold text-zinc-100">MyBed Group</span>
-            <span className="text-xs text-zinc-500">Data Dashboard</span>
+            <span className="text-sm font-semibold text-fg">MyBed Group</span>
+            <span className="text-[11px] text-muted">Data Dashboard</span>
           </div>
         )}
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 py-4 px-2 space-y-1 overflow-y-auto">
+      <nav className="flex-1 py-4 px-2 space-y-0.5 overflow-y-auto">
         {visibleItems.map(item => {
           const active = pathname?.startsWith(item.href);
           return (
@@ -91,13 +91,13 @@ export function Sidebar() {
               key={item.href}
               href={item.href}
               className={cn(
-                'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors',
+                'flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-colors',
                 active
-                  ? 'bg-blue-600/15 text-blue-400 font-medium'
-                  : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/50'
+                  ? 'bg-primary-100 text-primary-700 font-medium'
+                  : 'text-fg-soft hover:text-fg hover:bg-bg'
               )}
             >
-              <item.icon size={20} className="shrink-0" />
+              <item.icon size={18} className="shrink-0" />
               {!collapsed && <span>{item.label}</span>}
             </Link>
           );
@@ -106,22 +106,22 @@ export function Sidebar() {
 
       {/* User info + logout */}
       {!collapsed && userEmail && (
-        <div className="px-3 py-2 border-t border-zinc-800">
-          <div className="text-xs text-zinc-500 truncate">{userEmail}</div>
-          <div className="text-xs text-zinc-600">{userRole}</div>
+        <div className="px-4 py-2 border-t border-line">
+          <div className="text-xs text-fg-soft truncate font-medium">{userEmail}</div>
+          <div className="text-[11px] text-muted">{userRole}</div>
         </div>
       )}
-      <div className="flex border-t border-zinc-800">
+      <div className="flex border-t border-line">
         <button
           onClick={handleLogout}
-          className="flex-1 flex items-center justify-center gap-2 h-12 text-zinc-500 hover:text-red-400 transition-colors text-sm"
+          className="flex-1 flex items-center justify-center gap-2 h-12 text-muted hover:text-danger transition-colors text-sm"
         >
           <LogOut size={16} />
           {!collapsed && 'Wyloguj'}
         </button>
         <button
           onClick={() => setCollapsed(c => !c)}
-          className="flex items-center justify-center w-12 h-12 text-zinc-500 hover:text-zinc-300 transition-colors border-l border-zinc-800"
+          className="flex items-center justify-center w-12 h-12 text-muted hover:text-fg transition-colors border-l border-line"
         >
           {collapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
         </button>

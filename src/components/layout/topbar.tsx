@@ -33,14 +33,14 @@ export function Topbar() {
   const { filters, setDateRange, setShop, setCompare, applyPreset } = useDashboard();
 
   return (
-    <header className="sticky top-0 z-30 min-h-16 bg-zinc-950/80 backdrop-blur border-b border-zinc-800 flex flex-wrap items-center gap-x-4 gap-y-2 px-6 py-2">
+    <header className="sticky top-0 z-30 min-h-16 bg-bg/80 backdrop-blur border-b border-line flex flex-wrap items-center gap-x-4 gap-y-2 px-6 py-2.5">
       {/* Date presets */}
-      <div className="flex items-center gap-1 bg-zinc-900 rounded-lg p-1">
+      <div className="flex items-center gap-1 bg-surface border border-line rounded-pill p-1 shadow-card">
         {PRESETS.map(p => (
           <button
             key={p.value}
             onClick={() => applyPreset(p.value)}
-            className="px-2.5 py-1.5 text-xs font-medium rounded-md text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition-colors"
+            className="px-3 py-1.5 text-xs font-medium rounded-pill text-fg-soft hover:text-fg hover:bg-bg transition-colors"
           >
             {p.label}
           </button>
@@ -53,14 +53,14 @@ export function Topbar() {
           type="date"
           value={filters.dateFrom}
           onChange={e => setDateRange(e.target.value, filters.dateTo)}
-          className="px-3 py-1.5 text-sm rounded-lg bg-zinc-900 border border-zinc-700 text-zinc-200 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          className="px-3 py-1.5 text-sm rounded-pill bg-surface border border-line text-fg focus:outline-none focus:ring-2 focus:ring-primary-300 shadow-card"
         />
-        <span className="text-zinc-500 text-sm">—</span>
+        <span className="text-muted text-sm">—</span>
         <input
           type="date"
           value={filters.dateTo}
           onChange={e => setDateRange(filters.dateFrom, e.target.value)}
-          className="px-3 py-1.5 text-sm rounded-lg bg-zinc-900 border border-zinc-700 text-zinc-200 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          className="px-3 py-1.5 text-sm rounded-pill bg-surface border border-line text-fg focus:outline-none focus:ring-2 focus:ring-primary-300 shadow-card"
         />
       </div>
 
@@ -68,7 +68,7 @@ export function Topbar() {
       <select
         value={filters.shop}
         onChange={e => setShop(e.target.value as Shop)}
-        className="px-3 py-1.5 text-sm rounded-lg bg-zinc-900 border border-zinc-700 text-zinc-200 focus:outline-none focus:ring-1 focus:ring-blue-500"
+        className="px-3 py-1.5 text-sm rounded-pill bg-surface border border-line text-fg focus:outline-none focus:ring-2 focus:ring-primary-300 shadow-card"
       >
         {SHOPS.map(s => (
           <option key={s.value} value={s.value}>{s.label}</option>
@@ -79,7 +79,7 @@ export function Topbar() {
       <select
         value={filters.compare}
         onChange={e => setCompare(e.target.value as CompareMode)}
-        className="px-3 py-1.5 text-sm rounded-lg bg-zinc-900 border border-zinc-700 text-zinc-200 focus:outline-none focus:ring-1 focus:ring-blue-500"
+        className="px-3 py-1.5 text-sm rounded-pill bg-surface border border-line text-fg focus:outline-none focus:ring-2 focus:ring-primary-300 shadow-card"
       >
         {COMPARE_OPTIONS.map(c => (
           <option key={c.value} value={c.value}>{c.label}</option>

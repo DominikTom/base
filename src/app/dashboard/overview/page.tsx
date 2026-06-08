@@ -65,7 +65,7 @@ export default function OverviewPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-96">
-        <div className="animate-pulse text-zinc-500">Ładowanie danych...</div>
+        <div className="animate-pulse text-muted">Ładowanie danych...</div>
       </div>
     );
   }
@@ -73,9 +73,9 @@ export default function OverviewPage() {
   if (error) {
     return (
       <div className="flex flex-col items-center justify-center h-96 gap-4">
-        <div className="text-red-400">Błąd ładowania danych</div>
-        <div className="text-sm text-zinc-500">{error}</div>
-        <p className="text-sm text-zinc-600">Upewnij się, że zaimportowałeś dane CSV w zakładce ETL Admin.</p>
+        <div className="text-danger">Błąd ładowania danych</div>
+        <div className="text-sm text-muted">{error}</div>
+        <p className="text-sm text-muted">Upewnij się, że zaimportowałeś dane CSV w zakładce ETL Admin.</p>
       </div>
     );
   }
@@ -84,7 +84,7 @@ export default function OverviewPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-semibold text-zinc-100">Przegląd</h1>
+      <h1 className="text-xl font-semibold text-fg">Przegląd</h1>
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -126,7 +126,7 @@ export default function OverviewPage() {
       {/* Orders + Top Products */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <ChartCard title="Zamówienia dziennie">
-          <SimpleBarChart data={data.charts.ordersTimeSeries} barColor="#3b82f6" />
+          <SimpleBarChart data={data.charts.ordersTimeSeries} barColor="#9333EA" />
         </ChartCard>
         <ChartCard title="Top 10 produktów (wg ilości)">
           <SimpleBarChart data={data.charts.topProducts} layout="horizontal" colorByName />

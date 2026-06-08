@@ -49,7 +49,7 @@ export default function ProductsPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-96">
-        <div className="animate-pulse text-zinc-500">Ładowanie danych...</div>
+        <div className="animate-pulse text-muted">Ładowanie danych...</div>
       </div>
     );
   }
@@ -57,14 +57,14 @@ export default function ProductsPage() {
   if (!data) {
     return (
       <div className="flex flex-col items-center justify-center h-96 gap-4">
-        <p className="text-zinc-500">Brak danych produktowych.</p>
+        <p className="text-muted">Brak danych produktowych.</p>
       </div>
     );
   }
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-semibold text-zinc-100">Analityka Produktów</h1>
+      <h1 className="text-xl font-semibold text-fg">Analityka Produktów</h1>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <KpiCard
@@ -87,7 +87,7 @@ export default function ProductsPage() {
       {/* Top products */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <ChartCard title="Top 20 produktów wg ilości">
-          <SimpleBarChart data={data.topByQuantity} layout="horizontal" height={500} barColor="#3b82f6" />
+          <SimpleBarChart data={data.topByQuantity} layout="horizontal" height={500} barColor="#9333EA" />
         </ChartCard>
         <ChartCard title="Top 20 produktów wg zamówień">
           <SimpleBarChart data={data.topByOrders} layout="horizontal" height={500} barColor="#8b5cf6" />
@@ -105,14 +105,14 @@ export default function ProductsPage() {
           <SimplePieChart data={data.fabricChart} height={320} />
         </ChartCard>
         <ChartCard title="Rozkład rozmiarów łóżek">
-          <SimpleBarChart data={data.sizeChart} barColor="#10b981" />
+          <SimpleBarChart data={data.sizeChart} barColor="#16A34A" />
         </ChartCard>
       </div>
 
       {/* Mattress + Headboard */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <ChartCard title="Typ materaca">
-          <SimpleBarChart data={data.mattressChart} barColor="#f59e0b" />
+          <SimpleBarChart data={data.mattressChart} barColor="#9333EA" />
         </ChartCard>
         <ChartCard title="Wysokość wezgłowia">
           <SimpleBarChart data={data.headboardChart} barColor="#ec4899" />

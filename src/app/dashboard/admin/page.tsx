@@ -346,7 +346,7 @@ export default function AdminPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-semibold text-zinc-100">ETL Admin</h1>
+      <h1 className="text-xl font-semibold text-fg">ETL Admin</h1>
 
       {/* Data freshness */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -377,18 +377,18 @@ export default function AdminPage() {
             <button
               onClick={handleManualGdriveSync}
               disabled={gdriveSyncing}
-              className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-900/50 disabled:cursor-not-allowed text-white font-medium rounded-lg transition-colors text-sm"
+              className="flex items-center gap-2 px-4 py-2.5 bg-primary-600 hover:bg-primary-700 disabled:bg-blue-900/50 disabled:cursor-not-allowed text-white font-medium rounded-lg transition-colors text-sm"
             >
               {gdriveSyncing ? <RefreshCw size={16} className="animate-spin" /> : <FolderSync size={16} />}
               {gdriveSyncing ? 'Synchronizacja...' : 'Pobierz z Google Drive teraz'}
             </button>
-            <span className="text-xs text-zinc-500">To omija timeout requestu w UI — ciężki sync wykona się w tle przez cron.</span>
+            <span className="text-xs text-muted">To omija timeout requestu w UI — ciężki sync wykona się w tle przez cron.</span>
           </div>
           {gdriveSyncResult && (
             <div className={`rounded-lg border px-3 py-2 text-sm ${
               gdriveSyncResult.ok
                 ? 'border-emerald-800 bg-emerald-900/20 text-emerald-400'
-                : 'border-red-800 bg-red-900/20 text-red-400'
+                : 'border-red-200 bg-red-900/20 text-danger'
             }`}>
               {gdriveSyncResult.message}
             </div>
@@ -399,7 +399,7 @@ export default function AdminPage() {
       {/* EUR Backfill */}
       <ChartCard title="Przeliczenie EUR→PLN (kurs NBP)" subtitle="Pobiera średni kurs EUR/PLN z NBP per miesiąc i przelicza historyczne zamówienia">
         <div className="space-y-3">
-          <div id="eur-current-rate" className="text-sm text-zinc-400">
+          <div id="eur-current-rate" className="text-sm text-fg-soft">
             Ładowanie aktualnego kursu NBP...
           </div>
           <script dangerouslySetInnerHTML={{ __html: `
@@ -430,7 +430,7 @@ export default function AdminPage() {
               <Euro size={16} />
               Przelicz EUR→PLN
             </button>
-            <span className="text-xs text-zinc-500">Używa średniego kursu NBP per miesiąc. Nowe importy automatycznie używają kursu z dnia zamówienia.</span>
+            <span className="text-xs text-muted">Używa średniego kursu NBP per miesiąc. Nowe importy automatycznie używają kursu z dnia zamówienia.</span>
           </div>
         </div>
       </ChartCard>
@@ -446,17 +446,17 @@ export default function AdminPage() {
               isUploading ? 'pointer-events-none opacity-50' : 'cursor-pointer'
             } ${
               dragOver
-                ? 'border-blue-500 bg-blue-500/10'
-                : 'border-zinc-700 hover:border-zinc-600 bg-zinc-900/30'
+                ? 'border-primary-500 bg-blue-500/10'
+                : 'border-line hover:border-line bg-bg'
             }`}
             onClick={() => !isUploading && document.getElementById('csv-input')?.click()}
           >
-            <Upload size={40} className="text-zinc-500 mb-3" />
-            <p className="text-sm text-zinc-400">
+            <Upload size={40} className="text-muted mb-3" />
+            <p className="text-sm text-fg-soft">
               {file ? file.name : 'Upuść plik CSV lub kliknij, aby wybrać'}
             </p>
             {file && (
-              <p className="text-xs text-zinc-500 mt-1">
+              <p className="text-xs text-muted mt-1">
                 {(file.size / 1024 / 1024).toFixed(1)} MB
               </p>
             )}
@@ -478,23 +478,23 @@ export default function AdminPage() {
           {isUploading && (
             <div className="space-y-2">
               <div className="flex items-center justify-between text-sm">
-                <span className="text-zinc-300 flex items-center gap-2">
+                <span className="text-fg-soft flex items-center gap-2">
                   <RefreshCw size={14} className="animate-spin" />
                   {progress.label}
                 </span>
                 {progress.total > 0 && (
-                  <span className="text-zinc-500">{progressPct}%</span>
+                  <span className="text-muted">{progressPct}%</span>
                 )}
               </div>
-              <div className="w-full bg-zinc-800 rounded-full h-2">
+              <div className="w-full bg-bg rounded-full h-2">
                 <div
-                  className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                  className="bg-primary-600 h-2 rounded-full transition-all duration-300"
                   style={{ width: `${progress.total > 0 ? progressPct : 100}%` }}
                 />
               </div>
               {progress.total === 0 && (
-                <div className="w-full bg-zinc-800 rounded-full h-2 overflow-hidden">
-                  <div className="bg-blue-600 h-2 rounded-full animate-pulse w-full" />
+                <div className="w-full bg-bg rounded-full h-2 overflow-hidden">
+                  <div className="bg-primary-600 h-2 rounded-full animate-pulse w-full" />
                 </div>
               )}
             </div>
@@ -504,7 +504,7 @@ export default function AdminPage() {
           {file && !isUploading && phase !== 'done' && (
             <button
               onClick={handleUpload}
-              className="w-full px-5 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
+              className="w-full px-5 py-3 bg-primary-600 hover:bg-primary-700 text-white font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
             >
               <Upload size={18} />
               Importuj CSV
@@ -515,7 +515,7 @@ export default function AdminPage() {
           {isUploading && (
             <button
               onClick={() => { abortRef.current = true; }}
-              className="w-full px-5 py-3 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-medium rounded-lg transition-colors"
+              className="w-full px-5 py-3 bg-bg hover:bg-line text-fg-soft font-medium rounded-lg transition-colors"
             >
               Anuluj import
             </button>
@@ -530,26 +530,26 @@ export default function AdminPage() {
               </div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
                 <div>
-                  <span className="text-zinc-500">Wiersze CSV:</span>
-                  <span className="ml-2 text-zinc-200">{formatNumber(resultStats.totalRows as number)}</span>
+                  <span className="text-muted">Wiersze CSV:</span>
+                  <span className="ml-2 text-fg">{formatNumber(resultStats.totalRows as number)}</span>
                 </div>
                 <div>
-                  <span className="text-zinc-500">Zamówienia:</span>
-                  <span className="ml-2 text-zinc-200">{formatNumber(resultStats.ordersInserted as number)}</span>
+                  <span className="text-muted">Zamówienia:</span>
+                  <span className="ml-2 text-fg">{formatNumber(resultStats.ordersInserted as number)}</span>
                 </div>
                 <div>
-                  <span className="text-zinc-500">Pozycje:</span>
-                  <span className="ml-2 text-zinc-200">{formatNumber(resultStats.itemsInserted as number)}</span>
+                  <span className="text-muted">Pozycje:</span>
+                  <span className="ml-2 text-fg">{formatNumber(resultStats.itemsInserted as number)}</span>
                 </div>
                 <div>
-                  <span className="text-zinc-500">Tag-only rows:</span>
-                  <span className="ml-2 text-zinc-200">{formatNumber(resultStats.tagOnlyRows as number)}</span>
+                  <span className="text-muted">Tag-only rows:</span>
+                  <span className="ml-2 text-fg">{formatNumber(resultStats.tagOnlyRows as number)}</span>
                 </div>
               </div>
               {resultStats.byShop ? (
                 <div className="text-sm">
-                  <span className="text-zinc-500">Sklepy: </span>
-                  <span className="text-zinc-300">
+                  <span className="text-muted">Sklepy: </span>
+                  <span className="text-fg-soft">
                     {Object.entries(resultStats.byShop as Record<string, number>)
                       .map(([shop, count]) => `${shop}: ${formatNumber(count)}`)
                       .join(', ')}
@@ -558,8 +558,8 @@ export default function AdminPage() {
               ) : null}
               {resultStats.dateRange ? (
                 <div className="text-sm">
-                  <span className="text-zinc-500">Zakres dat: </span>
-                  <span className="text-zinc-300">
+                  <span className="text-muted">Zakres dat: </span>
+                  <span className="text-fg-soft">
                     {(resultStats.dateRange as Record<string, string>).min} — {(resultStats.dateRange as Record<string, string>).max}
                   </span>
                 </div>
@@ -569,7 +569,7 @@ export default function AdminPage() {
 
           {/* Error */}
           {phase === 'error' && uploadError && (
-            <div className="rounded-lg border border-red-800 bg-red-900/20 p-4 flex items-start gap-2 text-red-400">
+            <div className="rounded-lg border border-red-200 bg-red-900/20 p-4 flex items-start gap-2 text-danger">
               <XCircle size={18} className="shrink-0 mt-0.5" />
               <span>{uploadError}</span>
             </div>
@@ -582,7 +582,7 @@ export default function AdminPage() {
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-zinc-800 text-zinc-400">
+              <tr className="border-b border-line text-fg-soft">
                 <th className="px-4 py-3 text-left font-medium">Źródło</th>
                 <th className="px-4 py-3 text-left font-medium">Start</th>
                 <th className="px-4 py-3 text-left font-medium">Koniec</th>
@@ -593,12 +593,12 @@ export default function AdminPage() {
             </thead>
             <tbody>
               {logs.map(log => (
-                <tr key={log.id} className="border-b border-zinc-800/50 hover:bg-zinc-800/30">
-                  <td className="px-4 py-3 text-zinc-300">{log.source}</td>
-                  <td className="px-4 py-3 text-zinc-400 text-xs">
+                <tr key={log.id} className="border-b border-line hover:bg-bg">
+                  <td className="px-4 py-3 text-fg-soft">{log.source}</td>
+                  <td className="px-4 py-3 text-fg-soft text-xs">
                     {new Date(log.started_at).toLocaleString('pl-PL')}
                   </td>
-                  <td className="px-4 py-3 text-zinc-400 text-xs">
+                  <td className="px-4 py-3 text-fg-soft text-xs">
                     {log.finished_at ? new Date(log.finished_at).toLocaleString('pl-PL') : '-'}
                   </td>
                   <td className="px-4 py-3">
@@ -606,20 +606,20 @@ export default function AdminPage() {
                       log.status === 'success'
                         ? 'bg-emerald-900/50 text-emerald-400'
                         : log.status === 'error'
-                        ? 'bg-red-900/50 text-red-400'
+                        ? 'bg-red-900/50 text-danger'
                         : 'bg-yellow-900/50 text-yellow-400'
                     }`}>
                       {log.status === 'success' ? <CheckCircle size={12} /> : log.status === 'error' ? <XCircle size={12} /> : <Clock size={12} />}
                       {log.status}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-zinc-400 text-right">{formatNumber(log.rows_processed)}</td>
-                  <td className="px-4 py-3 text-zinc-500 text-xs max-w-[150px] truncate">{log.csv_filename || '-'}</td>
+                  <td className="px-4 py-3 text-fg-soft text-right">{formatNumber(log.rows_processed)}</td>
+                  <td className="px-4 py-3 text-muted text-xs max-w-[150px] truncate">{log.csv_filename || '-'}</td>
                 </tr>
               ))}
               {logs.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-zinc-500">
+                  <td colSpan={6} className="px-4 py-8 text-center text-muted">
                     Brak wpisów ETL. Zaimportuj pierwszy plik CSV powyżej.
                   </td>
                 </tr>

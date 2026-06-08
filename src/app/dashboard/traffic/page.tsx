@@ -109,7 +109,7 @@ export default function TrafficPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-96">
-        <div className="animate-pulse text-zinc-500">Ładowanie danych...</div>
+        <div className="animate-pulse text-muted">Ładowanie danych...</div>
       </div>
     );
   }
@@ -118,21 +118,21 @@ export default function TrafficPage() {
     return (
       <div className="space-y-6">
         <div className="flex items-center justify-between">
-          <h1 className="text-xl font-semibold text-zinc-100">Ruch (GA4)</h1>
+          <h1 className="text-xl font-semibold text-fg">Ruch (GA4)</h1>
           <button onClick={handleSync} disabled={syncing}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50">
+            className="flex items-center gap-2 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50">
             {syncing ? <RefreshCw size={16} className="animate-spin" /> : <RefreshCw size={16} />}
             {syncing ? 'Synchronizacja...' : 'Sync GA4'}
           </button>
         </div>
         {syncResult && (
-          <div className={`rounded-lg p-3 flex items-center gap-2 text-sm ${syncResult.ok ? 'bg-emerald-900/20 border border-emerald-800 text-emerald-400' : 'bg-red-900/20 border border-red-800 text-red-400'}`}>
+          <div className={`rounded-lg p-3 flex items-center gap-2 text-sm ${syncResult.ok ? 'bg-emerald-900/20 border border-emerald-800 text-emerald-400' : 'bg-red-900/20 border border-red-200 text-danger'}`}>
             {syncResult.ok ? <CheckCircle size={16} /> : <XCircle size={16} />}
             {syncResult.message}
           </div>
         )}
-        <div className="flex flex-col items-center justify-center h-72 gap-4 border-2 border-dashed border-zinc-800 rounded-xl">
-          <p className="text-zinc-500">Brak danych GA4. Kliknij "Sync GA4" żeby pobrać dane z Google Analytics.</p>
+        <div className="flex flex-col items-center justify-center h-72 gap-4 border-2 border-dashed border-line rounded-xl">
+          <p className="text-muted">Brak danych GA4. Kliknij "Sync GA4" żeby pobrać dane z Google Analytics.</p>
         </div>
       </div>
     );
@@ -149,15 +149,15 @@ export default function TrafficPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-zinc-100">Ruch (GA4)</h1>
+        <h1 className="text-xl font-semibold text-fg">Ruch (GA4)</h1>
         <button onClick={handleSync} disabled={syncing}
-          className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-sm font-medium rounded-lg transition-colors disabled:opacity-50">
+          className="flex items-center gap-2 px-4 py-2 bg-bg hover:bg-line text-fg text-sm font-medium rounded-lg transition-colors disabled:opacity-50">
           {syncing ? <RefreshCw size={16} className="animate-spin" /> : <RefreshCw size={16} />}
           {syncing ? 'Synchronizacja...' : 'Sync GA4'}
         </button>
       </div>
       {syncResult && (
-        <div className={`rounded-lg p-3 flex items-center gap-2 text-sm ${syncResult.ok ? 'bg-emerald-900/20 border border-emerald-800 text-emerald-400' : 'bg-red-900/20 border border-red-800 text-red-400'}`}>
+        <div className={`rounded-lg p-3 flex items-center gap-2 text-sm ${syncResult.ok ? 'bg-emerald-900/20 border border-emerald-800 text-emerald-400' : 'bg-red-900/20 border border-red-200 text-danger'}`}>
           {syncResult.ok ? <CheckCircle size={16} /> : <XCircle size={16} />}
           {syncResult.message}
         </div>
@@ -165,16 +165,16 @@ export default function TrafficPage() {
 
       {/* Data range info */}
       {data.dataInfo?.oldestDate && (
-        <div className="text-xs text-zinc-500 flex items-center gap-4">
-          <span>Dane GA4 w bazie: <span className="text-zinc-300">{data.dataInfo.oldestDate}</span> — <span className="text-zinc-300">{data.dataInfo.newestDate}</span></span>
+        <div className="text-xs text-muted flex items-center gap-4">
+          <span>Dane GA4 w bazie: <span className="text-fg-soft">{data.dataInfo.oldestDate}</span> — <span className="text-fg-soft">{data.dataInfo.newestDate}</span></span>
           <span>({data.dataInfo.totalRowsInDb} dni, {data.dataInfo.detailRowsInDb} wierszy detail)</span>
         </div>
       )}
 
       {/* Active filter label */}
       {hostnameFilter !== 'all' && hostnameFilter !== '__none__' && (
-        <div className="text-sm text-zinc-400">
-          Dane dla: <span className="text-zinc-200 font-medium">{hostnameFilter}</span>
+        <div className="text-sm text-fg-soft">
+          Dane dla: <span className="text-fg font-medium">{hostnameFilter}</span>
         </div>
       )}
       {hostnameFilter === '__none__' && (
@@ -205,20 +205,20 @@ export default function TrafficPage() {
       {/* Google Ads charts — like agency dashboard */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <ChartCard title="Google Ads — Koszt" subtitle={`Total: ${formatCurrency(data.kpis.adCost)}`}>
-          <SimpleBarChart data={data.charts.adCostDaily} barColor="#3b82f6" valueFormatter={v => formatCurrency(v)} />
+          <SimpleBarChart data={data.charts.adCostDaily} barColor="#9333EA" valueFormatter={v => formatCurrency(v)} />
         </ChartCard>
         <ChartCard title="Revenue (GA4)" subtitle={`Total: ${formatCurrency(data.kpis.revenue)}`}>
-          <SimpleBarChart data={data.charts.revDaily} barColor="#10b981" valueFormatter={v => formatCurrency(v)} />
+          <SimpleBarChart data={data.charts.revDaily} barColor="#16A34A" valueFormatter={v => formatCurrency(v)} />
         </ChartCard>
       </div>
 
       <ChartCard title="Sesje w czasie" subtitle="Podział na hostname">
         <ResponsiveContainer width="100%" height={320}>
           <AreaChart data={data.charts.sessionsTimeSeries} margin={{ top: 5, right: 5, bottom: 5, left: 5 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
-            <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#71717a' }} tickLine={false} />
-            <YAxis tick={{ fontSize: 11, fill: '#71717a' }} tickLine={false} axisLine={false} />
-            <Tooltip contentStyle={{ backgroundColor: '#18181b', border: '1px solid #3f3f46', borderRadius: '8px', fontSize: '12px' }} />
+            <CartesianGrid strokeDasharray="3 3" stroke="#EAEBE8" />
+            <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#8B908C' }} tickLine={false} />
+            <YAxis tick={{ fontSize: 11, fill: '#8B908C' }} tickLine={false} axisLine={false} />
+            <Tooltip contentStyle={{ backgroundColor: '#FFFFFF', border: '1px solid #ECEDEB', borderRadius: '8px', fontSize: '12px' }} />
             <Legend />
             {data.hostnames.map((host, i) => (
               <Area

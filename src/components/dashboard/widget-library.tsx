@@ -53,10 +53,10 @@ export function WidgetLibrary({ open, onClose, onAdd }: WidgetLibraryProps) {
     <div className="fixed inset-0 z-50 flex">
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
 
-      <div className="relative ml-auto w-80 h-full bg-zinc-950 border-l border-zinc-800 overflow-y-auto">
-        <div className="sticky top-0 bg-zinc-950 border-b border-zinc-800 px-4 py-3 flex items-center justify-between z-10">
-          <h2 className="text-sm font-semibold text-zinc-200">Dodaj widget</h2>
-          <button onClick={onClose} className="p-1 text-zinc-500 hover:text-zinc-300">
+      <div className="relative ml-auto w-80 h-full bg-bg border-l border-line overflow-y-auto">
+        <div className="sticky top-0 bg-bg border-b border-line px-4 py-3 flex items-center justify-between z-10">
+          <h2 className="text-sm font-semibold text-fg">Dodaj widget</h2>
+          <button onClick={onClose} className="p-1 text-muted hover:text-fg-soft">
             <X size={18} />
           </button>
         </div>
@@ -65,26 +65,26 @@ export function WidgetLibrary({ open, onClose, onAdd }: WidgetLibraryProps) {
           {/* KPI z katalogu */}
           <div>
             <div className="flex items-center gap-2 px-1 mb-2">
-              <span className="text-zinc-500"><Target size={14} /></span>
-              <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Twoje KPI</span>
+              <span className="text-muted"><Target size={14} /></span>
+              <span className="text-xs font-semibold text-fg-soft uppercase tracking-wider">Twoje KPI</span>
             </div>
             <div className="space-y-1">
               {kpis.map(k => (
                 <button
                   key={k.id}
                   onClick={() => { onAdd('custom_explorer', { title: k.name, ...k.query_spec }); onClose(); }}
-                  className="w-full text-left px-3 py-2.5 rounded-lg text-sm text-zinc-300 hover:bg-zinc-800/70 hover:text-zinc-100 transition-colors flex items-center justify-between group"
+                  className="w-full text-left px-3 py-2.5 rounded-lg text-sm text-fg-soft hover:bg-bg hover:text-fg transition-colors flex items-center justify-between group"
                 >
                   <span className="truncate">{k.name}</span>
-                  <span className="text-xs text-zinc-600 group-hover:text-blue-400 shrink-0 ml-2">+ dodaj</span>
+                  <span className="text-xs text-muted group-hover:text-primary-700 shrink-0 ml-2">+ dodaj</span>
                 </button>
               ))}
               {kpis.length === 0 && (
-                <p className="px-3 py-2 text-xs text-zinc-600">Brak KPI w katalogu.</p>
+                <p className="px-3 py-2 text-xs text-muted">Brak KPI w katalogu.</p>
               )}
               <Link
                 href="/dashboard/kpi"
-                className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm text-blue-400 hover:bg-blue-600/10 transition-colors"
+                className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-sm text-primary-700 hover:bg-primary-600/10 transition-colors"
               >
                 <Plus size={14} />
                 Stwórz nowe KPI
@@ -97,18 +97,18 @@ export function WidgetLibrary({ open, onClose, onAdd }: WidgetLibraryProps) {
             (grouped[cat] || []).length > 0 && (
               <div key={cat}>
                 <div className="flex items-center gap-2 px-1 mb-2">
-                  <span className="text-zinc-500">{CATEGORY_ICONS[cat]}</span>
-                  <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">{cat}</span>
+                  <span className="text-muted">{CATEGORY_ICONS[cat]}</span>
+                  <span className="text-xs font-semibold text-fg-soft uppercase tracking-wider">{cat}</span>
                 </div>
                 <div className="space-y-1">
                   {grouped[cat].map(w => (
                     <button
                       key={w.type}
                       onClick={() => { onAdd(w.type); onClose(); }}
-                      className="w-full text-left px-3 py-2.5 rounded-lg text-sm text-zinc-300 hover:bg-zinc-800/70 hover:text-zinc-100 transition-colors flex items-center justify-between group"
+                      className="w-full text-left px-3 py-2.5 rounded-lg text-sm text-fg-soft hover:bg-bg hover:text-fg transition-colors flex items-center justify-between group"
                     >
                       <span>{w.name}</span>
-                      <span className="text-xs text-zinc-600 group-hover:text-blue-400">+ dodaj</span>
+                      <span className="text-xs text-muted group-hover:text-primary-700">+ dodaj</span>
                     </button>
                   ))}
                 </div>

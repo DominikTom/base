@@ -49,7 +49,7 @@ export default function RevenuePage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-96">
-        <div className="animate-pulse text-zinc-500">Ładowanie danych...</div>
+        <div className="animate-pulse text-muted">Ładowanie danych...</div>
       </div>
     );
   }
@@ -57,7 +57,7 @@ export default function RevenuePage() {
   if (!data) {
     return (
       <div className="flex flex-col items-center justify-center h-96 gap-4">
-        <p className="text-zinc-500">Brak danych. Zaimportuj CSV w zakładce ETL Admin.</p>
+        <p className="text-muted">Brak danych. Zaimportuj CSV w zakładce ETL Admin.</p>
       </div>
     );
   }
@@ -75,16 +75,16 @@ export default function RevenuePage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-zinc-100">Revenue & Zamówienia</h1>
-        <div className="flex items-center gap-1 bg-zinc-900 rounded-lg p-1">
+        <h1 className="text-xl font-semibold text-fg">Revenue & Zamówienia</h1>
+        <div className="flex items-center gap-1 bg-surface rounded-lg p-1">
           {(['day', 'week', 'month', 'quarter'] as const).map(g => (
             <button
               key={g}
               onClick={() => setGranularity(g)}
               className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
                 granularity === g
-                  ? 'bg-blue-600 text-white'
-                  : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800'
+                  ? 'bg-primary-600 text-white'
+                  : 'text-fg-soft hover:text-fg hover:bg-bg'
               }`}
             >
               {g === 'day' ? 'Dzień' : g === 'week' ? 'Tydzień' : g === 'month' ? 'Miesiąc' : 'Kwartał'}
@@ -106,7 +106,7 @@ export default function RevenuePage() {
         <ChartCard title="Trend AOV">
           <SimpleBarChart
             data={data.aovTrend}
-            barColor="#10b981"
+            barColor="#16A34A"
             valueFormatter={v => formatCurrency(v)}
           />
         </ChartCard>
@@ -118,7 +118,7 @@ export default function RevenuePage() {
           data={data.supplierRanking.slice(0, 15)}
           layout="horizontal"
           height={400}
-          barColor="#f59e0b"
+          barColor="#9333EA"
           valueFormatter={v => formatCurrency(v)}
         />
       </ChartCard>

@@ -93,15 +93,15 @@ export default function CostsPage() {
   const months = Object.keys(byMonth).sort().reverse();
   const totalAll = costs.reduce((s, c) => s + c.amount_pln, 0);
 
-  const inputClass = 'px-3 py-2 text-sm rounded-lg bg-zinc-900 border border-zinc-700 text-zinc-200 focus:outline-none focus:ring-1 focus:ring-blue-500';
+  const inputClass = 'px-3 py-2 text-sm rounded-lg bg-surface border border-line text-fg focus:outline-none focus:ring-2 focus:ring-primary-400';
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-zinc-100">Koszty marketingu — Agencje</h1>
-        <div className="flex items-center gap-2 text-sm text-zinc-400">
+        <h1 className="text-xl font-semibold text-fg">Koszty marketingu — Agencje</h1>
+        <div className="flex items-center gap-2 text-sm text-fg-soft">
           <DollarSign size={16} />
-          Total: <span className="text-zinc-200 font-medium">{formatCurrency(totalAll)}</span>
+          Total: <span className="text-fg font-medium">{formatCurrency(totalAll)}</span>
         </div>
       </div>
 
@@ -109,49 +109,49 @@ export default function CostsPage() {
       <ChartCard title="Dodaj koszt">
         <div className="flex flex-wrap items-end gap-3">
           <div className="flex flex-col gap-1">
-            <label className="text-xs text-zinc-500">Miesiąc</label>
+            <label className="text-xs text-muted">Miesiąc</label>
             <input type="month" value={month} onChange={e => setMonth(e.target.value)} className={inputClass} />
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-xs text-zinc-500">Agencja</label>
+            <label className="text-xs text-muted">Agencja</label>
             <input type="text" value={agency} onChange={e => setAgency(e.target.value)} placeholder="np. Gogini" className={inputClass} list="agencies" />
             <datalist id="agencies">
               {[...new Set(costs.map(c => c.agency_name))].map(a => <option key={a} value={a} />)}
             </datalist>
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-xs text-zinc-500">Usługa</label>
+            <label className="text-xs text-muted">Usługa</label>
             <input type="text" value={service} onChange={e => setService(e.target.value)} placeholder="np. Google Ads" className={inputClass} list="services" />
             <datalist id="services">
               {[...new Set(costs.map(c => c.service_type))].map(s => <option key={s} value={s} />)}
             </datalist>
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-xs text-zinc-500">Kwota (PLN)</label>
+            <label className="text-xs text-muted">Kwota (PLN)</label>
             <input type="number" value={amount} onChange={e => setAmount(e.target.value)} placeholder="10000" className={inputClass} />
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-xs text-zinc-500">Sklep</label>
+            <label className="text-xs text-muted">Sklep</label>
             <select value={shop} onChange={e => setShop(e.target.value)} className={inputClass}>
               <option value="">Ogólne</option>
               {SHOPS.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-xs text-zinc-500">Platforma</label>
+            <label className="text-xs text-muted">Platforma</label>
             <select value={platform} onChange={e => setPlatform(e.target.value)} className={inputClass}>
               <option value="">Inne</option>
               {PLATFORMS.map(p => <option key={p} value={p}>{p}</option>)}
             </select>
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-xs text-zinc-500">Notatka</label>
+            <label className="text-xs text-muted">Notatka</label>
             <input type="text" value={notes} onChange={e => setNotes(e.target.value)} placeholder="opcjonalnie" className={inputClass} />
           </div>
           <button
             onClick={handleAdd}
             disabled={saving || !agency || !service || !amount}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2"
+            className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2"
           >
             <Plus size={16} />
             Dodaj
@@ -161,9 +161,9 @@ export default function CostsPage() {
 
       {/* Costs by month */}
       {loading ? (
-        <div className="text-zinc-500 text-center py-8">Ładowanie...</div>
+        <div className="text-muted text-center py-8">Ładowanie...</div>
       ) : months.length === 0 ? (
-        <div className="text-zinc-500 text-center py-8">Brak kosztów. Dodaj pierwszy koszt powyżej.</div>
+        <div className="text-muted text-center py-8">Brak kosztów. Dodaj pierwszy koszt powyżej.</div>
       ) : (
         months.map(m => {
           const items = byMonth[m];
@@ -173,7 +173,7 @@ export default function CostsPage() {
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="border-b border-zinc-800 text-zinc-400">
+                    <tr className="border-b border-line text-fg-soft">
                       <th className="px-3 py-2 text-left font-medium">Agencja</th>
                       <th className="px-3 py-2 text-left font-medium">Usługa</th>
                       <th className="px-3 py-2 text-left font-medium">Sklep</th>
@@ -185,15 +185,15 @@ export default function CostsPage() {
                   </thead>
                   <tbody>
                     {items.map(c => (
-                      <tr key={c.id} className="border-b border-zinc-800/30 hover:bg-zinc-800/30">
-                        <td className="px-3 py-2 text-zinc-300">{c.agency_name}</td>
-                        <td className="px-3 py-2 text-zinc-400">{c.service_type}</td>
-                        <td className="px-3 py-2 text-zinc-400 text-xs">{c.source_shop || '—'}</td>
-                        <td className="px-3 py-2 text-zinc-400 text-xs">{c.platform || '—'}</td>
-                        <td className="px-3 py-2 text-right text-zinc-200">{formatCurrency(c.amount_pln)}</td>
-                        <td className="px-3 py-2 text-zinc-500 text-xs">{c.notes || '—'}</td>
+                      <tr key={c.id} className="border-b border-line hover:bg-bg">
+                        <td className="px-3 py-2 text-fg-soft">{c.agency_name}</td>
+                        <td className="px-3 py-2 text-fg-soft">{c.service_type}</td>
+                        <td className="px-3 py-2 text-fg-soft text-xs">{c.source_shop || '—'}</td>
+                        <td className="px-3 py-2 text-fg-soft text-xs">{c.platform || '—'}</td>
+                        <td className="px-3 py-2 text-right text-fg">{formatCurrency(c.amount_pln)}</td>
+                        <td className="px-3 py-2 text-muted text-xs">{c.notes || '—'}</td>
                         <td className="px-3 py-2">
-                          <button onClick={() => handleDelete(c.id)} className="text-zinc-600 hover:text-red-400">
+                          <button onClick={() => handleDelete(c.id)} className="text-muted hover:text-danger">
                             <Trash2 size={14} />
                           </button>
                         </td>

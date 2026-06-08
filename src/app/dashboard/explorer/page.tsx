@@ -94,11 +94,11 @@ export default function ExplorerPage() {
     runQuery();
   }, [filters.dateFrom, filters.dateTo, filters.shop]);
 
-  const selClass = 'px-3 py-2 text-sm rounded-lg bg-zinc-900 border border-zinc-700 text-zinc-200 focus:outline-none focus:ring-1 focus:ring-blue-500';
+  const selClass = 'px-3 py-2 text-sm rounded-lg bg-surface border border-line text-fg focus:outline-none focus:ring-2 focus:ring-primary-400';
 
   function renderChart() {
     if (!result || !result.data.length) {
-      return <div className="flex items-center justify-center h-64 text-zinc-500">Brak danych dla wybranych parametrów</div>;
+      return <div className="flex items-center justify-center h-64 text-muted">Brak danych dla wybranych parametrów</div>;
     }
 
     const groups = result.groups;
@@ -132,10 +132,10 @@ export default function ExplorerPage() {
       return (
         <ResponsiveContainer width="100%" height={400}>
           <LineChart data={result.data} margin={{ top: 5, right: 20, bottom: 5, left: 5 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
-            <XAxis dataKey="x" tick={{ fontSize: 11, fill: '#71717a' }} tickLine={false} />
-            <YAxis tick={{ fontSize: 11, fill: '#71717a' }} tickLine={false} axisLine={false} />
-            <Tooltip contentStyle={{ backgroundColor: '#18181b', border: '1px solid #3f3f46', borderRadius: '8px', fontSize: '12px' }} />
+            <CartesianGrid strokeDasharray="3 3" stroke="#EAEBE8" />
+            <XAxis dataKey="x" tick={{ fontSize: 11, fill: '#8B908C' }} tickLine={false} />
+            <YAxis tick={{ fontSize: 11, fill: '#8B908C' }} tickLine={false} axisLine={false} />
+            <Tooltip contentStyle={{ backgroundColor: '#FFFFFF', border: '1px solid #ECEDEB', borderRadius: '8px', fontSize: '12px' }} />
             <Legend />
             {groups.map((g, i) => (
               <Line key={g} type="monotone" dataKey={g} name={g} stroke={COLORS[i % COLORS.length]} strokeWidth={2} dot={false} />
@@ -149,10 +149,10 @@ export default function ExplorerPage() {
       return (
         <ResponsiveContainer width="100%" height={400}>
           <AreaChart data={result.data} margin={{ top: 5, right: 20, bottom: 5, left: 5 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
-            <XAxis dataKey="x" tick={{ fontSize: 11, fill: '#71717a' }} tickLine={false} />
-            <YAxis tick={{ fontSize: 11, fill: '#71717a' }} tickLine={false} axisLine={false} />
-            <Tooltip contentStyle={{ backgroundColor: '#18181b', border: '1px solid #3f3f46', borderRadius: '8px', fontSize: '12px' }} />
+            <CartesianGrid strokeDasharray="3 3" stroke="#EAEBE8" />
+            <XAxis dataKey="x" tick={{ fontSize: 11, fill: '#8B908C' }} tickLine={false} />
+            <YAxis tick={{ fontSize: 11, fill: '#8B908C' }} tickLine={false} axisLine={false} />
+            <Tooltip contentStyle={{ backgroundColor: '#FFFFFF', border: '1px solid #ECEDEB', borderRadius: '8px', fontSize: '12px' }} />
             <Legend />
             {groups.map((g, i) => (
               <Area key={g} type="monotone" dataKey={g} name={g} stackId="stack" stroke={COLORS[i % COLORS.length]} fill={COLORS[i % COLORS.length]} fillOpacity={0.6} strokeWidth={2} />
@@ -166,10 +166,10 @@ export default function ExplorerPage() {
     return (
       <ResponsiveContainer width="100%" height={400}>
         <BarChart data={result.data} margin={{ top: 5, right: 20, bottom: 5, left: 5 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
-          <XAxis dataKey="x" tick={{ fontSize: 11, fill: '#71717a' }} tickLine={false} />
-          <YAxis tick={{ fontSize: 11, fill: '#71717a' }} tickLine={false} axisLine={false} />
-          <Tooltip contentStyle={{ backgroundColor: '#18181b', border: '1px solid #3f3f46', borderRadius: '8px', fontSize: '12px' }} />
+          <CartesianGrid strokeDasharray="3 3" stroke="#EAEBE8" />
+          <XAxis dataKey="x" tick={{ fontSize: 11, fill: '#8B908C' }} tickLine={false} />
+          <YAxis tick={{ fontSize: 11, fill: '#8B908C' }} tickLine={false} axisLine={false} />
+          <Tooltip contentStyle={{ backgroundColor: '#FFFFFF', border: '1px solid #ECEDEB', borderRadius: '8px', fontSize: '12px' }} />
           <Legend />
           {groups.map((g, i) => (
             <Bar key={g} dataKey={g} name={g} stackId={groupBy ? 'stack' : undefined} fill={COLORS[i % COLORS.length]} radius={[2, 2, 0, 0]} />
@@ -181,36 +181,36 @@ export default function ExplorerPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-semibold text-zinc-100">Eksplorator danych</h1>
+      <h1 className="text-xl font-semibold text-fg">Eksplorator danych</h1>
 
       {/* Config panel */}
-      <div className="flex flex-wrap items-end gap-4 p-4 rounded-xl border border-zinc-800 bg-zinc-900/50">
+      <div className="flex flex-wrap items-end gap-4 p-4 rounded-xl border border-line bg-surface">
         <div className="flex flex-col gap-1">
-          <label className="text-xs text-zinc-500">Oś X</label>
+          <label className="text-xs text-muted">Oś X</label>
           <select value={xAxis} onChange={e => setXAxis(e.target.value)} className={selClass}>
             {X_AXIS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
         </div>
         <div className="flex flex-col gap-1">
-          <label className="text-xs text-zinc-500">Oś Y</label>
+          <label className="text-xs text-muted">Oś Y</label>
           <select value={yAxis} onChange={e => setYAxis(e.target.value)} className={selClass}>
             {Y_AXIS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
         </div>
         <div className="flex flex-col gap-1">
-          <label className="text-xs text-zinc-500">Grupowanie</label>
+          <label className="text-xs text-muted">Grupowanie</label>
           <select value={groupBy} onChange={e => setGroupBy(e.target.value)} className={selClass}>
             {GROUP_BY_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
         </div>
         <div className="flex flex-col gap-1">
-          <label className="text-xs text-zinc-500">Typ wykresu</label>
+          <label className="text-xs text-muted">Typ wykresu</label>
           <select value={chartType} onChange={e => setChartType(e.target.value)} className={selClass}>
             {CHART_TYPES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
         </div>
         <div className="flex flex-col gap-1">
-          <label className="text-xs text-zinc-500">Granulacja</label>
+          <label className="text-xs text-muted">Granulacja</label>
           <select value={granularity} onChange={e => setGranularity(e.target.value)} className={selClass}>
             {GRANULARITY_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
@@ -218,7 +218,7 @@ export default function ExplorerPage() {
         <button
           onClick={runQuery}
           disabled={loading}
-          className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
+          className="px-5 py-2 bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
         >
           {loading ? 'Ładowanie...' : 'Uruchom'}
         </button>
@@ -231,7 +231,7 @@ export default function ExplorerPage() {
       >
         {loading ? (
           <div className="flex items-center justify-center h-64">
-            <div className="animate-pulse text-zinc-500">Ładowanie...</div>
+            <div className="animate-pulse text-muted">Ładowanie...</div>
           </div>
         ) : (
           renderChart()

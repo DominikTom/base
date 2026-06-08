@@ -13,23 +13,23 @@ export function RevenueChart({ data, shops, stacked = false }: RevenueChartProps
   return (
     <ResponsiveContainer width="100%" height={320}>
       <AreaChart data={data} margin={{ top: 5, right: 5, bottom: 5, left: 5 }}>
-        <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
+        <CartesianGrid strokeDasharray="3 3" stroke="#EAEBE8" />
         <XAxis
           dataKey="date"
-          tick={{ fontSize: 11, fill: '#71717a' }}
+          tick={{ fontSize: 11, fill: '#8B908C' }}
           tickLine={false}
           axisLine={{ stroke: '#3f3f46' }}
         />
         <YAxis
-          tick={{ fontSize: 11, fill: '#71717a' }}
+          tick={{ fontSize: 11, fill: '#8B908C' }}
           tickLine={false}
           axisLine={false}
           tickFormatter={formatCompact}
         />
         <Tooltip
           contentStyle={{
-            backgroundColor: '#18181b',
-            border: '1px solid #3f3f46',
+            backgroundColor: '#FFFFFF',
+            border: '1px solid #ECEDEB',
             borderRadius: '8px',
             fontSize: '12px',
           }}
