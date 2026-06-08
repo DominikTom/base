@@ -360,13 +360,24 @@ function WidgetContent({ type, data, onItemClick, activeValues, prevValue }: {
     return (
       <ResponsiveContainer width="100%" height="100%">
         <AreaChart data={data.data || []} margin={{ top: 5, right: 5, bottom: 5, left: 5 }}>
+          <defs>
+            {shops.map(s => {
+              const c = SHOP_COLORS[s] || '#6b7280';
+              return (
+                <linearGradient key={s} id={`area-grad-${s.replace(/\./g, '-')}`} x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={c} stopOpacity={0.85} />
+                  <stop offset="100%" stopColor={c} stopOpacity={0.1} />
+                </linearGradient>
+              );
+            })}
+          </defs>
           <CartesianGrid strokeDasharray="3 3" stroke="#EAEBE8" />
           <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#8B908C' }} tickLine={false} />
           <YAxis tick={{ fontSize: 10, fill: '#8B908C' }} tickLine={false} axisLine={false} />
           <Tooltip contentStyle={{ backgroundColor: '#FFFFFF', border: '1px solid #ECEDEB', borderRadius: '8px', fontSize: '11px' }} />
           <Legend wrapperStyle={{ fontSize: '10px' }} iconType="circle" iconSize={6} />
           {shops.map(s => (
-            <Area key={s} type="monotone" dataKey={s} stackId="stack" stroke={SHOP_COLORS[s] || '#6b7280'} fill={SHOP_COLORS[s] || '#6b7280'} fillOpacity={0.6} strokeWidth={2} />
+            <Area key={s} type="monotone" dataKey={s} stackId="stack" stroke={SHOP_COLORS[s] || '#6b7280'} fill={`url(#area-grad-${s.replace(/\./g, '-')})`} strokeWidth={2} />
           ))}
         </AreaChart>
       </ResponsiveContainer>
