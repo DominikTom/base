@@ -18,7 +18,7 @@ interface DashboardContextType {
   setCompare: (compare: CompareMode) => void;
   applyPreset: (preset: string) => void;
   addCrossFilter: (filter: CrossFilter) => void;
-  removeCrossFilter: (field: string) => void;
+  removeCrossFilter: (field: string, value?: string) => void;
   clearCrossFilters: () => void;
 }
 
@@ -60,16 +60,28 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  // Looker-style toggle: klik na tę samą (field, value) usuwa wpis; klik na nową
+  // wartość dorzuca się do listy (multi-select). Klik na inne pole stackuje (AND
+  // między polami, OR/IN wewnątrz pola — patrz applyCross w widgets/route.ts).
+  // Porównanie case-insensitive, bo wartości w rankingach mogą być normalizowane
+  // (np. coupon_code uppercase) i muszą porównywać się z oryginałem w bazie.
   const addCrossFilter = useCallback((filter: CrossFilter) => {
     setCrossFilters(prev => {
-      // Replace existing filter for the same field, or add new
-      const without = prev.filter(f => f.field !== filter.field);
-      return [...without, filter];
+      const idx = prev.findIndex(f =>
+        f.field === filter.field &&
+        f.value.toLowerCase() === filter.value.toLowerCase(),
+      );
+      if (idx >= 0) return prev.filter((_, i) => i !== idx);
+      return [...prev, filter];
     });
   }, []);
 
-  const removeCrossFilter = useCallback((field: string) => {
-    setCrossFilters(prev => prev.filter(f => f.field !== field));
+  const removeCrossFilter = useCallback((field: string, value?: string) => {
+    setCrossFilters(prev => prev.filter(f => {
+      if (f.field !== field) return true;
+      if (value === undefined) return false; // bez value = usuń wszystkie tego pola
+      return f.value.toLowerCase() !== value.toLowerCase();
+    }));
   }, []);
 
   const clearCrossFilters = useCallback(() => {

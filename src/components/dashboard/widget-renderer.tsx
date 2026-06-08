@@ -151,6 +151,14 @@ export function WidgetRenderer({ widgetType, widgetConfig, onRemove, onMoveUp, o
     });
   };
 
+  // Wartości aktywne dla pola tego widgetu — żeby ranking podświetlił wybrane wiersze.
+  const activeField = WIDGET_CLICK_FIELD[widgetType];
+  const activeValues = new Set(
+    crossFilters
+      .filter(cf => cf.field === activeField)
+      .map(cf => cf.value.toLowerCase()),
+  );
+
   if (!def) return <div className="p-4 text-red-400">Nieznany widget: {widgetType}</div>;
 
   return (
@@ -191,15 +199,20 @@ export function WidgetRenderer({ widgetType, widgetConfig, onRemove, onMoveUp, o
         ) : error ? (
           <div className="h-full flex items-center justify-center text-xs text-red-400">{error}</div>
         ) : data ? (
-          <WidgetContent type={widgetType} data={data} onItemClick={handleItemClick} />
+          <WidgetContent type={widgetType} data={data} onItemClick={handleItemClick} activeValues={activeValues} />
         ) : null}
       </div>
     </div>
   );
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function WidgetContent({ type, data, onItemClick }: { type: string; data: any; onItemClick: (name: string) => void }) {
+function WidgetContent({ type, data, onItemClick, activeValues }: {
+  type: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  data: any;
+  onItemClick: (name: string) => void;
+  activeValues: Set<string>;
+}) {
   const clickable = !!WIDGET_CLICK_FIELD[type];
 
   // Pivot
@@ -231,10 +244,12 @@ function WidgetContent({ type, data, onItemClick }: { type: string; data: any; o
       <div className="h-full overflow-y-auto">
         <table className="w-full text-xs">
           <tbody>
-            {items.map((item, i) => (
+            {items.map((item, i) => {
+              const isActive = activeValues.has(String(item.name).toLowerCase());
+              return (
               <tr
                 key={i}
-                className={`border-b border-zinc-800/30 ${clickable ? 'cursor-pointer hover:bg-zinc-800/50' : ''}`}
+                className={`border-b border-zinc-800/30 ${clickable ? 'cursor-pointer hover:bg-zinc-800/50' : ''} ${isActive ? 'bg-blue-600/20 hover:bg-blue-600/30' : ''}`}
                 onClick={() => clickable && onItemClick(item.name)}
               >
                 <td className="py-1.5 pr-2 text-zinc-500 w-6">{i + 1}.</td>
@@ -248,7 +263,8 @@ function WidgetContent({ type, data, onItemClick }: { type: string; data: any; o
                   </div>
                 </td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
         {data.total != null && (

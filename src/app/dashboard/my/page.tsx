@@ -407,8 +407,8 @@ export default function MyDashboardPage() {
           <span className="text-xs text-blue-400 font-medium">Filtry:</span>
           {crossFilters.map(cf => (
             <button
-              key={cf.field}
-              onClick={() => removeCrossFilter(cf.field)}
+              key={`${cf.field}|${cf.value}`}
+              onClick={() => removeCrossFilter(cf.field, cf.value)}
               className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-blue-600/20 text-blue-300 text-xs hover:bg-blue-600/40 transition-colors"
             >
               {cf.label}

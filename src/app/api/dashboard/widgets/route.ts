@@ -18,10 +18,29 @@ export async function POST(request: NextRequest) {
     const orderCrossFields = ['supplier', 'delivery_city', 'coupon_code', 'source_shop'];
     const itemCrossFields = ['product_name', 'product_category', 'fabric', 'fabric_collection', 'bed_size', 'mattress_type', 'headboard_height', 'storage_type'];
 
+    // Cross-filtry: grupuj po polu, w obrębie pola = OR (multi-select);
+    // między polami = AND. Dla coupon_code ILIKE (case-insensitive — w bazie
+    // np. „Merve7", w rankingu pokazywany jako „MERVE7").
+    const ILIKE_FIELDS = new Set(['coupon_code']);
+    function escapeIlike(s: string): string {
+      return String(s).replace(/[\\%_,()]/g, m => `\\${m}`);
+    }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     function applyCross(q: any, allowedFields: string[]): any {
+      const byField: Record<string, string[]> = {};
       for (const cf of crossFilters) {
-        if (allowedFields.includes(cf.field)) q = q.eq(cf.field, cf.value);
+        if (!allowedFields.includes(cf.field)) continue;
+        (byField[cf.field] ||= []).push(String(cf.value));
+      }
+      for (const [field, values] of Object.entries(byField)) {
+        if (ILIKE_FIELDS.has(field)) {
+          const ors = values.map(v => `${field}.ilike.${escapeIlike(v)}`).join(',');
+          q = q.or(ors);
+        } else if (values.length === 1) {
+          q = q.eq(field, values[0]);
+        } else {
+          q = q.in(field, values);
+        }
       }
       return q;
     }
