@@ -5,7 +5,7 @@ import { fetchEurRatesByDate, gaToPln } from '@/lib/ad-cost';
 
 export async function POST(request: NextRequest) {
   try {
-    const { widget, dateFrom, dateTo, shop = 'all', limit = 20, crossFilters = [] } = await request.json();
+    const { widget, dateFrom, dateTo, shop = 'all', limit = 20, crossFilters: rawCrossFilters = [] } = await request.json();
     const db = getSupabaseAdmin();
     const fetchFrom = shiftDate(dateFrom, -1);
     const fetchTo = shiftDate(dateTo, 1);
@@ -17,6 +17,27 @@ export async function POST(request: NextRequest) {
 
     const orderCrossFields = ['supplier', 'delivery_city', 'coupon_code', 'source_shop'];
     const itemCrossFields = ['product_name', 'product_category', 'fabric', 'fabric_collection', 'bed_size', 'mattress_type', 'headboard_height', 'storage_type'];
+
+    // Widget NIE filtruje sam siebie: gdy ranking_models jest źródłem cross-filtru
+    // `product_name`, ten widget musi widzieć WSZYSTKIE modele żeby user mógł
+    // wybrać kolejny. Inaczej po pierwszym kliku tabela zwija się do 1 wiersza
+    // i nie da się zaznaczyć drugiego.
+    const WIDGET_SOURCE_FIELD: Record<string, string> = {
+      ranking_models: 'product_name',
+      ranking_fabric_collections: 'fabric_collection',
+      ranking_fabrics: 'fabric',
+      ranking_cities: 'delivery_city',
+      ranking_suppliers: 'supplier',
+      ranking_coupons: 'coupon_code',
+      ranking_bed_sizes: 'bed_size',
+      ranking_headboard_heights: 'headboard_height',
+      ranking_storage_types: 'storage_type',
+    };
+    const widgetSourceField = WIDGET_SOURCE_FIELD[widget];
+    const crossFilters = widgetSourceField
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ? (rawCrossFilters as Array<{ field: string; value: string }>).filter((cf: any) => cf.field !== widgetSourceField)
+      : rawCrossFilters;
 
     // Cross-filtry: grupuj po polu, w obrębie pola = OR (multi-select);
     // między polami = AND. Dla coupon_code ILIKE (case-insensitive — w bazie

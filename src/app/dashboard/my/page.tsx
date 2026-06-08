@@ -2,8 +2,8 @@
 
 import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
-import { useCallback, useEffect, useState } from 'react';
-import { Responsive as ResponsiveGridLayout, useContainerWidth, type Layout, type LayoutItem } from 'react-grid-layout';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Responsive as ResponsiveGridLayout, type Layout, type LayoutItem } from 'react-grid-layout';
 import { useDashboard } from '@/lib/dashboard-context';
 import { WidgetRenderer } from '@/components/dashboard/widget-renderer';
 import { WidgetLibrary } from '@/components/dashboard/widget-library';
@@ -22,6 +22,7 @@ import type { Shop, CompareMode } from '@/types/database';
 
 import { Plus, RotateCcw, X, Save, Star, Trash2, Pencil, Check } from 'lucide-react';
 import { InsightsCard } from '@/components/dashboard/insights-card';
+import { LayoutFilterBar } from '@/components/dashboard/layout-filter-bar';
 
 const MAX_LAYOUTS = 5;
 
@@ -35,8 +36,24 @@ export default function MyDashboardPage() {
   // Czy aktywujemy zakładkę z filtrami z bazy — wtedy NIE chcemy by
   // ten apply propagował się z powrotem jako „zmiana usera" do zapisu.
   const [applyingFromLayout, setApplyingFromLayout] = useState(false);
-  // Szerokość gridu (D&D) — z hooka react-grid-layout v2.x.
-  const { width: gridWidth, containerRef: gridRef } = useContainerWidth();
+  // Szerokość gridu (D&D). Własny ResizeObserver + window.resize fallback —
+  // wbudowany useContainerWidth z RGL na niektórych szerokich monitorach
+  // dawał off-by-half (initialWidth=1280 utykało).
+  const gridRef = useRef<HTMLDivElement>(null);
+  const [gridWidth, setGridWidth] = useState(1200);
+  useEffect(() => {
+    const el = gridRef.current;
+    if (!el) return;
+    const measure = () => {
+      const w = el.getBoundingClientRect().width;
+      if (w > 0) setGridWidth(w);
+    };
+    measure();
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null;
+    ro?.observe(el);
+    window.addEventListener('resize', measure);
+    return () => { ro?.disconnect(); window.removeEventListener('resize', measure); };
+  }, []);
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
@@ -363,6 +380,11 @@ export default function MyDashboardPage() {
         )}
       </div>
 
+      {/* Per-layout filter bar — daty, sklep, porównanie per zakładka.
+          Zmiana tu zapisuje się jako snapshot aktywnej zakładki (debounce w
+          watcherze na górze pliku). */}
+      <LayoutFilterBar />
+
       {/* Rename dialog */}
       {renameId && (
         <div className="flex items-center gap-2 p-3 rounded-lg bg-bg border border-line">
@@ -490,7 +512,7 @@ export default function MyDashboardPage() {
           </button>
         </div>
       ) : (
-        <div ref={gridRef}>
+        <div ref={gridRef} style={{ width: '100%' }}>
         <ResponsiveGridLayout
           className="layout"
           width={gridWidth}
