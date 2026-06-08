@@ -8,6 +8,7 @@ import { RevenueChart } from '@/components/charts/revenue-chart';
 import { SimpleBarChart } from '@/components/charts/bar-chart';
 import { SimplePieChart } from '@/components/charts/pie-chart';
 import { formatCurrency, formatNumber } from '@/lib/utils';
+import { previousPeriod, pctChange, COMPARE_LABEL } from '@/lib/period-compare';
 import { DollarSign, ShoppingCart, TrendingUp, Truck } from 'lucide-react';
 
 interface OverviewData {
@@ -36,6 +37,7 @@ interface OverviewData {
 export default function OverviewPage() {
   const { filters } = useDashboard();
   const [data, setData] = useState<OverviewData | null>(null);
+  const [prevKpis, setPrevKpis] = useState<OverviewData['kpis'] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -44,15 +46,17 @@ export default function OverviewPage() {
       setLoading(true);
       setError(null);
       try {
-        const params = new URLSearchParams({
-          date_from: filters.dateFrom,
-          date_to: filters.dateTo,
-          shop: filters.shop,
-        });
-        const res = await fetch(`/api/dashboard/overview?${params}`);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const json = await res.json();
-        setData(json);
+        const prev = previousPeriod(filters.dateFrom, filters.dateTo);
+        // Dwa fetche równolegle — current i previous okres tej samej długości.
+        const [curRes, prevRes] = await Promise.all([
+          fetch(`/api/dashboard/overview?${new URLSearchParams({ date_from: filters.dateFrom, date_to: filters.dateTo, shop: filters.shop })}`),
+          fetch(`/api/dashboard/overview?${new URLSearchParams({ date_from: prev.from, date_to: prev.to, shop: filters.shop })}`),
+        ]);
+        if (!curRes.ok) throw new Error(`HTTP ${curRes.status}`);
+        const curJson: OverviewData = await curRes.json();
+        const prevJson: OverviewData | null = prevRes.ok ? await prevRes.json() : null;
+        setData(curJson);
+        setPrevKpis(prevJson?.kpis ?? null);
       } catch (err) {
         setError(String(err));
       } finally {
@@ -93,17 +97,23 @@ export default function OverviewPage() {
           value={formatCurrency(data.kpis.revenue)}
           icon={<DollarSign size={18} />}
           sparkline={data.sparklines.revenue}
+          change={pctChange(data.kpis.revenue, prevKpis?.revenue)}
+          changeLabel={COMPARE_LABEL}
         />
         <KpiCard
           title="Zamówienia"
           value={formatNumber(data.kpis.orders)}
           icon={<ShoppingCart size={18} />}
           sparkline={data.sparklines.orders}
+          change={pctChange(data.kpis.orders, prevKpis?.orders)}
+          changeLabel={COMPARE_LABEL}
         />
         <KpiCard
           title="AOV"
           value={formatCurrency(data.kpis.aov)}
           icon={<TrendingUp size={18} />}
+          change={pctChange(data.kpis.aov, prevKpis?.aov)}
+          changeLabel={COMPARE_LABEL}
         />
         <KpiCard
           title="Opłacone / Anulowane"

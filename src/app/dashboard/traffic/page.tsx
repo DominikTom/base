@@ -8,6 +8,7 @@ import { SimplePieChart } from '@/components/charts/pie-chart';
 import { SimpleBarChart } from '@/components/charts/bar-chart';
 import { DataTable, type Column } from '@/components/ui/data-table';
 import { formatNumber, formatCurrency, SHOP_COLORS } from '@/lib/utils';
+import { previousPeriod, pctChange, COMPARE_LABEL } from '@/lib/period-compare';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { Users, Globe, MousePointerClick, ShoppingCart, Eye, TrendingUp, RefreshCw, CheckCircle, XCircle, DollarSign, MousePointer } from 'lucide-react';
 
@@ -49,6 +50,7 @@ interface TrafficData {
 export default function TrafficPage() {
   const { filters } = useDashboard();
   const [data, setData] = useState<TrafficData | null>(null);
+  const [prevKpis, setPrevKpis] = useState<TrafficData['kpis'] | null>(null);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<{ ok: boolean; message: string } | null>(null);
@@ -89,16 +91,18 @@ export default function TrafficPage() {
     async function fetchData() {
       setLoading(true);
       try {
-        const params = new URLSearchParams({
-          date_from: filters.dateFrom,
-          date_to: filters.dateTo,
-          hostname: hostnameFilter,
-        });
-        const res = await fetch(`/api/dashboard/traffic?${params}`);
-        const json = await res.json();
-        setData(json);
+        const prev = previousPeriod(filters.dateFrom, filters.dateTo);
+        const mk = (df: string, dt: string) => new URLSearchParams({ date_from: df, date_to: dt, hostname: hostnameFilter });
+        const [curRes, prevRes] = await Promise.all([
+          fetch(`/api/dashboard/traffic?${mk(filters.dateFrom, filters.dateTo)}`),
+          fetch(`/api/dashboard/traffic?${mk(prev.from, prev.to)}`),
+        ]);
+        const cur = await curRes.json();
+        const prv = prevRes.ok ? await prevRes.json() : null;
+        setData(cur);
+        setPrevKpis(prv?.kpis ?? null);
       } catch {
-        setData(null);
+        setData(null); setPrevKpis(null);
       } finally {
         setLoading(false);
       }
@@ -185,20 +189,30 @@ export default function TrafficPage() {
 
       {/* KPIs — Traffic */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
-        <KpiCard title="Sesje" value={formatNumber(data.kpis.sessions)} icon={<Globe size={18} />} />
-        <KpiCard title="Użytkownicy" value={formatNumber(data.kpis.users)} icon={<Users size={18} />} />
-        <KpiCard title="Nowi użytkownicy" value={formatNumber(data.kpis.newUsers)} icon={<Users size={18} />} />
-        <KpiCard title="Odsłony" value={formatNumber(data.kpis.pageviews)} icon={<Eye size={18} />} />
-        <KpiCard title="Conv. Rate" value={`${data.kpis.conversionRate}%`} icon={<TrendingUp size={18} />} />
+        <KpiCard title="Sesje" value={formatNumber(data.kpis.sessions)} icon={<Globe size={18} />}
+          change={pctChange(data.kpis.sessions, prevKpis?.sessions)} changeLabel={COMPARE_LABEL} />
+        <KpiCard title="Użytkownicy" value={formatNumber(data.kpis.users)} icon={<Users size={18} />}
+          change={pctChange(data.kpis.users, prevKpis?.users)} changeLabel={COMPARE_LABEL} />
+        <KpiCard title="Nowi użytkownicy" value={formatNumber(data.kpis.newUsers)} icon={<Users size={18} />}
+          change={pctChange(data.kpis.newUsers, prevKpis?.newUsers)} changeLabel={COMPARE_LABEL} />
+        <KpiCard title="Odsłony" value={formatNumber(data.kpis.pageviews)} icon={<Eye size={18} />}
+          change={pctChange(data.kpis.pageviews, prevKpis?.pageviews)} changeLabel={COMPARE_LABEL} />
+        <KpiCard title="Conv. Rate" value={`${data.kpis.conversionRate}%`} icon={<TrendingUp size={18} />}
+          change={pctChange(data.kpis.conversionRate, prevKpis?.conversionRate)} changeLabel={COMPARE_LABEL} />
       </div>
 
       {/* KPIs — Revenue & Ads */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
-        <KpiCard title="Revenue (GA4)" value={formatCurrency(data.kpis.revenue)} icon={<DollarSign size={18} />} changeLabel="wg. Google Analytics" />
-        <KpiCard title="Transakcje (GA4)" value={formatNumber(data.kpis.transactions)} icon={<ShoppingCart size={18} />} />
-        <KpiCard title="Google Ads Spend" value={formatCurrency(data.kpis.adCost)} icon={<DollarSign size={18} />} changeLabel="wydatki na reklamy Google" />
-        <KpiCard title="Ads Clicks" value={formatNumber(data.kpis.adClicks)} icon={<MousePointer size={18} />} />
-        <KpiCard title="Ads Impressions" value={formatNumber(data.kpis.adImpressions)} icon={<Eye size={18} />} />
+        <KpiCard title="Revenue (GA4)" value={formatCurrency(data.kpis.revenue)} icon={<DollarSign size={18} />}
+          change={pctChange(data.kpis.revenue, prevKpis?.revenue)} changeLabel={COMPARE_LABEL} />
+        <KpiCard title="Transakcje (GA4)" value={formatNumber(data.kpis.transactions)} icon={<ShoppingCart size={18} />}
+          change={pctChange(data.kpis.transactions, prevKpis?.transactions)} changeLabel={COMPARE_LABEL} />
+        <KpiCard title="Google Ads Spend" value={formatCurrency(data.kpis.adCost)} icon={<DollarSign size={18} />}
+          change={pctChange(data.kpis.adCost, prevKpis?.adCost)} changeLabel={COMPARE_LABEL} />
+        <KpiCard title="Ads Clicks" value={formatNumber(data.kpis.adClicks)} icon={<MousePointer size={18} />}
+          change={pctChange(data.kpis.adClicks, prevKpis?.adClicks)} changeLabel={COMPARE_LABEL} />
+        <KpiCard title="Ads Impressions" value={formatNumber(data.kpis.adImpressions)} icon={<Eye size={18} />}
+          change={pctChange(data.kpis.adImpressions, prevKpis?.adImpressions)} changeLabel={COMPARE_LABEL} />
       </div>
 
       {/* Sessions over time */}

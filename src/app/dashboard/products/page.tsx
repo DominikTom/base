@@ -7,6 +7,7 @@ import { SimpleBarChart } from '@/components/charts/bar-chart';
 import { SimplePieChart } from '@/components/charts/pie-chart';
 import { KpiCard } from '@/components/ui/kpi-card';
 import { formatNumber } from '@/lib/utils';
+import { previousPeriod, pctChange, COMPARE_LABEL } from '@/lib/period-compare';
 import { Package } from 'lucide-react';
 
 interface ProductsData {
@@ -23,22 +24,25 @@ interface ProductsData {
 export default function ProductsPage() {
   const { filters } = useDashboard();
   const [data, setData] = useState<ProductsData | null>(null);
+  const [prevData, setPrevData] = useState<ProductsData | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function fetchData() {
       setLoading(true);
       try {
-        const params = new URLSearchParams({
-          date_from: filters.dateFrom,
-          date_to: filters.dateTo,
-          shop: filters.shop,
-        });
-        const res = await fetch(`/api/dashboard/products?${params}`);
-        const json = await res.json();
-        setData(json);
+        const prev = previousPeriod(filters.dateFrom, filters.dateTo);
+        const mk = (df: string, dt: string) => new URLSearchParams({ date_from: df, date_to: dt, shop: filters.shop });
+        const [curRes, prevRes] = await Promise.all([
+          fetch(`/api/dashboard/products?${mk(filters.dateFrom, filters.dateTo)}`),
+          fetch(`/api/dashboard/products?${mk(prev.from, prev.to)}`),
+        ]);
+        const cur = await curRes.json();
+        const prv = prevRes.ok ? await prevRes.json() : null;
+        setData(cur);
+        setPrevData(prv);
       } catch {
-        setData(null);
+        setData(null); setPrevData(null);
       } finally {
         setLoading(false);
       }
@@ -71,6 +75,8 @@ export default function ProductsPage() {
           title="Unikalne produkty"
           value={formatNumber(data.totalProducts)}
           icon={<Package size={18} />}
+          change={pctChange(data.totalProducts, prevData?.totalProducts)}
+          changeLabel={COMPARE_LABEL}
         />
         <KpiCard
           title="Top produkt (wg ilości)"

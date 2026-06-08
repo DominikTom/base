@@ -1,8 +1,8 @@
 'use client';
 
-import { Calendar, Store, GitCompare } from 'lucide-react';
+import { Calendar, Store } from 'lucide-react';
 import { useDashboard } from '@/lib/dashboard-context';
-import type { Shop, CompareMode } from '@/types/database';
+import type { Shop } from '@/types/database';
 import { cn } from '@/lib/utils';
 
 // Pasek filtrów per-zakładka dashboardu. Pisze do tego samego DashboardContext
@@ -18,13 +18,6 @@ const SHOPS: { value: Shop; label: string }[] = [
   { value: 'showroom', label: 'Showroom' },
   { value: 'amazon.de', label: 'Amazon DE' },
   { value: 'allegro.pl', label: 'Allegro PL' },
-];
-
-const COMPARE_OPTIONS: { value: CompareMode; label: string }[] = [
-  { value: 'none', label: 'Bez porównania' },
-  { value: 'previous_period', label: 'Poprzedni okres' },
-  { value: 'mom', label: 'Miesiąc do miesiąca' },
-  { value: 'yoy', label: 'Rok do roku' },
 ];
 
 const PRESETS = [
@@ -57,7 +50,7 @@ function activePreset(dateFrom: string, dateTo: string): string | null {
 }
 
 export function LayoutFilterBar() {
-  const { filters, setDateRange, setShop, setCompare, applyPreset } = useDashboard();
+  const { filters, setDateRange, setShop, applyPreset } = useDashboard();
   const active = activePreset(filters.dateFrom, filters.dateTo);
 
   return (
@@ -114,17 +107,7 @@ export function LayoutFilterBar() {
         </select>
       </div>
 
-      {/* Compare */}
-      <div className="flex items-center gap-2">
-        <GitCompare size={14} className="text-muted" />
-        <select
-          value={filters.compare}
-          onChange={e => setCompare(e.target.value as CompareMode)}
-          className="px-3 py-1.5 text-sm rounded-pill bg-bg border border-line text-fg focus:outline-none focus:ring-2 focus:ring-primary-300"
-        >
-          {COMPARE_OPTIONS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-        </select>
-      </div>
+      {/* Compare dropdown usunięty — porównanie zawsze do poprzedniego okresu */}
     </div>
   );
 }

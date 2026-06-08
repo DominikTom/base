@@ -1,7 +1,7 @@
 'use client';
 
 import { useDashboard } from '@/lib/dashboard-context';
-import type { Shop, CompareMode } from '@/types/database';
+import type { Shop } from '@/types/database';
 
 const SHOPS: { value: Shop; label: string }[] = [
   { value: 'all', label: 'Wszystkie sklepy' },
@@ -11,13 +11,6 @@ const SHOPS: { value: Shop; label: string }[] = [
   { value: 'showroom', label: 'Showroom' },
   { value: 'amazon.de', label: 'Amazon DE' },
   { value: 'allegro.pl', label: 'Allegro PL' },
-];
-
-const COMPARE_OPTIONS: { value: CompareMode; label: string }[] = [
-  { value: 'none', label: 'Bez porównania' },
-  { value: 'previous_period', label: 'Poprzedni okres' },
-  { value: 'mom', label: 'Miesiąc do miesiąca' },
-  { value: 'yoy', label: 'Rok do roku' },
 ];
 
 const PRESETS = [
@@ -30,7 +23,7 @@ const PRESETS = [
 ];
 
 export function Topbar() {
-  const { filters, setDateRange, setShop, setCompare, applyPreset } = useDashboard();
+  const { filters, setDateRange, setShop, applyPreset } = useDashboard();
 
   return (
     <header className="sticky top-0 z-30 min-h-16 bg-bg/80 backdrop-blur border-b border-line flex flex-wrap items-center gap-x-4 gap-y-2 px-6 py-2.5">
@@ -75,16 +68,7 @@ export function Topbar() {
         ))}
       </select>
 
-      {/* Compare selector */}
-      <select
-        value={filters.compare}
-        onChange={e => setCompare(e.target.value as CompareMode)}
-        className="px-3 py-1.5 text-sm rounded-pill bg-surface border border-line text-fg focus:outline-none focus:ring-2 focus:ring-primary-300 shadow-card"
-      >
-        {COMPARE_OPTIONS.map(c => (
-          <option key={c.value} value={c.value}>{c.label}</option>
-        ))}
-      </select>
+      {/* Compare selector usunięty — porównanie zawsze do poprzedniego okresu */}
     </header>
   );
 }

@@ -8,6 +8,7 @@ import { SimpleBarChart } from '@/components/charts/bar-chart';
 import { SimplePieChart } from '@/components/charts/pie-chart';
 import { DataTable, type Column } from '@/components/ui/data-table';
 import { formatCurrency, formatNumber, cn } from '@/lib/utils';
+import { previousPeriod, pctChange, COMPARE_LABEL } from '@/lib/period-compare';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import {
   DollarSign, Target, TrendingUp, MousePointerClick, Eye, Percent,
@@ -129,21 +130,24 @@ export default function MarketingPage() {
 function MetaTab() {
   const { filters } = useDashboard();
   const [data, setData] = useState<MetaMarketingData | null>(null);
+  const [prevKpis, setPrevKpis] = useState<MetaMarketingData['kpis'] | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function fetchData() {
       setLoading(true);
       try {
-        const params = new URLSearchParams({
-          date_from: filters.dateFrom,
-          date_to: filters.dateTo,
-          shop: filters.shop,
-        });
-        const res = await fetch(`/api/dashboard/marketing?${params}`);
-        const json = await res.json();
-        setData(json);
-      } catch { setData(null); } finally { setLoading(false); }
+        const prev = previousPeriod(filters.dateFrom, filters.dateTo);
+        const mk = (df: string, dt: string) => new URLSearchParams({ date_from: df, date_to: dt, shop: filters.shop });
+        const [curRes, prevRes] = await Promise.all([
+          fetch(`/api/dashboard/marketing?${mk(filters.dateFrom, filters.dateTo)}`),
+          fetch(`/api/dashboard/marketing?${mk(prev.from, prev.to)}`),
+        ]);
+        const cur = await curRes.json();
+        const prv = prevRes.ok ? await prevRes.json() : null;
+        setData(cur);
+        setPrevKpis(prv?.kpis ?? null);
+      } catch { setData(null); setPrevKpis(null); } finally { setLoading(false); }
     }
     fetchData();
   }, [filters]);
@@ -191,18 +195,27 @@ function MetaTab() {
             ? `≈ ${formatNumber(data.kpis.totalSpendOriginal)} ${data.kpis.originalCurrency}`
             : undefined}
           icon={<DollarSign size={18} />}
+          change={pctChange(data.kpis.totalSpend, prevKpis?.totalSpend)}
+          changeLabel={COMPARE_LABEL}
         />
         <KpiCard
           title="Meta Revenue"
           value={formatCurrency(data.kpis.totalConversionValue)}
           subLabel="conversion_value (Meta-reported)"
           icon={<TrendingUp size={18} />}
+          change={pctChange(data.kpis.totalConversionValue, prevKpis?.totalConversionValue)}
+          changeLabel={COMPARE_LABEL}
         />
-        <KpiCard title="Konwersje" value={formatNumber(data.kpis.totalConversions)} icon={<Target size={18} />} />
-        <KpiCard title="Blended ROAS" value={`${data.kpis.blendedRoas}x`} icon={<TrendingUp size={18} />} />
-        <KpiCard title="Avg CPC" value={`${data.kpis.avgCpc.toFixed(2)} zł`} icon={<MousePointerClick size={18} />} />
-        <KpiCard title="Avg CPM" value={`${data.kpis.avgCpm.toFixed(2)} zł`} icon={<Eye size={18} />} />
-        <KpiCard title="Avg CTR" value={`${data.kpis.avgCtr.toFixed(2)}%`} icon={<Percent size={18} />} />
+        <KpiCard title="Konwersje" value={formatNumber(data.kpis.totalConversions)} icon={<Target size={18} />}
+          change={pctChange(data.kpis.totalConversions, prevKpis?.totalConversions)} changeLabel={COMPARE_LABEL} />
+        <KpiCard title="Blended ROAS" value={`${data.kpis.blendedRoas}x`} icon={<TrendingUp size={18} />}
+          change={pctChange(data.kpis.blendedRoas, prevKpis?.blendedRoas)} changeLabel={COMPARE_LABEL} />
+        <KpiCard title="Avg CPC" value={`${data.kpis.avgCpc.toFixed(2)} zł`} icon={<MousePointerClick size={18} />}
+          change={pctChange(data.kpis.avgCpc, prevKpis?.avgCpc)} changeLabel={COMPARE_LABEL} />
+        <KpiCard title="Avg CPM" value={`${data.kpis.avgCpm.toFixed(2)} zł`} icon={<Eye size={18} />}
+          change={pctChange(data.kpis.avgCpm, prevKpis?.avgCpm)} changeLabel={COMPARE_LABEL} />
+        <KpiCard title="Avg CTR" value={`${data.kpis.avgCtr.toFixed(2)}%`} icon={<Percent size={18} />}
+          change={pctChange(data.kpis.avgCtr, prevKpis?.avgCtr)} changeLabel={COMPARE_LABEL} />
       </div>
 
       <ChartCard title="Spend vs Revenue" subtitle="Dual-axis line chart">
@@ -235,12 +248,19 @@ function MetaTab() {
 function GoogleAdsTab() {
   const { filters } = useDashboard();
   const [data, setData] = useState<GoogleAdsData | null>(null);
+  const [prevKpis, setPrevKpis] = useState<GoogleAdsData['kpis'] | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function fetchData() {
       setLoading(true);
       try {
+        const prev = previousPeriod(filters.dateFrom, filters.dateTo);
+        const mk = (df: string, dt: string) => new URLSearchParams({ date_from: df, date_to: dt, shop: filters.shop });
+        const [prevRes] = await Promise.all([
+          fetch(`/api/dashboard/marketing/google?${mk(prev.from, prev.to)}`).then(r => r.ok ? r.json() : null).catch(() => null),
+        ]);
+        setPrevKpis(prevRes?.kpis ?? null);
         const params = new URLSearchParams({
           date_from: filters.dateFrom,
           date_to: filters.dateTo,
@@ -301,18 +321,26 @@ function GoogleAdsTab() {
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-4">
-        <KpiCard title="Total Spend" value={formatCurrency(data.kpis.totalSpend)} icon={<DollarSign size={18} />} />
+        <KpiCard title="Total Spend" value={formatCurrency(data.kpis.totalSpend)} icon={<DollarSign size={18} />}
+          change={pctChange(data.kpis.totalSpend, prevKpis?.totalSpend)} changeLabel={COMPARE_LABEL} />
         <KpiCard
           title="Google Revenue"
           value={formatCurrency(data.kpis.totalRevenue)}
           subLabel="ga_revenue (GA4 last-click)"
           icon={<TrendingUp size={18} />}
+          change={pctChange(data.kpis.totalRevenue, prevKpis?.totalRevenue)}
+          changeLabel={COMPARE_LABEL}
         />
-        <KpiCard title="Transakcje" value={formatNumber(data.kpis.totalTransactions)} icon={<ShoppingCart size={18} />} />
-        <KpiCard title="Blended ROAS" value={`${data.kpis.blendedRoas}x`} icon={<TrendingUp size={18} />} />
-        <KpiCard title="Avg CPC" value={`${data.kpis.avgCpc.toFixed(2)} zł`} icon={<MousePointerClick size={18} />} />
-        <KpiCard title="Conv. Rate" value={`${data.kpis.convRate.toFixed(2)}%`} icon={<Percent size={18} />} />
-        <KpiCard title="Avg CTR" value={`${data.kpis.avgCtr.toFixed(2)}%`} icon={<Eye size={18} />} />
+        <KpiCard title="Transakcje" value={formatNumber(data.kpis.totalTransactions)} icon={<ShoppingCart size={18} />}
+          change={pctChange(data.kpis.totalTransactions, prevKpis?.totalTransactions)} changeLabel={COMPARE_LABEL} />
+        <KpiCard title="Blended ROAS" value={`${data.kpis.blendedRoas}x`} icon={<TrendingUp size={18} />}
+          change={pctChange(data.kpis.blendedRoas, prevKpis?.blendedRoas)} changeLabel={COMPARE_LABEL} />
+        <KpiCard title="Avg CPC" value={`${data.kpis.avgCpc.toFixed(2)} zł`} icon={<MousePointerClick size={18} />}
+          change={pctChange(data.kpis.avgCpc, prevKpis?.avgCpc)} changeLabel={COMPARE_LABEL} />
+        <KpiCard title="Conv. Rate" value={`${data.kpis.convRate.toFixed(2)}%`} icon={<Percent size={18} />}
+          change={pctChange(data.kpis.convRate, prevKpis?.convRate)} changeLabel={COMPARE_LABEL} />
+        <KpiCard title="Avg CTR" value={`${data.kpis.avgCtr.toFixed(2)}%`} icon={<Eye size={18} />}
+          change={pctChange(data.kpis.avgCtr, prevKpis?.avgCtr)} changeLabel={COMPARE_LABEL} />
       </div>
 
       <ChartCard title="Spend vs Revenue" subtitle="Dual-axis line chart">
