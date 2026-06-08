@@ -18,6 +18,28 @@ const PIVOT_ROW_DIMS = new Set([
   'supplier', 'status', 'delivery_city', 'coupon_code',
 ]);
 
+// PostgREST domyślnie tnie response do 1000 wierszy — `.limit(N)` tego nie
+// omija. Wszystkie zapytania pivota muszą iść przez range-pagination, inaczej
+// dla okresów z >1000 zamówień/wierszy spend dane są zaniżone (~66% dla
+// mybed.pl na pełnym miesiącu).
+const PAGE = 1000;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function fetchAll<T = any>(buildQuery: () => any): Promise<T[]> {
+  const out: T[] = [];
+  let offset = 0;
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    const q = buildQuery().range(offset, offset + PAGE - 1);
+    const { data, error } = await q;
+    if (error) throw new Error(error.message);
+    if (!data || data.length === 0) break;
+    out.push(...(data as T[]));
+    if (data.length < PAGE) break;
+    offset += PAGE;
+  }
+  return out;
+}
+
 // Granulacja ma sens tylko dla wymiaru 'date'.
 type Granularity = 'day' | 'week' | 'month' | 'quarter';
 
@@ -221,15 +243,16 @@ function ensureRow(
 // ── Dataset: orders (fact_orders) ─────────────────────────────────
 async function runOrders(input: PivotInput): Promise<[Record<string, Record<string, number>>, Record<string, string[]>]> {
   const db = getSupabaseAdmin();
-  let q = db.from('fact_orders')
-    .select('order_id, order_date, source_shop, source_platform, supplier, status, delivery_city, coupon_code, total_gross_pln, shipping_cost_pln, is_paid')
-    .gte('order_date', input.date_from)
-    .lte('order_date', input.date_to + 'T23:59:59');
-  if (input.filters?.shop?.length) q = q.in('source_shop', input.filters.shop);
-  q = applySbFilters(q as never, input.filters_advanced as ExplorerFilter[],
-    ['source_shop', 'source_platform', 'supplier', 'status', 'delivery_city', 'coupon_code', 'total_gross_pln']);
-  const { data, error } = await q.limit(50000);
-  if (error) throw new Error(error.message);
+  const data = await fetchAll(() => {
+    let q = db.from('fact_orders')
+      .select('order_id, order_date, source_shop, source_platform, supplier, status, delivery_city, coupon_code, total_gross_pln, shipping_cost_pln, is_paid')
+      .gte('order_date', input.date_from)
+      .lte('order_date', input.date_to + 'T23:59:59');
+    if (input.filters?.shop?.length) q = q.in('source_shop', input.filters.shop);
+    q = applySbFilters(q as never, input.filters_advanced as ExplorerFilter[],
+      ['source_shop', 'source_platform', 'supplier', 'status', 'delivery_city', 'coupon_code', 'total_gross_pln']);
+    return q;
+  });
 
   const acc = { rowsByKey: {} as Record<string, Record<string, number>>, dimsForKey: {} as Record<string, string[]> };
 
@@ -285,19 +308,23 @@ async function runOrders(input: PivotInput): Promise<[Record<string, Record<stri
 async function runMeta(input: PivotInput): Promise<[Record<string, Record<string, number>>, Record<string, string[]>]> {
   const db = getSupabaseAdmin();
   const needsCampaign = input.row_dims.includes('campaign');
-  let q = needsCampaign
-    ? db.from('fact_daily_adspend').select('date, account_id, spend, conversion_value, impressions, clicks, conversions, campaign_name, campaign_id')
-    : db.from('fact_daily_adspend').select('date, account_id, spend, conversion_value, impressions, clicks, conversions');
-  q = q.eq('platform', 'meta').gte('date', input.date_from).lte('date', input.date_to);
+
+  let accts: string[] | null = null;
   if (input.filters?.shop?.length) {
-    const accts = Object.entries(META_ACCOUNT_TO_SHOP)
+    accts = Object.entries(META_ACCOUNT_TO_SHOP)
       .filter(([, shop]) => input.filters!.shop!.includes(shop))
       .map(([id]) => id);
-    if (accts.length) q = q.in('account_id', accts);
-    else return [{}, {}];
+    if (accts.length === 0) return [{}, {}];
   }
-  const { data, error } = await q.limit(50000);
-  if (error) throw new Error(error.message);
+
+  const data = await fetchAll(() => {
+    let q = needsCampaign
+      ? db.from('fact_daily_adspend').select('date, account_id, spend, conversion_value, impressions, clicks, conversions, campaign_name, campaign_id')
+      : db.from('fact_daily_adspend').select('date, account_id, spend, conversion_value, impressions, clicks, conversions');
+    q = q.eq('platform', 'meta').gte('date', input.date_from).lte('date', input.date_to);
+    if (accts) q = q.in('account_id', accts);
+    return q;
+  });
 
   const acc = { rowsByKey: {} as Record<string, Record<string, number>>, dimsForKey: {} as Record<string, string[]> };
 
@@ -337,16 +364,18 @@ async function runMeta(input: PivotInput): Promise<[Record<string, Record<string
 async function runTraffic(input: PivotInput): Promise<[Record<string, Record<string, number>>, Record<string, string[]>]> {
   const db = getSupabaseAdmin();
   const needsCampaign = input.row_dims.includes('campaign');
-  let q = needsCampaign
-    ? db.from('fact_daily_traffic').select('date, hostname, sessions, users, transactions, ga_revenue, pageviews, ad_cost, campaign')
-    : db.from('fact_daily_traffic').select('date, hostname, sessions, users, transactions, ga_revenue, pageviews, ad_cost');
-  q = q.gte('date', input.date_from).lte('date', input.date_to);
-  q = needsCampaign
-    ? q.eq('source', 'google').eq('medium', 'cpc')
-    : q.eq('source', '__total__');
-  if (input.filters?.shop?.length) q = q.in('hostname', input.filters.shop);
-  const { data, error } = await q.limit(50000);
-  if (error) throw new Error(error.message);
+
+  const data = await fetchAll(() => {
+    let q = needsCampaign
+      ? db.from('fact_daily_traffic').select('date, hostname, sessions, users, transactions, ga_revenue, pageviews, ad_cost, campaign')
+      : db.from('fact_daily_traffic').select('date, hostname, sessions, users, transactions, ga_revenue, pageviews, ad_cost');
+    q = q.gte('date', input.date_from).lte('date', input.date_to);
+    q = needsCampaign
+      ? q.eq('source', 'google').eq('medium', 'cpc')
+      : q.eq('source', '__total__');
+    if (input.filters?.shop?.length) q = q.in('hostname', input.filters.shop);
+    return q;
+  });
 
   // EUR→PLN dla mybed.de.
   const rates = await fetchEurRatesByDate(db, input.date_from, input.date_to);
@@ -383,15 +412,16 @@ async function runTraffic(input: PivotInput): Promise<[Record<string, Record<str
 // ── Dataset: agency (fact_agency_costs) ───────────────────────────
 async function runAgency(input: PivotInput): Promise<[Record<string, Record<string, number>>, Record<string, string[]>]> {
   const db = getSupabaseAdmin();
-  let q = db.from('fact_agency_costs')
-    .select('month, agency_name, service_type, amount_pln, source_shop, platform')
-    .gte('month', input.date_from)
-    .lte('month', input.date_to);
-  q = applySbFilters(q as never, input.filters_advanced as ExplorerFilter[],
-    ['source_shop', 'platform', 'service_type']);
-  if (input.filters?.shop?.length) q = q.in('source_shop', input.filters.shop);
-  const { data, error } = await q.limit(5000);
-  if (error) throw new Error(error.message);
+  const data = await fetchAll(() => {
+    let q = db.from('fact_agency_costs')
+      .select('month, agency_name, service_type, amount_pln, source_shop, platform')
+      .gte('month', input.date_from)
+      .lte('month', input.date_to);
+    q = applySbFilters(q as never, input.filters_advanced as ExplorerFilter[],
+      ['source_shop', 'platform', 'service_type']);
+    if (input.filters?.shop?.length) q = q.in('source_shop', input.filters.shop);
+    return q;
+  });
 
   const acc = { rowsByKey: {} as Record<string, Record<string, number>>, dimsForKey: {} as Record<string, string[]> };
 
