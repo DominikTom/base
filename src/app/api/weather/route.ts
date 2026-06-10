@@ -113,9 +113,17 @@ export async function GET(request: NextRequest) {
       const wArr = weatherByDate[date];
       const w = wArr && wArr.length > 0 ? wArr.reduce((s, v) => s + v, 0) / wArr.length : null;
       const s = salesByDate[date] || { revenue: 0, orders: 0 };
+      const wf = weatherFull[date];
+      const round1 = (v: number | null | undefined) => (typeof v === 'number' ? Math.round(v * 10) / 10 : null);
       return {
         date,
         weather: w,
+        // Wszystkie metryki pogody — frontend może nakładać kilka linii naraz.
+        temp_max: round1(wf?.temp_max),
+        temp_mean: round1(wf?.temp_mean),
+        precip_mm: round1(wf?.precip_mm),
+        sunshine_h: round1(wf?.sunshine_h),
+        wind_max: round1(wf?.wind_max),
         revenue: Math.round(s.revenue),
         orders: s.orders,
       };

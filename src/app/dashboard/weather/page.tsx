@@ -24,7 +24,17 @@ interface WeatherResponse {
   from: string; to: string;
   metric: WeatherMetricKey;
   y: 'revenue' | 'orders';
-  series: Array<{ date: string; weather: number | null; revenue: number; orders: number }>;
+  series: Array<{
+    date: string;
+    weather: number | null;
+    temp_max: number | null;
+    temp_mean: number | null;
+    precip_mm: number | null;
+    sunshine_h: number | null;
+    wind_max: number | null;
+    revenue: number;
+    orders: number;
+  }>;
   stats: {
     weatherMean: number | null;
     weatherMin: number | null;
@@ -43,6 +53,17 @@ interface WeatherResponse {
   error?: string;
 }
 
+// Nakładki pogodowe na główny wykres — każdą można włączyć/wyłączyć
+// niezależnie. Kolory celowo SPOZA fioletu (fiolet = sprzedaż/bary).
+const OVERLAYS = [
+  { key: 'precip_mm',  label: 'Opady',           unit: 'mm',   color: '#2563EB' },  // niebieski — woda
+  { key: 'temp_max',   label: 'Temp. max',       unit: '°C',   color: '#E11D48' },  // czerwony — ciepło
+  { key: 'temp_mean',  label: 'Temp. średnia',   unit: '°C',   color: '#F97316' },  // pomarańcz
+  { key: 'sunshine_h', label: 'Nasłonecznienie', unit: 'h',    color: '#EAB308' },  // żółty — słońce
+  { key: 'wind_max',   label: 'Wiatr',           unit: 'km/h', color: '#64748B' },  // szary
+] as const;
+type OverlayKey = typeof OVERLAYS[number]['key'];
+
 function correlationLabel(r: number): { label: string; color: string } {
   const abs = Math.abs(r);
   if (abs >= 0.7) return { label: 'silna', color: r > 0 ? 'text-success' : 'text-danger' };
@@ -55,6 +76,15 @@ export default function WeatherPage() {
   const { filters } = useDashboard();
   const [metric, setMetric] = useState<WeatherMetricKey>('temp_mean');
   const [yAxis, setYAxis] = useState<'revenue' | 'orders'>('revenue');
+  // Aktywne nakładki na głównym wykresie (multi-select).
+  const [overlays, setOverlays] = useState<Set<OverlayKey>>(new Set(['precip_mm', 'temp_max', 'sunshine_h']));
+  function toggleOverlay(k: OverlayKey) {
+    setOverlays(prev => {
+      const next = new Set(prev);
+      if (next.has(k)) next.delete(k); else next.add(k);
+      return next;
+    });
+  }
   const [data, setData] = useState<WeatherResponse | null>(null);
   const [loading, setLoading] = useState(true);
   // Sync może wykonać tylko admin (server-side guard w /api/jobs/sync-weather).
@@ -221,20 +251,61 @@ export default function WeatherPage() {
             </ChartCard>
           )}
 
-          {/* Dual-axis: weather + sales */}
-          <ChartCard title={`${m.label} vs ${yLabel} (dziennie)`} subtitle={`${data.from} → ${data.to}`}>
-            <ResponsiveContainer width="100%" height={360}>
+          {/* Multi-overlay: pogoda (linie) + sprzedaż (bary) */}
+          <ChartCard
+            title={`Pogoda vs ${yLabel} (dziennie)`}
+            subtitle={`${data.from} → ${data.to} · kliknij pillę żeby włączyć/wyłączyć nakładkę`}
+            action={
+              <div className="flex flex-wrap items-center gap-1.5">
+                {OVERLAYS.map(o => {
+                  const active = overlays.has(o.key);
+                  return (
+                    <button
+                      key={o.key}
+                      onClick={() => toggleOverlay(o.key)}
+                      className={`flex items-center gap-1.5 px-2.5 py-1 rounded-pill text-[11px] font-medium border transition-colors ${
+                        active
+                          ? 'border-transparent text-white'
+                          : 'border-line bg-bg text-muted hover:text-fg-soft'
+                      }`}
+                      style={active ? { backgroundColor: o.color } : undefined}
+                    >
+                      <span
+                        className="w-2 h-2 rounded-full shrink-0"
+                        style={{ backgroundColor: active ? '#ffffff' : o.color }}
+                      />
+                      {o.label}
+                    </button>
+                  );
+                })}
+              </div>
+            }
+          >
+            <ResponsiveContainer width="100%" height={380}>
               <ComposedChart data={data.series} margin={{ top: 10, right: 10, bottom: 10, left: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#EAEBE8" />
                 <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#8B908C' }} tickLine={false} />
+                {/* Lewa oś wspólna dla nakładek pogodowych — wielkości (°C, mm, h)
+                    są w podobnym przedziale 0-30, więc jedna skala wystarcza. */}
                 <YAxis yAxisId="left" tick={{ fontSize: 11, fill: '#8B908C' }} tickLine={false} axisLine={false}
-                  label={{ value: m.label + ` (${m.unit})`, angle: -90, position: 'insideLeft', style: { fontSize: 11, fill: '#8B908C' } }} />
+                  label={{ value: 'Pogoda (°C / mm / h)', angle: -90, position: 'insideLeft', style: { fontSize: 11, fill: '#8B908C' } }} />
                 <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11, fill: '#8B908C' }} tickLine={false} axisLine={false}
                   label={{ value: yLabel, angle: 90, position: 'insideRight', style: { fontSize: 11, fill: '#8B908C' } }} />
                 <Tooltip contentStyle={{ backgroundColor: '#FFFFFF', border: '1px solid #ECEDEB', borderRadius: '12px', fontSize: '12px', boxShadow: '0 4px 24px rgba(0,0,0,0.04)' }} />
                 <Legend wrapperStyle={{ fontSize: 12 }} iconType="circle" />
-                <Bar  yAxisId="right" dataKey={yAxis} name={yLabel} fill="#9333EA" fillOpacity={0.85} radius={[4, 4, 0, 0]} />
-                <Line yAxisId="left"  dataKey="weather" name={m.label} stroke="#0F1310" strokeWidth={2.5} dot={false} />
+                <Bar yAxisId="right" dataKey={yAxis} name={yLabel} fill="#9333EA" fillOpacity={0.55} radius={[4, 4, 0, 0]} />
+                {OVERLAYS.filter(o => overlays.has(o.key)).map(o => (
+                  <Line
+                    key={o.key}
+                    yAxisId="left"
+                    dataKey={o.key}
+                    name={`${o.label} (${o.unit})`}
+                    stroke={o.color}
+                    strokeWidth={2}
+                    dot={false}
+                    connectNulls
+                  />
+                ))}
               </ComposedChart>
             </ResponsiveContainer>
           </ChartCard>
