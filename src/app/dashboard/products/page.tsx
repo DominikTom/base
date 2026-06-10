@@ -137,9 +137,10 @@ export default function ProductsPage() {
 // ─────────────────────────────────────────────────────────────────
 interface AttachStats {
   orders: number;
-  withMattress: number;
+  withMattressItem: number;     // nowy konfigurator: materac jako osobna pozycja
+  withMattressVariant: number;  // stary konfigurator: materac jako wariant łóżka
   withoutMattress: number;
-  attachRate: number;
+  attachRate: number;           // (item + variant) / orders
 }
 interface AttachModelRow extends AttachStats { model: string }
 interface AttachResponse {
@@ -221,12 +222,13 @@ function MattressAttachSection() {
           <div className="text-sm text-danger py-3">Błąd: {data?.error || 'brak danych'}</div>
         ) : (
           <>
-            {/* KPI */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {/* KPI — rozdzielamy oba konfiguratory: osobna pozycja (nowy) vs wariant (stary) */}
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
               <AttachKpi label="Zamówienia łóżek" value={formatNumber(totals?.orders ?? 0)} />
-              <AttachKpi label="Z materacem" value={formatNumber(totals?.withMattress ?? 0)} accent="text-success" />
+              <AttachKpi label="Materac — osobna poz." value={formatNumber(totals?.withMattressItem ?? 0)} accent="text-primary-700" />
+              <AttachKpi label="Materac — wariant" value={formatNumber(totals?.withMattressVariant ?? 0)} accent="text-success" />
               <AttachKpi label="Bez materaca" value={formatNumber(totals?.withoutMattress ?? 0)} accent="text-muted" />
-              <AttachKpi label="Attach rate" value={`${(totals?.attachRate ?? 0).toFixed(1)}%`} accent="text-primary-700" />
+              <AttachKpi label="Attach rate (łącznie)" value={`${(totals?.attachRate ?? 0).toFixed(1)}%`} accent="text-fg" />
             </div>
 
             {/* Tabela per model */}
@@ -236,7 +238,8 @@ function MattressAttachSection() {
                   <tr className="text-fg-soft">
                     <th className="px-3 py-2 text-left font-medium">Model</th>
                     <th className="px-3 py-2 text-right font-medium">Zamówienia</th>
-                    <th className="px-3 py-2 text-right font-medium">Z materacem</th>
+                    <th className="px-3 py-2 text-right font-medium">Osobna poz.</th>
+                    <th className="px-3 py-2 text-right font-medium">Wariant</th>
                     <th className="px-3 py-2 text-right font-medium">Bez</th>
                     <th className="px-3 py-2 text-right font-medium">Attach %</th>
                     <th className="px-3 py-2 w-32"></th>
@@ -247,7 +250,8 @@ function MattressAttachSection() {
                     <tr key={row.model} className="border-t border-line hover:bg-bg">
                       <td className="px-3 py-1.5 text-fg-soft">{row.model}</td>
                       <td className="px-3 py-1.5 text-right text-fg tabular-nums">{formatNumber(row.orders)}</td>
-                      <td className="px-3 py-1.5 text-right text-success tabular-nums">{formatNumber(row.withMattress)}</td>
+                      <td className="px-3 py-1.5 text-right text-primary-700 tabular-nums">{formatNumber(row.withMattressItem)}</td>
+                      <td className="px-3 py-1.5 text-right text-success tabular-nums">{formatNumber(row.withMattressVariant)}</td>
                       <td className="px-3 py-1.5 text-right text-muted tabular-nums">{formatNumber(row.withoutMattress)}</td>
                       <td className="px-3 py-1.5 text-right font-semibold text-fg tabular-nums">{row.attachRate.toFixed(1)}%</td>
                       <td className="px-3 py-1.5">

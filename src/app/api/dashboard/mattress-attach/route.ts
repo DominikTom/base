@@ -4,16 +4,28 @@ import { getSupabaseAdmin } from '@/lib/supabase';
 // ─────────────────────────────────────────────────────────────────────
 // /api/dashboard/mattress-attach — attach rate materacy przy łóżkach.
 //
-//   Nowy konfigurator dodaje materac jako OSOBNĄ pozycję zamówienia.
-//   Liczymy: dla zamówień zawierających wybrane modele łóżek — ile z nich
-//   ma w tym samym zamówieniu pozycję z product_category='materac'.
+//   DWA konfiguratory, dwa sygnały „z materacem":
+//   - NOWY: materac jako OSOBNA pozycja zamówienia (category='materac').
+//   - STARY: materac jako WARIANT łóżka — mattress_type na pozycji łóżka
+//     ('materacvisco', 'materacclassic'... = z materacem;
+//      'bezmateraca'/'ohnematratze'/'bez materaca'/null = bez).
+//
+//   Liczymy oba i raportujemy osobno — widać też który model już
+//   przeszedł na nowy konfigurator (osobne pozycje > 0).
 //
 //   GET ?date_from&date_to&shop=mybed.pl|all&models=Łóżko+A,Łóżko+B
-//     models puste → analizujemy wszystkie łóżka (i zwracamy listę modeli
-//     do pickera, posortowaną po liczbie zamówień).
+//     models puste → wszystkie łóżka.
 // ─────────────────────────────────────────────────────────────────────
 
 const PAGE = 1000;
+
+// Wartości mattress_type oznaczające BRAK materaca w starym konfiguratorze.
+const NO_MATTRESS_VARIANTS = new Set(['bezmateraca', 'ohnematratze', 'bez materaca', '']);
+function variantHasMattress(mt: string | null | undefined): boolean {
+  if (mt == null) return false;
+  const norm = mt.trim().toLowerCase();
+  return norm.length > 0 && !NO_MATTRESS_VARIANTS.has(norm);
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -51,8 +63,8 @@ export async function GET(request: NextRequest) {
 
     // 2) Pozycje łóżek + materacy dla tych zamówień. Chunk po 500 order_ids,
     //    w środku range-pagination (zamówienie może mieć wiele pozycji).
-    const bedItems: Array<{ order_id: string; product_name: string }> = [];
-    const mattressOrders = new Set<string>();
+    const bedItems: Array<{ order_id: string; product_name: string; hasVariantMattress: boolean }> = [];
+    const mattressOrders = new Set<string>();   // osobna pozycja (nowy konfigurator)
     const CHUNK = 500;
     for (let i = 0; i < orderIds.length; i += CHUNK) {
       const chunk = orderIds.slice(i, i + CHUNK);
@@ -60,17 +72,21 @@ export async function GET(request: NextRequest) {
       // eslint-disable-next-line no-constant-condition
       while (true) {
         const { data, error } = await db.from('v_order_items')
-          .select('order_id, product_name, product_category')
+          .select('order_id, product_name, product_category, mattress_type')
           .in('order_id', chunk)
           .in('product_category', ['łóżko', 'materac'])
           .range(off, off + PAGE - 1);
         if (error) return NextResponse.json({ error: error.message }, { status: 500 });
         if (!data || data.length === 0) break;
-        for (const r of data as Array<{ order_id: string; product_name: string | null; product_category: string | null }>) {
+        for (const r of data as Array<{ order_id: string; product_name: string | null; product_category: string | null; mattress_type: string | null }>) {
           const oid = String(r.order_id);
           if (r.product_category === 'materac') mattressOrders.add(oid);
           else if (r.product_category === 'łóżko' && r.product_name) {
-            bedItems.push({ order_id: oid, product_name: r.product_name.trim() });
+            bedItems.push({
+              order_id: oid,
+              product_name: r.product_name.trim(),
+              hasVariantMattress: variantHasMattress(r.mattress_type),
+            });
           }
         }
         if (data.length < PAGE) break;
@@ -78,53 +94,81 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 3) Lista dostępnych modeli (do pickera) — wszystkie łóżka w zakresie,
-    //    sortowane po liczbie zamówień malejąco.
+    // 3) Agregacja per (model, zamówienie): zbiór zamówień + czy KTÓRAKOLWIEK
+    //    pozycja tego modelu w zamówieniu miała wariant z materacem.
     const ordersByModel = new Map<string, Set<string>>();
+    const variantByModelOrder = new Map<string, Set<string>>(); // model -> set order_id z wariantem
     for (const it of bedItems) {
       (ordersByModel.get(it.product_name) ?? ordersByModel.set(it.product_name, new Set()).get(it.product_name)!)
         .add(it.order_id);
+      if (it.hasVariantMattress) {
+        (variantByModelOrder.get(it.product_name) ?? variantByModelOrder.set(it.product_name, new Set()).get(it.product_name)!)
+          .add(it.order_id);
+      }
     }
     const availableModels = [...ordersByModel.entries()]
       .map(([name, orders]) => ({ name, orders: orders.size }))
       .sort((a, b) => b.orders - a.orders);
 
     // 4) Analiza — wybrane modele (lub wszystkie gdy brak selekcji).
+    //    Klasyfikacja per zamówienie (precedencja: osobna pozycja > wariant > bez):
+    //    - withItem:    osobna pozycja materaca w zamówieniu (nowy konfigurator)
+    //    - withVariant: pozycja łóżka miała mattress_type z materacem (stary)
+    //    - without:     żadne z powyższych
     const analyzeModels = selectedModels.length > 0
       ? selectedModels
       : availableModels.map(m => m.name);
+
+    function classify(name: string, oid: string): 'item' | 'variant' | 'none' {
+      if (mattressOrders.has(oid)) return 'item';
+      if (variantByModelOrder.get(name)?.has(oid)) return 'variant';
+      return 'none';
+    }
 
     const perModel = analyzeModels
       .filter(name => ordersByModel.has(name))
       .map(name => {
         const orders = ordersByModel.get(name)!;
-        let withMattress = 0;
-        for (const oid of orders) if (mattressOrders.has(oid)) withMattress++;
+        let withItem = 0, withVariant = 0;
+        for (const oid of orders) {
+          const c = classify(name, oid);
+          if (c === 'item') withItem++;
+          else if (c === 'variant') withVariant++;
+        }
         const total = orders.size;
+        const withAny = withItem + withVariant;
         return {
           model: name,
           orders: total,
-          withMattress,
-          withoutMattress: total - withMattress,
-          attachRate: total > 0 ? Math.round((withMattress / total) * 1000) / 10 : 0,
+          withMattressItem: withItem,
+          withMattressVariant: withVariant,
+          withoutMattress: total - withAny,
+          attachRate: total > 0 ? Math.round((withAny / total) * 1000) / 10 : 0,
         };
       })
       .sort((a, b) => b.orders - a.orders);
 
-    // Totals — po UNIKALNYCH zamówieniach (zamówienie z 2 modelami liczy się raz)
+    // Totals — po UNIKALNYCH zamówieniach. Wariant per zamówienie = czy
+    // którykolwiek z analizowanych modeli w tym zamówieniu miał wariant.
     const allSelectedOrders = new Set<string>();
     for (const name of analyzeModels) {
       const orders = ordersByModel.get(name);
       if (orders) for (const oid of orders) allSelectedOrders.add(oid);
     }
-    let totWith = 0;
-    for (const oid of allSelectedOrders) if (mattressOrders.has(oid)) totWith++;
+    let totItem = 0, totVariant = 0;
+    for (const oid of allSelectedOrders) {
+      if (mattressOrders.has(oid)) { totItem++; continue; }
+      const hasVariant = analyzeModels.some(name => variantByModelOrder.get(name)?.has(oid));
+      if (hasVariant) totVariant++;
+    }
+    const totAny = totItem + totVariant;
     const totals = {
       orders: allSelectedOrders.size,
-      withMattress: totWith,
-      withoutMattress: allSelectedOrders.size - totWith,
+      withMattressItem: totItem,
+      withMattressVariant: totVariant,
+      withoutMattress: allSelectedOrders.size - totAny,
       attachRate: allSelectedOrders.size > 0
-        ? Math.round((totWith / allSelectedOrders.size) * 1000) / 10
+        ? Math.round((totAny / allSelectedOrders.size) * 1000) / 10
         : 0,
     };
 
@@ -136,5 +180,5 @@ export async function GET(request: NextRequest) {
 }
 
 function emptyTotals() {
-  return { orders: 0, withMattress: 0, withoutMattress: 0, attachRate: 0 };
+  return { orders: 0, withMattressItem: 0, withMattressVariant: 0, withoutMattress: 0, attachRate: 0 };
 }
