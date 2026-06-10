@@ -11,6 +11,14 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts';
 
+interface WeatherBucket {
+  label: string;
+  n: number;
+  avgIndex: number | null;
+  avgRevenue: number;
+  pctVsAvg: number | null;
+}
+
 interface WeatherResponse {
   shop: string;
   from: string; to: string;
@@ -24,6 +32,12 @@ interface WeatherResponse {
     totalRevenue: number;
     totalOrders: number;
     correlation: { r: number; n: number; valid: boolean };
+    correlationNormalized?: { r: number; n: number; valid: boolean };
+  };
+  buckets?: {
+    precip: WeatherBucket[];
+    sunshine: WeatherBucket[];
+    temp: WeatherBucket[];
   };
   locationKeys: string[];
   error?: string;
@@ -112,6 +126,10 @@ export default function WeatherPage() {
   const wFormat = (v: number) => `${v.toFixed(1)} ${m.unit}`;
   const r = data?.stats.correlation.r ?? 0;
   const corrLbl = correlationLabel(r);
+  // Korelacja odszumiona (po normalizacji dniem tygodnia) — to jest główny
+  // wskaźnik; surowy Pearson topi efekt pogody w sezonowości pon-niedz.
+  const rNorm = data?.stats.correlationNormalized?.r ?? null;
+  const corrNormLbl = rNorm != null ? correlationLabel(rNorm) : null;
   const scatterData = (data?.series || []).filter(s => s.weather != null).map(s => ({
     x: s.weather,
     y: yAxis === 'revenue' ? s.revenue : s.orders,
@@ -158,10 +176,12 @@ export default function WeatherPage() {
           {/* KPI */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <KpiTile
-              label="Korelacja Pearsona"
-              value={data.stats.correlation.valid ? r.toFixed(3) : '—'}
-              sub={data.stats.correlation.valid ? `${corrLbl.label} (${corrLbl.color === 'text-success' ? 'pozytywna' : corrLbl.color === 'text-danger' ? 'negatywna' : 'mieszana'})` : 'za mało danych'}
-              valueClassName={corrLbl.color}
+              label="Korelacja (bez sezonowości tyg.)"
+              value={rNorm != null && data.stats.correlationNormalized?.valid ? rNorm.toFixed(3) : '—'}
+              sub={corrNormLbl
+                ? `${corrNormLbl.label} · surowa: ${data.stats.correlation.valid ? r.toFixed(3) : '—'}`
+                : 'za mało danych'}
+              valueClassName={corrNormLbl?.color || corrLbl.color}
               icon={<Database size={16} />}
             />
             <KpiTile
@@ -185,6 +205,21 @@ export default function WeatherPage() {
               icon={<RefreshCw size={16} />}
             />
           </div>
+
+          {/* Analiza kubełkowa — średnia sprzedaż per typ pogody, znormalizowana
+              dniem tygodnia. Pokazuje nieliniowe efekty których Pearson nie łapie. */}
+          {data.buckets && (
+            <ChartCard
+              title="Sprzedaż wg typu pogody"
+              subtitle="Znormalizowane dniem tygodnia — % pokazuje o ile dzień z taką pogodą jest lepszy/gorszy niż typowy taki dzień tygodnia"
+            >
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <BucketGroup title="Opady" icon={<CloudRain size={15} />} buckets={data.buckets.precip} />
+                <BucketGroup title="Nasłonecznienie" icon={<Sun size={15} />} buckets={data.buckets.sunshine} />
+                <BucketGroup title="Temperatura" icon={<Thermometer size={15} />} buckets={data.buckets.temp} />
+              </div>
+            </ChartCard>
+          )}
 
           {/* Dual-axis: weather + sales */}
           <ChartCard title={`${m.label} vs ${yLabel} (dziennie)`} subtitle={`${data.from} → ${data.to}`}>
@@ -249,4 +284,52 @@ function iconForMetric(m: WeatherMetricKey): React.ReactNode {
   if (m === 'sunshine_h') return <Sun size={16} />;
   if (m === 'wind_max') return <Wind size={16} />;
   return <Thermometer size={16} />;
+}
+
+// Grupa kubełków jednej kategorii pogodowej (np. Opady: sucho/lekki/mocny).
+// Pasek = odchylenie od typowego dnia tygodnia; zieleń = lepiej, róż = gorzej.
+function BucketGroup({ title, icon, buckets }: { title: string; icon: React.ReactNode; buckets: WeatherBucket[] }) {
+  // Skala pasków: max |pct| w grupie (min 10 żeby drobne różnice nie wyglądały dramatycznie)
+  const maxAbs = Math.max(10, ...buckets.map(b => Math.abs(b.pctVsAvg ?? 0)));
+  return (
+    <div>
+      <div className="flex items-center gap-1.5 mb-3 text-xs font-semibold text-fg-soft uppercase tracking-wider">
+        {icon} {title}
+      </div>
+      <div className="space-y-2.5">
+        {buckets.map(b => {
+          const pct = b.pctVsAvg;
+          const noData = b.n === 0 || pct == null;
+          const positive = (pct ?? 0) >= 0;
+          const widthPct = noData ? 0 : Math.min(100, (Math.abs(pct!) / maxAbs) * 100);
+          return (
+            <div key={b.label}>
+              <div className="flex items-baseline justify-between gap-2 mb-1">
+                <span className="text-xs text-fg-soft truncate">{b.label}</span>
+                <span className={`text-xs font-semibold tabular-nums shrink-0 ${
+                  noData ? 'text-muted' : positive ? 'text-success' : 'text-danger'
+                }`}>
+                  {noData ? 'brak dni' : `${positive ? '+' : ''}${pct!.toFixed(1)}%`}
+                  {!noData && <span className="font-normal text-muted ml-1">({b.n} dni)</span>}
+                </span>
+              </div>
+              <div className="h-2 bg-bg rounded-pill overflow-hidden">
+                {!noData && (
+                  <div
+                    className={`h-full rounded-pill ${positive ? 'bg-green-400' : 'bg-rose-400'}`}
+                    style={{ width: `${widthPct}%` }}
+                  />
+                )}
+              </div>
+              {!noData && (
+                <div className="text-[10px] text-muted mt-0.5">
+                  śr. {formatCurrency(b.avgRevenue)}/dzień
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
 }

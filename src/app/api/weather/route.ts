@@ -34,23 +34,43 @@ export async function GET(request: NextRequest) {
       : [shopToLocationKey(shop)];
 
     // ── Pogoda ─────────────────────────────────────────────────────
+    // Ciągniemy WSZYSTKIE metryki (nie tylko wybraną) — bucket analysis
+    // potrzebuje temp/precip/sunshine niezależnie od tego co user ogląda.
     const { data: weatherData, error: wErr } = await db
       .from('weather_daily')
-      .select(`date, location_key, ${metric}`)
+      .select('date, location_key, temp_max, temp_min, temp_mean, precip_mm, sunshine_h, wind_max')
       .in('location_key', locationKeys)
       .gte('date', from)
       .lte('date', to)
       .order('date', { ascending: true });
     if (wErr) return NextResponse.json({ error: wErr.message }, { status: 500 });
 
-    // Średnia metryki per dzień (gdy wiele lokalizacji)
-    const weatherByDate: Record<string, number[]> = {};
+    // Średnia każdej metryki per dzień (gdy wiele lokalizacji)
+    type WeatherDay = { temp_max: number | null; temp_min: number | null; temp_mean: number | null; precip_mm: number | null; sunshine_h: number | null; wind_max: number | null };
+    const weatherAccum: Record<string, Record<string, number[]>> = {};
     for (const row of weatherData || []) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const v = (row as any)[metric];
-      if (typeof v !== 'number') continue;
-      const date = String((row as { date: string }).date);
-      (weatherByDate[date] ||= []).push(v);
+      const r = row as any;
+      const date = String(r.date);
+      if (!weatherAccum[date]) weatherAccum[date] = {};
+      for (const k of ['temp_max', 'temp_min', 'temp_mean', 'precip_mm', 'sunshine_h', 'wind_max']) {
+        const v = r[k];
+        if (typeof v === 'number') (weatherAccum[date][k] ||= []).push(v);
+      }
+    }
+    const weatherFull: Record<string, WeatherDay> = {};
+    const weatherByDate: Record<string, number[]> = {};
+    for (const [date, metrics] of Object.entries(weatherAccum)) {
+      const avg = (k: string) => {
+        const arr = metrics[k];
+        return arr && arr.length > 0 ? arr.reduce((s, v) => s + v, 0) / arr.length : null;
+      };
+      weatherFull[date] = {
+        temp_max: avg('temp_max'), temp_min: avg('temp_min'), temp_mean: avg('temp_mean'),
+        precip_mm: avg('precip_mm'), sunshine_h: avg('sunshine_h'), wind_max: avg('wind_max'),
+      };
+      const selected = avg(metric);
+      if (selected != null) weatherByDate[date] = [selected];
     }
     const weatherSeries: Array<{ date: string; weather: number }> = Object.entries(weatherByDate)
       .map(([date, vals]) => ({ date, weather: vals.reduce((s, v) => s + v, 0) / vals.length }))
@@ -101,7 +121,7 @@ export async function GET(request: NextRequest) {
       };
     });
 
-    // ── Korelacja ─────────────────────────────────────────────────
+    // ── Korelacja surowa ──────────────────────────────────────────
     const xs: number[] = [];
     const ys: number[] = [];
     for (const row of series) {
@@ -110,6 +130,89 @@ export async function GET(request: NextRequest) {
       ys.push(y === 'orders' ? row.orders : row.revenue);
     }
     const corr = pearson(xs, ys);
+
+    // ── Normalizacja po dniu tygodnia ─────────────────────────────
+    // Sprzedaż ma silną sezonowość tygodniową (pon ≠ sob), która zagłusza
+    // pogodę w surowym Pearsonie. Liczymy „indeks": revenue dnia podzielone
+    // przez średnią dla TEGO dnia tygodnia. Indeks 1.10 = dzień o 10% lepszy
+    // niż typowy taki dzień tygodnia. Korelacja pogody z indeksem pokazuje
+    // czysty efekt pogody.
+    const weekdaySum: Record<number, { sum: number; n: number }> = {};
+    for (const row of series) {
+      const dow = new Date(row.date).getDay();
+      const val = y === 'orders' ? row.orders : row.revenue;
+      (weekdaySum[dow] ||= { sum: 0, n: 0 });
+      weekdaySum[dow].sum += val;
+      weekdaySum[dow].n += 1;
+    }
+    const weekdayAvg: Record<number, number> = {};
+    for (const [dow, { sum, n }] of Object.entries(weekdaySum)) {
+      weekdayAvg[Number(dow)] = n > 0 ? sum / n : 0;
+    }
+    const indexByDate: Record<string, number> = {};
+    for (const row of series) {
+      const dow = new Date(row.date).getDay();
+      const avg = weekdayAvg[dow];
+      if (!avg || avg <= 0) continue;
+      const val = y === 'orders' ? row.orders : row.revenue;
+      indexByDate[row.date] = val / avg;
+    }
+
+    // Korelacja pogody z indeksem (odszumiona z sezonowości tygodniowej)
+    const nxs: number[] = [];
+    const nys: number[] = [];
+    for (const row of series) {
+      if (row.weather == null) continue;
+      const idx = indexByDate[row.date];
+      if (idx == null) continue;
+      nxs.push(row.weather);
+      nys.push(idx);
+    }
+    const corrNormalized = pearson(nxs, nys);
+
+    // ── Analiza kubełkowa ─────────────────────────────────────────
+    // Grupujemy dni po kategoriach pogodowych i liczymy średni indeks
+    // (weekday-normalized) per grupa. To łapie nieliniowe efekty których
+    // Pearson nie widzi (np. „deszcz = więcej zakupów online" niezależnie
+    // czy pada 2mm czy 12mm).
+    interface Bucket { label: string; n: number; avgIndex: number | null; avgRevenue: number; pctVsAvg: number | null }
+    function buildBuckets(groups: Array<{ label: string; match: (w: WeatherDay) => boolean }>): Bucket[] {
+      return groups.map(g => {
+        const days = series.filter(row => {
+          const w = weatherFull[row.date];
+          return w && g.match(w) && indexByDate[row.date] != null;
+        });
+        const n = days.length;
+        if (n === 0) return { label: g.label, n: 0, avgIndex: null, avgRevenue: 0, pctVsAvg: null };
+        const avgIndex = days.reduce((s, r) => s + indexByDate[r.date], 0) / n;
+        const avgRevenue = days.reduce((s, r) => s + r.revenue, 0) / n;
+        return {
+          label: g.label,
+          n,
+          avgIndex: Math.round(avgIndex * 1000) / 1000,
+          avgRevenue: Math.round(avgRevenue),
+          pctVsAvg: Math.round((avgIndex - 1) * 1000) / 10, // % vs typowy dzień tygodnia
+        };
+      });
+    }
+
+    const buckets = {
+      precip: buildBuckets([
+        { label: 'Sucho (≤1 mm)', match: w => (w.precip_mm ?? 0) <= 1 },
+        { label: 'Lekki deszcz (1–5 mm)', match: w => (w.precip_mm ?? 0) > 1 && (w.precip_mm ?? 0) <= 5 },
+        { label: 'Mocny deszcz (>5 mm)', match: w => (w.precip_mm ?? 0) > 5 },
+      ]),
+      sunshine: buildBuckets([
+        { label: 'Pochmurno (<3 h)', match: w => w.sunshine_h != null && w.sunshine_h < 3 },
+        { label: 'Przejściowo (3–7 h)', match: w => w.sunshine_h != null && w.sunshine_h >= 3 && w.sunshine_h < 7 },
+        { label: 'Słonecznie (≥7 h)', match: w => w.sunshine_h != null && w.sunshine_h >= 7 },
+      ]),
+      temp: buildBuckets([
+        { label: 'Zimno (<8°C)', match: w => w.temp_mean != null && w.temp_mean < 8 },
+        { label: 'Umiarkowanie (8–18°C)', match: w => w.temp_mean != null && w.temp_mean >= 8 && w.temp_mean < 18 },
+        { label: 'Ciepło (≥18°C)', match: w => w.temp_mean != null && w.temp_mean >= 18 },
+      ]),
+    };
 
     // ── KPI agregaty pogody ──────────────────────────────────────
     const wValues = series.filter(r => r.weather != null).map(r => r.weather as number);
@@ -129,7 +232,9 @@ export async function GET(request: NextRequest) {
         totalRevenue: Math.round(totalRevenue),
         totalOrders,
         correlation: corr,
+        correlationNormalized: corrNormalized,
       },
+      buckets,
       locationKeys,
       weatherSeries, // legacy compat
     });
