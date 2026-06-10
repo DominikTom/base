@@ -113,77 +113,84 @@ export async function GET(request: NextRequest) {
 
     const db = getSupabaseAdmin();
     const totalsPerLocation: Record<string, number> = {};
+    const errors: string[] = [];
 
     for (const loc of Object.values(WEATHER_LOCATIONS)) {
-      const allRows: UpsertRow[] = [];
+      try {
+        const allRows: UpsertRow[] = [];
 
-      // Nie nakładaj Archive i Forecast — wcześniejszy split miał overlap
-      // ~7 dni (Archive do today-7, Forecast past_days=14), co rzucało
-      // „ON CONFLICT DO UPDATE command cannot affect row a second time"
-      // gdy dedup zawiódł (np. różnice timezone w obu API).
-      //
-      //   Archive: [from .. today-15]    — dane historyczne, archive API
-      //   Forecast: [today-14 .. today]  — ostatnie 2 tyg., forecast API
-      //
-      // Granica today-15/today-14 → zero overlapu, brak duplikatów PK.
-      const archiveCutoff = new Date(today); archiveCutoff.setDate(today.getDate() - 15);
-      const archiveCutoffStr = fmt(archiveCutoff);
+        // Archive [from..today-15], Forecast [today-14..today] — zero overlap.
+        const archiveCutoff = new Date(today); archiveCutoff.setDate(today.getDate() - 15);
+        const archiveCutoffStr = fmt(archiveCutoff);
 
-      if (from <= archiveCutoffStr) {
-        const archiveEndStr = archiveCutoffStr < to ? archiveCutoffStr : to;
-        const j = await fetchArchive(loc, from, archiveEndStr);
-        allRows.push(...rowsFromResponse(j, loc.key));
-      }
+        if (from <= archiveCutoffStr) {
+          const archiveEndStr = archiveCutoffStr < to ? archiveCutoffStr : to;
+          const j = await fetchArchive(loc, from, archiveEndStr);
+          allRows.push(...rowsFromResponse(j, loc.key));
+        }
 
-      // Forecast ciągnie zawsze 14 dni wstecz — pokrywa lukę archive
-      // (Archive ma ~5 dni lagu) i daje świeże dane na dziś/jutro.
-      const j2 = await fetchForecast(loc, 14);
-      allRows.push(...rowsFromResponse(j2, loc.key));
+        const j2 = await fetchForecast(loc, 14);
+        allRows.push(...rowsFromResponse(j2, loc.key));
 
-      // Trim do zakresu from..to (forecast może dosłać poza zakres).
-      const filtered = allRows.filter(r => r.date >= from && r.date <= to);
+        // Trim do zakresu from..to + dedup po (date, location_key).
+        const filtered = allRows.filter(r => r.date >= from && r.date <= to);
+        const dedupMap = new Map<string, UpsertRow>();
+        for (const r of filtered) dedupMap.set(`${r.date}|${r.location_key}`, r);
+        const finalRows = [...dedupMap.values()];
 
-      // Dedup po (date, location_key) — belt-and-suspenders. Po split'cie
-      // overlapu nie powinno być, ale gdyby Open-Meteo coś zwróciło 2× to
-      // i tak złapiemy. Późniejszy push wygrywa (świeższe forecast).
-      const dedupMap = new Map<string, UpsertRow>();
-      for (const r of filtered) dedupMap.set(`${r.date}|${r.location_key}`, r);
-      const finalRows = [...dedupMap.values()];
+        if (finalRows.length === 0) {
+          totalsPerLocation[loc.key] = 0;
+          continue;
+        }
 
-      if (finalRows.length > 0) {
-        // DELETE okno forecast (ostatnie 14 dni) per lokalizacja, żeby
-        // świeże wartości forecast nadpisały starsze. Historyczne (poza
-        // tym oknem) zostają — i tak są niezmienne.
-        const forecastWindowStart = new Date(today);
-        forecastWindowStart.setDate(today.getDate() - 14);
-        const fwStartStr = fmt(forecastWindowStart);
-        await db.from('weather_daily')
+        // ─── DELETE + INSERT (bez upsert) ────────────────────────────
+        // Supabase-js 2.103.2 z `ignoreDuplicates: true` mimo wszystko
+        // generuje `ON CONFLICT DO UPDATE` (bug w libie), który wybucha
+        // gdy w batch'u są dwa rzędy z tym samym PK. Obchodzimy to
+        // czyszcząc cały zakres przed INSERT — wtedy żaden ON CONFLICT
+        // nie jest potrzebny, a Postgres nawet nie ma jak rzucić błędu
+        // „ON CONFLICT DO UPDATE cannot affect row a second time" (bo
+        // brak klauzuli ON CONFLICT).
+        //
+        // Dedup powyżej gwarantuje brak duplikatów PK w INSERT.
+
+        const dates = finalRows.map(r => r.date);
+        const minDate = dates.reduce((a, b) => (a < b ? a : b));
+        const maxDate = dates.reduce((a, b) => (a > b ? a : b));
+
+        const { error: delErr } = await db.from('weather_daily')
           .delete()
           .eq('location_key', loc.key)
-          .gte('date', fwStartStr);
+          .gte('date', minDate)
+          .lte('date', maxDate);
+        if (delErr) throw new Error(`DELETE ${loc.key}: ${delErr.message}`);
 
-        // INSERT z ON CONFLICT DO NOTHING (ignoreDuplicates=true). Nawet
-        // jeśli Open-Meteo zwróci ten sam dzień 2× w jednej odpowiedzi
-        // (zdarza się przy timezone edge'ach), Postgres po prostu pomija
-        // duplikat zamiast rzucać błąd „ON CONFLICT cannot affect row
-        // a second time" (specyficzny dla DO UPDATE).
+        let inserted = 0;
         for (let i = 0; i < finalRows.length; i += 200) {
           const chunk = finalRows.slice(i, i + 200);
-          const { error } = await db.from('weather_daily').upsert(chunk, {
-            onConflict: 'date,location_key',
-            ignoreDuplicates: true,
-          });
-          if (error) throw new Error(`Upsert ${loc.key}: ${error.message}`);
+          const { error: insErr } = await db.from('weather_daily').insert(chunk);
+          if (insErr) {
+            // Log szczegółowy — jak jeszcze coś dziwnego zadziała, mamy info
+            console.error(`Insert ${loc.key} chunk ${i}/${finalRows.length}:`, insErr);
+            throw new Error(`INSERT ${loc.key} (chunk @ ${i}): ${insErr.message}`);
+          }
+          inserted += chunk.length;
         }
+        totalsPerLocation[loc.key] = inserted;
+      } catch (locErr) {
+        // Jeden lokacja padła ale druga może działać — zapisz błąd, idź dalej.
+        console.error(`Location ${loc.key} sync failed:`, locErr);
+        totalsPerLocation[loc.key] = -1;
+        errors.push(`${loc.key}: ${String(locErr instanceof Error ? locErr.message : locErr)}`);
       }
-      totalsPerLocation[loc.key] = finalRows.length;
     }
 
     return NextResponse.json({
-      ok: true,
+      ok: errors.length === 0,
       from, to,
       synced: totalsPerLocation,
-    });
+      errors: errors.length > 0 ? errors : undefined,
+    }, { status: errors.length > 0 && Object.values(totalsPerLocation).every(v => v <= 0) ? 500 : 200 });
   } catch (err) {
     console.error('sync-weather error:', err);
     return NextResponse.json({ error: String(err) }, { status: 500 });

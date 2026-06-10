@@ -82,17 +82,25 @@ export default function WeatherPage() {
       const res = await fetch(`/api/jobs/sync-weather?${params}`);
       const j = await res.json();
       if (res.ok) {
-        const total = Object.values(j.synced as Record<string, number>).reduce((s, v) => s + v, 0);
-        setSyncMsg(`Pobrano ${total} dni pogody. Odświeżam dane…`);
+        // synced może mieć -1 dla lokacji która padła; sumuje tylko sukcesy.
+        const total = Object.values(j.synced as Record<string, number>)
+          .filter(v => v > 0).reduce((s, v) => s + v, 0);
+        const errs: string[] = Array.isArray(j.errors) ? j.errors : [];
+        if (errs.length > 0) {
+          setSyncMsg(`Pobrano ${total} dni; ${errs.length} lokacji padło: ${errs.join(' · ')}`);
+        } else {
+          setSyncMsg(`Pobrano ${total} dni pogody. Odświeżam dane…`);
+        }
         await load();
       } else {
-        setSyncMsg(`Błąd: ${j.error || res.status}`);
+        const errs: string[] = Array.isArray(j.errors) ? j.errors : [];
+        setSyncMsg(`Błąd: ${j.error || errs.join(' · ') || res.status}`);
       }
     } catch (err) {
       setSyncMsg(`Błąd: ${String(err)}`);
     } finally {
       setSyncing(false);
-      setTimeout(() => setSyncMsg(null), 5000);
+      setTimeout(() => setSyncMsg(null), 8000);
     }
   }
 
