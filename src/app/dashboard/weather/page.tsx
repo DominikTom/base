@@ -5,7 +5,7 @@ import { useDashboard } from '@/lib/dashboard-context';
 import { ChartCard } from '@/components/charts/chart-card';
 import { formatCurrency, formatNumber } from '@/lib/utils';
 import { WEATHER_METRICS, type WeatherMetricKey } from '@/lib/weather';
-import { CloudRain, Sun, Thermometer, Wind, RefreshCw, Database } from 'lucide-react';
+import { CloudRain, Sun, Thermometer, Wind, RefreshCw, Database, Sparkles } from 'lucide-react';
 import {
   ComposedChart, Line, Bar, Scatter, ScatterChart,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
@@ -87,6 +87,9 @@ export default function WeatherPage() {
   }
   const [data, setData] = useState<WeatherResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  // Podsumowanie AI — generowane z policzonych statystyk (cache 1h server-side).
+  const [aiSummary, setAiSummary] = useState<string | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
   // Sync może wykonać tylko admin (server-side guard w /api/jobs/sync-weather).
   // Ukrywamy przycisk dla nie-adminów żeby nie wyświetlał błędu 403.
   const [isAdminUser, setIsAdminUser] = useState(false);
@@ -149,6 +152,34 @@ export default function WeatherPage() {
   }
 
   useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [filters.shop, filters.dateFrom, filters.dateTo, metric, yAxis]);
+
+  // Po załadowaniu danych z kubełkami — wygeneruj podsumowanie AI.
+  // Liczby są już policzone, LLM tylko formułuje tekst (cache server-side 1h).
+  useEffect(() => {
+    if (!data || data.error || !data.buckets) { setAiSummary(null); return; }
+    let cancelled = false;
+    setAiLoading(true);
+    const m = WEATHER_METRICS.find(x => x.key === data.metric);
+    fetch('/api/weather/summary', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        shop: data.shop,
+        from: data.from,
+        to: data.to,
+        y: data.y,
+        correlation: data.stats.correlation,
+        correlationNormalized: data.stats.correlationNormalized,
+        metricLabel: m?.label || data.metric,
+        buckets: data.buckets,
+      }),
+    })
+      .then(r => r.ok ? r.json() : null)
+      .then(j => { if (!cancelled) setAiSummary(j?.summary || null); })
+      .catch(() => { if (!cancelled) setAiSummary(null); })
+      .finally(() => { if (!cancelled) setAiLoading(false); });
+    return () => { cancelled = true; };
+  }, [data]);
 
   const m = WEATHER_METRICS.find(x => x.key === metric)!;
   const yLabel = yAxis === 'revenue' ? 'Przychód' : 'Zamówienia';
@@ -235,6 +266,31 @@ export default function WeatherPage() {
               icon={<RefreshCw size={16} />}
             />
           </div>
+
+          {/* Podsumowanie AI — Claude formułuje wnioski z policzonych korelacji
+              i kubełków. Subtelny fioletowy gradient jak Wskazówki AI. */}
+          {(aiSummary || aiLoading) && (
+            <div className="relative overflow-hidden rounded-card border border-line bg-surface shadow-card p-5">
+              <div
+                aria-hidden
+                className="pointer-events-none absolute -top-20 -right-20 w-72 h-72 rounded-full opacity-50"
+                style={{ background: 'radial-gradient(circle at center, #E9D5FF 0%, #FAF5FF 50%, transparent 75%)' }}
+              />
+              <div className="relative flex items-start gap-3">
+                <div className="w-8 h-8 rounded-xl bg-accent-bg text-accent-fg flex items-center justify-center shrink-0">
+                  <Sparkles size={14} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="text-sm font-semibold text-fg mb-1">Podsumowanie AI</h3>
+                  {aiLoading && !aiSummary ? (
+                    <p className="text-sm text-muted animate-pulse">Analizuję korelacje…</p>
+                  ) : (
+                    <p className="text-sm text-fg-soft leading-relaxed">{aiSummary}</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Analiza kubełkowa — średnia sprzedaż per typ pogody, znormalizowana
               dniem tygodnia. Pokazuje nieliniowe efekty których Pearson nie łapie. */}
