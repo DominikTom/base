@@ -1,5 +1,5 @@
 import { createServerClient } from '@supabase/ssr';
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 
 // Uwierzytelnienie żądania API na podstawie ciasteczek sesji Supabase.
 // Ten sam wzorzec co getAuthUser() w /api/user — wydzielony do współdzielenia
@@ -41,12 +41,25 @@ export async function isAdmin(
 
 // Strażnik admin-only API. Zwraca null gdy OK; gdy nie-admin / nie-zalogowany
 // zwraca gotowy NextResponse z odpowiednim kodem 401/403.
-// Użycie w POST/GET routes:
-//   const guard = await requireAdmin();
-//   if (guard) return guard;
-//   // ... reszta handlera, user jest adminem
+//
+// Akceptujemy trzy ścieżki uwierzytelnienia:
+//   1. Vercel Cron — wewnętrzny header `x-vercel-cron: 1` (bez sesji userskiej).
+//   2. Bearer token = ETL_CRON_SECRET (do ręcznego curl'a/Cron'a zewnętrznego).
+//   3. Sesja Supabase z rolą 'admin' w user_profiles.
+//
+// Punkty 1+2 są kluczowe — bez nich Vercel Cron dostawał 401 i wszystkie
+// scheduled ETL syncs były zablokowane (regresja w commicie e144b5d).
 import { NextResponse } from 'next/server';
 export async function requireAdmin(): Promise<NextResponse | null> {
+  const h = await headers();
+  if (h.get('x-vercel-cron') === '1') return null;
+
+  const cronSecret = process.env.ETL_CRON_SECRET;
+  if (cronSecret) {
+    const authHeader = h.get('authorization');
+    if (authHeader === `Bearer ${cronSecret}`) return null;
+  }
+
   const { user, supabase } = await getAuthUser();
   if (!user) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
   if (!(await isAdmin(supabase, user.id))) {
