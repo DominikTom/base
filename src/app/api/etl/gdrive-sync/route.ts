@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { requireAdmin } from '@/lib/auth';
 import Papa from 'papaparse';
 import { parseErpCsv, type RawCsvRow } from '@/lib/erp-parser';
 import { listCsvFiles, downloadFileAsText } from '@/lib/google-drive';
@@ -28,17 +27,31 @@ const ITEMS_CHUNK = 500;
  */
 export async function GET(request: NextRequest) {
   try {
-    const _guard = await requireAdmin();
-    if (_guard) return _guard;
     const { searchParams } = new URL(request.url);
     const mode = searchParams.get('mode') || 'manual';
 
-    // Auth — Vercel Cron sends x-vercel-cron header; manual triggers use bearer.
+    // Auth — przepuszczamy dwie ścieżki: Vercel Cron internal (x-vercel-cron / CRON_SECRET)
+    // i ręczny bearer ETL_CRON_SECRET. Logujemy nagłówki przy 401 — od 2026-06-08
+    // crony dostawały 401 i nie wiedzieliśmy czemu.
     const authHeader = request.headers.get('authorization');
+    const userAgent = request.headers.get('user-agent') || '';
     const cronSecret = process.env.ETL_CRON_SECRET;
-    const isVercelCron = request.headers.get('x-vercel-cron') === '1';
+    const vercelCronSecret = process.env.CRON_SECRET;
+    const isVercelCronHeader = request.headers.get('x-vercel-cron') === '1';
+    const isVercelCronUA = userAgent.startsWith('vercel-cron');
+    const matchesEtlBearer = !!cronSecret && authHeader === `Bearer ${cronSecret}`;
+    const matchesVercelBearer = !!vercelCronSecret && authHeader === `Bearer ${vercelCronSecret}`;
+    const allowed = isVercelCronHeader || isVercelCronUA || matchesEtlBearer || matchesVercelBearer;
 
-    if (!isVercelCron && cronSecret && authHeader !== `Bearer ${cronSecret}`) {
+    if (!allowed) {
+      console.warn('[gdrive-sync] 401 unauthorized', {
+        mode,
+        xVercelCron: request.headers.get('x-vercel-cron'),
+        userAgent: userAgent.slice(0, 60),
+        authPresent: !!authHeader,
+        hasEtlSecret: !!cronSecret,
+        hasVercelSecret: !!vercelCronSecret,
+      });
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
