@@ -38,7 +38,8 @@ function activePreset(dateFrom: string, dateTo: string): string | null {
   if (dateFrom === today && dateTo === today) return 'today';
   if (dateFrom === yesterday && dateTo === yesterday) return 'yesterday';
   const days = Math.round((new Date(dateTo).getTime() - new Date(dateFrom).getTime()) / 86400000) + 1;
-  if (dateTo === today) {
+  // 7d/30d/90d: kończą się WCZORAJ (dziś niepełny), długość: 7/30/90 dni włącznie.
+  if (dateTo === yesterday) {
     if (days === 7) return '7d';
     if (days === 30) return '30d';
     if (days === 90) return '90d';

@@ -26,8 +26,10 @@ const DashboardContext = createContext<DashboardContextType | null>(null);
 
 export function DashboardProvider({ children }: { children: ReactNode }) {
   const [filters, setFilters] = useState<DashboardFilters>({
+    // Default: ostatnie 30 pełnych dni kończących się wczoraj (taki sam zakres
+    // co preset "30 dni" — dzień bieżący jest niepełny, pomijamy).
     dateFrom: format(subDays(new Date(), 30), 'yyyy-MM-dd'),
-    dateTo: format(new Date(), 'yyyy-MM-dd'),
+    dateTo: format(subDays(new Date(), 1), 'yyyy-MM-dd'),
     shop: 'all',
     compare: 'none',
   });
@@ -49,12 +51,15 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
     const today = new Date();
     const fmt = (d: Date) => format(d, 'yyyy-MM-dd');
     const set = (from: Date, to: Date) => setFilters(f => ({ ...f, dateFrom: fmt(from), dateTo: fmt(to) }));
+    // Presety N dni kończą się WCZORAJ — dziś jest dniem niepełnym (CSV
+    // ciągnięty rano, sprzedaż jeszcze trwa), więc nie zaburza średnich.
+    const yesterday = subDays(today, 1);
     switch (preset) {
       case 'today': set(today, today); break;
-      case 'yesterday': { const y = subDays(today, 1); set(y, y); break; }
-      case '7d': set(subDays(today, 6), today); break;
-      case '30d': set(subDays(today, 29), today); break;
-      case '90d': set(subDays(today, 89), today); break;
+      case 'yesterday': set(yesterday, yesterday); break;
+      case '7d': set(subDays(today, 7), yesterday); break;
+      case '30d': set(subDays(today, 30), yesterday); break;
+      case '90d': set(subDays(today, 90), yesterday); break;
       case 'this_month': set(startOfMonth(today), today); break;
       case 'prev_month': { const prev = subMonths(today, 1); set(startOfMonth(prev), endOfMonth(prev)); break; }
     }
