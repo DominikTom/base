@@ -626,6 +626,78 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ type: 'kpi', ...valMap[widget], debug });
       }
 
+      // ── Geo heatmap (PL+DE, normalizacja Warszawa/WARSZAWA/Warsaw) ──
+      case 'geo_heatmap': {
+        // Pobieramy dim_cities raz (~120 wpisów). Aliasy w pamięci — DB-side
+        // OR przez funkcję immutable jest za wolny dla 41k zamówień.
+        const { data: cities, error: cityErr } = await db
+          .from('dim_cities')
+          .select('slug, display_name, country, lat, lon, aliases');
+        if (cityErr) return NextResponse.json({ error: cityErr.message }, { status: 500 });
+
+        // Slug + alias lookup map.
+        const lookup = new Map<string, { slug: string; name: string; country: string; lat: number; lon: number }>();
+        for (const c of cities || []) {
+          const entry = { slug: c.slug, name: c.display_name, country: c.country, lat: Number(c.lat), lon: Number(c.lon) };
+          lookup.set(c.slug, entry);
+          for (const a of (c.aliases as string[]) || []) lookup.set(a, entry);
+        }
+
+        // Ta sama logika co normalize_city() w SQL — utrzymujemy synchronicznie.
+        function normalize(raw: string | null): string | null {
+          if (raw == null) return null;
+          let s = raw.trim().toLowerCase();
+          if (s.length < 2 || ['test', 'brak', '-', 'n/a', 'xxx', 'aaa', '.', '..', '...'].includes(s)) return null;
+          s = s.replace(/ß/g, 'ss').replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue');
+          s = s.replace(/[ąćęłńóśźż]/g, ch => ({ ą:'a', ć:'c', ę:'e', ł:'l', ń:'n', ó:'o', ś:'s', ź:'z', ż:'z' })[ch] || ch);
+          s = s.replace(/[^a-z0-9 \-]/g, '');
+          s = s.replace(/\s+/g, ' ').trim();
+          return s.length < 2 ? null : s;
+        }
+
+        const orders = await fetchAllRows(
+          orderQuery('delivery_city, total_gross_pln, is_paid')
+            .not('delivery_city', 'is', null)
+        );
+        const scoped = scopeOrdersByWarsawDate(orders);
+
+        // Agreguj per miasto. Niedopasowane do dim_cities idą do `unmatched`.
+        const perCity = new Map<string, { name: string; country: string; lat: number; lon: number; orders: number; revenue: number }>();
+        let totalMatched = 0;
+        let totalUnmatched = 0;
+        for (const o of scoped) {
+          const norm = normalize(o.delivery_city);
+          const city = norm ? lookup.get(norm) : null;
+          if (!city) { totalUnmatched++; continue; }
+          totalMatched++;
+          const existing = perCity.get(city.slug);
+          const rev = Number(o.total_gross_pln) || 0;
+          if (existing) {
+            existing.orders += 1;
+            existing.revenue += rev;
+          } else {
+            perCity.set(city.slug, { name: city.name, country: city.country, lat: city.lat, lon: city.lon, orders: 1, revenue: rev });
+          }
+        }
+
+        const points = [...perCity.values()]
+          .map(p => ({ ...p, revenue: Math.round(p.revenue) }))
+          .sort((a, b) => b.orders - a.orders);
+
+        return NextResponse.json({
+          type: 'geo_heatmap',
+          data: points,
+          stats: {
+            matched: totalMatched,
+            unmatched: totalUnmatched,
+            coverage: totalMatched + totalUnmatched > 0
+              ? Math.round((totalMatched / (totalMatched + totalUnmatched)) * 1000) / 10
+              : 0,
+          },
+          debug: { ...debug, query: 'aggregate by normalize_city(delivery_city) → dim_cities' },
+        });
+      }
+
       default:
         return NextResponse.json({ error: `Unknown widget: ${widget}` }, { status: 400 });
     }

@@ -4,7 +4,7 @@ export interface WidgetDefinition {
   category: 'KPI' | 'Ranking' | 'Wykres' | 'Tabela';
   defaultSize: { w: number; h: number };
   minSize?: { w: number; h: number };
-  component: 'kpi' | 'ranking' | 'bar' | 'line' | 'area' | 'pie' | 'table';
+  component: 'kpi' | 'ranking' | 'bar' | 'line' | 'area' | 'pie' | 'table' | 'geo_heatmap';
 }
 
 export const WIDGET_CATALOG: WidgetDefinition[] = [
@@ -38,6 +38,7 @@ export const WIDGET_CATALOG: WidgetDefinition[] = [
   { type: 'chart_suppliers', name: 'Podział dostawców', category: 'Wykres', defaultSize: { w: 4, h: 5 }, component: 'pie' },
   { type: 'chart_mattress_types', name: 'Typ materaca', category: 'Wykres', defaultSize: { w: 4, h: 5 }, component: 'pie' },
   { type: 'chart_daily_orders', name: 'Zamówienia dziennie', category: 'Wykres', defaultSize: { w: 6, h: 4 }, component: 'bar' },
+  { type: 'geo_heatmap', name: 'Mapa ciepła sprzedaży (PL+DE)', category: 'Wykres', defaultSize: { w: 8, h: 6 }, minSize: { w: 4, h: 4 }, component: 'geo_heatmap' },
 
   // ── GA4 / Traffic ──
   { type: 'kpi_sessions', name: 'Sesje (GA4)', category: 'KPI', defaultSize: { w: 3, h: 2 }, component: 'kpi' },

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { useDashboard } from '@/lib/dashboard-context';
 import { getWidgetDef } from '@/lib/widget-definitions';
 import { formatCurrency, formatNumber, SHOP_COLORS } from '@/lib/utils';
@@ -9,6 +10,16 @@ import { SimplePieChart } from '@/components/charts/pie-chart';
 import { PivotRenderer } from '@/components/dashboard/pivot-renderer';
 import { AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { X, RefreshCw, ArrowUp, ArrowDown, Maximize2, Minimize2, HelpCircle, TrendingUp, TrendingDown } from 'lucide-react';
+
+// Leaflet potrzebuje window → SSR off + lazy.
+const GeoHeatmap = dynamic(() => import('@/components/charts/geo-heatmap').then(m => m.GeoHeatmap), {
+  ssr: false,
+  loading: () => (
+    <div className="h-full flex items-center justify-center text-xs text-muted">
+      <RefreshCw size={18} className="animate-spin" />
+    </div>
+  ),
+});
 
 // Map widget types to cross-filter fields they produce when clicked
 const WIDGET_CLICK_FIELD: Record<string, string> = {
@@ -387,6 +398,11 @@ function WidgetContent({ type, data, onItemClick, activeValues, prevValue }: {
   // Pie chart
   if (data.type === 'pie') {
     return <SimplePieChart data={data.data || []} height={200} innerRadius={40} />;
+  }
+
+  // Geo heatmap (mapa ciepła sprzedaży po miastach)
+  if (data.type === 'geo_heatmap') {
+    return <GeoHeatmap data={data.data || []} stats={data.stats} />;
   }
 
   // Table
