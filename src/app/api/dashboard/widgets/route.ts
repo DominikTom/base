@@ -698,6 +698,70 @@ export async function POST(request: NextRequest) {
         });
       }
 
+      // ── Tabela: sprzedaż per miasto (PL+DE, ta sama normalizacja co heatmap) ──
+      case 'table_cities_geo': {
+        const { data: cities, error: cityErr } = await db
+          .from('dim_cities')
+          .select('slug, display_name, country, aliases');
+        if (cityErr) return NextResponse.json({ error: cityErr.message }, { status: 500 });
+
+        const lookup = new Map<string, { slug: string; name: string; country: string }>();
+        for (const c of cities || []) {
+          const entry = { slug: c.slug, name: c.display_name, country: c.country };
+          lookup.set(c.slug, entry);
+          for (const a of (c.aliases as string[]) || []) lookup.set(a, entry);
+        }
+
+        function normalize(raw: string | null): string | null {
+          if (raw == null) return null;
+          let s = raw.trim().toLowerCase();
+          if (s.length < 2 || ['test', 'brak', '-', 'n/a', 'xxx', 'aaa', '.', '..', '...'].includes(s)) return null;
+          s = s.replace(/ß/g, 'ss').replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue');
+          s = s.replace(/[ąćęłńóśźż]/g, ch => ({ ą:'a', ć:'c', ę:'e', ł:'l', ń:'n', ó:'o', ś:'s', ź:'z', ż:'z' })[ch] || ch);
+          s = s.replace(/[^a-z0-9 \-]/g, '');
+          s = s.replace(/\s+/g, ' ').trim();
+          return s.length < 2 ? null : s;
+        }
+
+        const orders = await fetchAllRows(
+          orderQuery('delivery_city, total_gross_pln')
+            .not('delivery_city', 'is', null)
+        );
+        const scoped = scopeOrdersByWarsawDate(orders);
+
+        const perCity = new Map<string, { name: string; country: string; orders: number; revenue: number }>();
+        for (const o of scoped) {
+          const norm = normalize(o.delivery_city);
+          const city = norm ? lookup.get(norm) : null;
+          if (!city) continue;
+          const existing = perCity.get(city.slug);
+          const rev = Number(o.total_gross_pln) || 0;
+          if (existing) {
+            existing.orders += 1;
+            existing.revenue += rev;
+          } else {
+            perCity.set(city.slug, { name: city.name, country: city.country, orders: 1, revenue: rev });
+          }
+        }
+
+        const columns = ['Miasto', 'Kraj', 'Zamówienia', 'Revenue (PLN)'];
+        const dataRows = [...perCity.values()]
+          .sort((a, b) => b.orders - a.orders)
+          .map(p => ({
+            x: p.name,
+            'Kraj': p.country,
+            'Zamówienia': p.orders,
+            'Revenue (PLN)': Math.round(p.revenue),
+          }));
+
+        return NextResponse.json({
+          type: 'table',
+          columns,
+          dataRows,
+          debug: { ...debug, query: 'aggregate by normalize_city(delivery_city) → dim_cities, return as table' },
+        });
+      }
+
       default:
         return NextResponse.json({ error: `Unknown widget: ${widget}` }, { status: 400 });
     }
