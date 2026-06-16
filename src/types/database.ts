@@ -124,13 +124,22 @@ export interface EtlLog {
   date_range_end: string | null;
 }
 
-export type Shop = 'all' | 'mybed.pl' | 'mybed.de' | 'mittohome.pl' | 'showroom' | 'amazon.de' | 'allegro.pl' | 'kaufland.de';
+// Pojedynczy sklep — dla UI list / etykiet. 'all' to legacy/wildcard.
+// W praktyce filtrujemy do MyBed Group: mybed.pl, mybed.de, mittohome.pl.
+// Pozostałe (amazon.de, allegro.pl, showroom, kaufland.de) ukryte z UI.
+export type Shop = 'all' | 'mybed.pl' | 'mybed.de' | 'mittohome.pl';
 export type CompareMode = 'none' | 'mom' | 'yoy' | 'previous_period';
 export type Granularity = 'day' | 'week' | 'month' | 'quarter';
 
+// filters.shop — string (nie sam Shop), bo multi-select serializuje wybrane
+// sklepy jako CSV ('mybed.pl,mybed.de'). Helpers w lib/shop-filter.ts
+// (shopFilterToList, applyShopFilter, shopFilterLabel) parsują tę wartość.
+//   - 'all'                 → brak filtru (wszystkie sklepy)
+//   - 'mybed.pl'            → pojedynczy sklep
+//   - 'mybed.pl,mybed.de'   → multi-select
 export interface DashboardFilters {
   dateFrom: string;
   dateTo: string;
-  shop: Shop;
+  shop: string;
   compare: CompareMode;
 }

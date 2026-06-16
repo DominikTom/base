@@ -1,8 +1,8 @@
 'use client';
 
-import { Calendar, Store } from 'lucide-react';
+import { Calendar, Store, Check } from 'lucide-react';
 import { useDashboard } from '@/lib/dashboard-context';
-import type { Shop } from '@/types/database';
+import { shopFilterToList } from '@/lib/shop-filter';
 import { cn } from '@/lib/utils';
 
 // Pasek filtrów per-zakładka dashboardu. Pisze do tego samego DashboardContext
@@ -10,14 +10,10 @@ import { cn } from '@/lib/utils';
 // jako snapshot aktywnej zakładki. Wizualnie wyraźnie podkreśla że to
 // per-tab — żeby user wiedział że zmiana TU dotyczy tylko tej karty.
 
-const SHOPS: { value: Shop; label: string }[] = [
-  { value: 'all', label: 'Wszystkie sklepy' },
+const SHOPS = [
   { value: 'mybed.pl', label: 'MyBed.pl' },
   { value: 'mybed.de', label: 'MyBed.de' },
   { value: 'mittohome.pl', label: 'MittoHome.pl' },
-  { value: 'showroom', label: 'Showroom' },
-  { value: 'amazon.de', label: 'Amazon DE' },
-  { value: 'allegro.pl', label: 'Allegro PL' },
 ];
 
 const PRESETS = [
@@ -53,6 +49,17 @@ function activePreset(dateFrom: string, dateTo: string): string | null {
 export function LayoutFilterBar() {
   const { filters, setDateRange, setShop, applyPreset } = useDashboard();
   const active = activePreset(filters.dateFrom, filters.dateTo);
+
+  const selectedShops = new Set(shopFilterToList(filters.shop));
+  const allShops = selectedShops.size === 0;
+
+  function toggleShop(val: string) {
+    const next = new Set(selectedShops);
+    if (next.has(val)) next.delete(val);
+    else next.add(val);
+    if (next.size === 0 || next.size === SHOPS.length) setShop('all');
+    else setShop([...next].join(','));
+  }
 
   return (
     <div className="flex flex-wrap items-center gap-3 p-3 rounded-card border border-line bg-surface shadow-card">
@@ -96,16 +103,36 @@ export function LayoutFilterBar() {
         />
       </div>
 
-      {/* Shop */}
+      {/* Shop multi-select — pillowe checkboxy */}
       <div className="flex items-center gap-2">
         <Store size={14} className="text-muted" />
-        <select
-          value={filters.shop}
-          onChange={e => setShop(e.target.value as Shop)}
-          className="px-3 py-1.5 text-sm rounded-pill bg-bg border border-line text-fg focus:outline-none focus:ring-2 focus:ring-primary-300"
-        >
-          {SHOPS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
-        </select>
+        <div className="flex items-center gap-1 bg-bg border border-line rounded-pill p-1">
+          <button
+            onClick={() => setShop('all')}
+            className={cn(
+              'px-3 py-1 text-xs font-medium rounded-pill transition-colors',
+              allShops ? 'bg-primary-600 text-white' : 'text-fg-soft hover:text-fg hover:bg-surface',
+            )}
+          >
+            Wszystkie
+          </button>
+          {SHOPS.map(s => {
+            const isActive = !allShops && selectedShops.has(s.value);
+            return (
+              <button
+                key={s.value}
+                onClick={() => toggleShop(s.value)}
+                className={cn(
+                  'inline-flex items-center gap-1 px-3 py-1 text-xs font-medium rounded-pill transition-colors',
+                  isActive ? 'bg-primary-600 text-white' : 'text-fg-soft hover:text-fg hover:bg-surface',
+                )}
+              >
+                {isActive && <Check size={11} />}
+                {s.label}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* Compare dropdown usunięty — porównanie zawsze do poprzedniego okresu */}

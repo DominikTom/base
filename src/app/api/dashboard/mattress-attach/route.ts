@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabase';
+import { applyShopFilter } from '@/lib/shop-filter';
 
 // ─────────────────────────────────────────────────────────────────────
 // /api/dashboard/mattress-attach — attach rate materacy przy łóżkach.
@@ -48,7 +49,7 @@ export async function GET(request: NextRequest) {
         .gte('order_date', dateFrom)
         .lte('order_date', `${dateTo}T23:59:59`)
         .range(offset, offset + PAGE - 1);
-      if (shop !== 'all') q = q.eq('source_shop', shop);
+      q = applyShopFilter(q, shop);
       const { data, error } = await q;
       if (error) return NextResponse.json({ error: error.message }, { status: 500 });
       if (!data || data.length === 0) break;

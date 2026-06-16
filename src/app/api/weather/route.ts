@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabase';
 import { shopToLocationKey, WEATHER_LOCATIONS, WEATHER_METRICS, type WeatherMetricKey, pearson } from '@/lib/weather';
+import { shopFilterToList, applyShopFilter } from '@/lib/shop-filter';
 
 // ─────────────────────────────────────────────────────────────────────
 // /api/weather — łączy dzienną sprzedaż (fact_orders) z dzienną pogodą
@@ -27,11 +28,12 @@ export async function GET(request: NextRequest) {
 
     const db = getSupabaseAdmin();
 
-    // Lokalizacja: jeśli shop = 'all' → bierzemy obie i agregujemy sprzedaż,
-    // korelujemy do średniej z dwóch lokalizacji. Inaczej jedna lokalizacja.
-    const locationKeys = shop === 'all'
+    // Lokalizacja: dla każdego wybranego sklepu mapujemy na lokalizację pogodową.
+    // 'all' lub multi-select → wszystkie unikalne lokalizacje.
+    const shops = shopFilterToList(shop);
+    const locationKeys = shops.length === 0
       ? Object.keys(WEATHER_LOCATIONS)
-      : [shopToLocationKey(shop)];
+      : [...new Set(shops.map(s => shopToLocationKey(s)))];
 
     // ── Pogoda ─────────────────────────────────────────────────────
     // Ciągniemy WSZYSTKIE metryki (nie tylko wybraną) — bucket analysis
@@ -87,7 +89,7 @@ export async function GET(request: NextRequest) {
         .gte('order_date', from)
         .lte('order_date', `${to}T23:59:59`)
         .range(offset, offset + PAGE - 1);
-      if (shop !== 'all') q = q.eq('source_shop', shop);
+      q = applyShopFilter(q, shop);
       const { data, error } = await q;
       if (error) return NextResponse.json({ error: error.message }, { status: 500 });
       if (!data || data.length === 0) break;

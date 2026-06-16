@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabase';
+import { applyShopFilter } from '@/lib/shop-filter';
 
 export async function GET(request: NextRequest) {
   try {
@@ -17,9 +18,7 @@ export async function GET(request: NextRequest) {
       .lte('order_date', dateTo + 'T23:59:59')
       .order('order_date', { ascending: true });
 
-    if (shop !== 'all') {
-      query = query.eq('source_shop', shop);
-    }
+    query = applyShopFilter(query, shop);
 
     const ordersData = await fetchAllRows(query);
 
@@ -71,9 +70,7 @@ export async function GET(request: NextRequest) {
       .lte('order_date', dateTo + 'T23:59:59')
       .not('producer', 'is', null);
 
-    if (shop !== 'all') {
-      producerQuery = producerQuery.eq('source_shop', shop);
-    }
+    producerQuery = applyShopFilter(producerQuery, shop);
 
     const producerData = await fetchAllRows(producerQuery);
     const supplierMap: Record<string, number> = {};
@@ -93,9 +90,7 @@ export async function GET(request: NextRequest) {
       .gte('order_date', dateFrom)
       .lte('order_date', dateTo + 'T23:59:59');
 
-    if (shop !== 'all') {
-      statusQuery = statusQuery.eq('source_shop', shop);
-    }
+    statusQuery = applyShopFilter(statusQuery, shop);
 
     const statusData = await fetchAllRows(statusQuery);
     const statusCounts: Record<string, number> = {};
@@ -133,9 +128,7 @@ export async function GET(request: NextRequest) {
       .lte('order_date', dateTo + 'T23:59:59')
       .not('coupon_code', 'is', null);
 
-    if (shop !== 'all') {
-      couponQuery = couponQuery.eq('source_shop', shop);
-    }
+    couponQuery = applyShopFilter(couponQuery, shop);
 
     const couponData = await fetchAllRows(couponQuery);
     const couponMap: Record<string, { count: number; revenue: number }> = {};

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useDashboard } from '@/lib/dashboard-context';
+import { shopFilterToList } from '@/lib/shop-filter';
 import { ChartCard } from '@/components/charts/chart-card';
 import { SimpleBarChart } from '@/components/charts/bar-chart';
 import { SimplePieChart } from '@/components/charts/pie-chart';
@@ -77,7 +78,7 @@ export default function ExplorerPage() {
           group_by: groupBy || undefined,
           date_from: filters.dateFrom,
           date_to: filters.dateTo,
-          filters: { shop: filters.shop !== 'all' ? [filters.shop] : [] },
+          filters: { shop: shopFilterToList(filters.shop) },
           granularity,
         }),
       });

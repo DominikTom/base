@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useDashboard } from '@/lib/dashboard-context';
+import { shopFilterToList } from '@/lib/shop-filter';
 import { getWidgetDef } from '@/lib/widget-definitions';
 import { formatCurrency, formatNumber, SHOP_COLORS } from '@/lib/utils';
 import { SimpleBarChart } from '@/components/charts/bar-chart';
@@ -84,7 +85,7 @@ export function WidgetRenderer({ widgetType, widgetConfig, onRemove, onMoveUp, o
               granularity: widgetConfig?.granularity || 'month',
               date_from: filters.dateFrom,
               date_to: filters.dateTo,
-              filters: { shop: filters.shop !== 'all' ? [filters.shop] : [] },
+              filters: { shop: shopFilterToList(filters.shop) },
               filters_advanced: widgetConfig?.filters_advanced || [],
             }),
           })
@@ -99,7 +100,7 @@ export function WidgetRenderer({ widgetType, widgetConfig, onRemove, onMoveUp, o
               granularity: widgetConfig?.granularity || 'day',
               date_from: filters.dateFrom,
               date_to: filters.dateTo,
-              filters: { shop: filters.shop !== 'all' ? [filters.shop] : [] },
+              filters: { shop: shopFilterToList(filters.shop) },
               filters_advanced: widgetConfig?.filters_advanced || [],
             }),
           })

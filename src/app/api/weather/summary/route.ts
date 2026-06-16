@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 import { getSupabaseAdmin } from '@/lib/supabase';
+import { shopFilterLabel } from '@/lib/shop-filter';
 
 // ─────────────────────────────────────────────────────────────────────
 // /api/weather/summary — krótkie podsumowanie AI korelacji pogodowych.
@@ -99,7 +100,7 @@ async function generateWithLLM(input: SummaryInput): Promise<string> {
   if (!anthropic) throw new Error('no ANTHROPIC_API_KEY');
 
   const yLabel = input.y === 'orders' ? 'liczbą zamówień' : 'przychodem';
-  const shopLabel = input.shop === 'all' ? 'wszystkich sklepów' : input.shop;
+  const shopLabel = shopFilterLabel(input.shop);
 
   const systemPrompt = `Jesteś analitykiem MyBed Group. Piszesz krótkie podsumowanie wpływu pogody na sprzedaż po polsku.
 

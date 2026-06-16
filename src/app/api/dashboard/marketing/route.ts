@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabase';
 import { SHOP_TO_META_ACCOUNT } from '@/lib/meta-ads';
+import { shopFilterToList } from '@/lib/shop-filter';
 
 export async function GET(request: NextRequest) {
   try {
@@ -10,9 +11,13 @@ export async function GET(request: NextRequest) {
     const platform = searchParams.get('platform') || 'all';
     const shop = searchParams.get('shop') || 'all';
 
-    // Shop → account_id. Sklepy bez kampanii Meta (amazon.de, allegro.pl, kaufland.de,
-    // showroom) trafiają tu jako 'NONE' → 0 wierszy, bo tak jest semantycznie poprawnie.
-    const accountIdFilter = shop === 'all' ? null : (SHOP_TO_META_ACCOUNT[shop] ?? 'NONE');
+    // Shop → account_id (single lub multi). Multi-select wybiera wszystkie
+    // odpowiednie account_id i filtruje przez IN. 'all' = bez filtru.
+    // Sklepy bez kampanii Meta wpadają jako 'NONE' i dają 0 wierszy.
+    const shopsList = shopFilterToList(shop);
+    const accountIds = shopsList.length === 0
+      ? null
+      : [...new Set(shopsList.map(s => SHOP_TO_META_ACCOUNT[s] ?? 'NONE'))];
 
     // Fetch ad spend data (WARM from DB) — paginated to defeat PostgREST's
     // default 1000-row server-side cap that .limit() can't override.
@@ -30,7 +35,10 @@ export async function GET(request: NextRequest) {
         .order('date', { ascending: true })
         .range(offset, offset + PAGE_SIZE - 1);
       if (platform !== 'all') pageQuery = pageQuery.eq('platform', platform);
-      if (accountIdFilter) pageQuery = pageQuery.eq('account_id', accountIdFilter);
+      if (accountIds) {
+        if (accountIds.length === 1) pageQuery = pageQuery.eq('account_id', accountIds[0]);
+        else pageQuery = pageQuery.in('account_id', accountIds);
+      }
       const { data: page, error } = await pageQuery;
       if (error) return NextResponse.json({ error: error.message }, { status: 500 });
       if (!page || page.length === 0) break;

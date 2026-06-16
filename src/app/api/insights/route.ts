@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 import { getSupabaseAdmin } from '@/lib/supabase';
+import { applyShopFilter } from '@/lib/shop-filter';
 
 // ─────────────────────────────────────────────────────────────────────
 // /api/insights — wskazówki dla dashboardu „Mój Dashboard"
@@ -141,7 +142,7 @@ async function computeMetrics(
         .gte('order_date', from)
         .lte('order_date', `${to}T23:59:59`)
         .range(offset, offset + PAGE - 1);
-      if (shop !== 'all') q = q.eq('source_shop', shop);
+      q = applyShopFilter(q, shop);
       const { data, error } = await q;
       if (error) throw new Error(error.message);
       if (!data || data.length === 0) break;

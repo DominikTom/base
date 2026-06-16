@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabase';
+import { applyShopFilter } from '@/lib/shop-filter';
 
 export async function GET(request: NextRequest) {
   try {
@@ -19,9 +20,7 @@ export async function GET(request: NextRequest) {
       .lte('order_date', dateTo + 'T23:59:59')
       .order('order_date', { ascending: true });
 
-    if (shop !== 'all') {
-      ordersQuery = ordersQuery.eq('source_shop', shop);
-    }
+    ordersQuery = applyShopFilter(ordersQuery, shop);
 
     const ordersData = await fetchAllRows(ordersQuery);
 
@@ -86,9 +85,7 @@ export async function GET(request: NextRequest) {
       .lte('fact_orders.order_date', dateTo + 'T23:59:59')
       .not('item_type', 'in', '("shipping","service","surcharge")');
 
-    if (shop !== 'all') {
-      productsQuery = productsQuery.eq('fact_orders.source_shop', shop);
-    }
+    productsQuery = applyShopFilter(productsQuery, shop, 'fact_orders.source_shop');
 
     const productItems = await fetchAllRows(productsQuery);
 

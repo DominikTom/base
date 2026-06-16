@@ -18,7 +18,7 @@ import {
   type DashboardData,
   type LayoutFilters,
 } from '@/lib/dashboard-store';
-import type { Shop, CompareMode } from '@/types/database';
+import type { CompareMode } from '@/types/database';
 
 import { Plus, RotateCcw, X, Save, Star, Trash2, Pencil, Check } from 'lucide-react';
 import { InsightsCard } from '@/components/dashboard/insights-card';
@@ -104,7 +104,7 @@ export default function MyDashboardPage() {
     setApplyingFromLayout(true);
     const f = activeLayout.filters;
     setDateRange(f.dateFrom, f.dateTo);
-    setShop(f.shop as Shop);
+    setShop(f.shop);
     setCompare(f.compare as CompareMode);
     // Zwolnij flagę po następnym tick — żeby watcher poniżej nie zareagował.
     const t = setTimeout(() => setApplyingFromLayout(false), 0);

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabase';
+import { applyShopFilter } from '@/lib/shop-filter';
 
 export async function GET(request: NextRequest) {
   try {
@@ -16,9 +17,7 @@ export async function GET(request: NextRequest) {
       .lte('fact_orders.order_date', dateTo + 'T23:59:59')
       .neq('fact_orders.status', 'anulowane');
 
-    if (shop !== 'all') {
-      query = query.eq('fact_orders.source_shop', shop);
-    }
+    query = applyShopFilter(query, shop, 'fact_orders.source_shop');
 
     const { data: items, error } = await query.limit(50000);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });

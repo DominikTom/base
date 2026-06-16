@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabase';
 import { fetchEurRatesByDate, gaToPln } from '@/lib/ad-cost';
+import { applyShopFilter } from '@/lib/shop-filter';
 
 // Google Ads w GA4 ma DWA tryby raportowania advertiserAdCost:
 //   1) source='__total__' — dzienna suma per host. To samo, co Looker pokazuje
@@ -49,7 +50,7 @@ export async function GET(request: NextRequest) {
     const totalRows = await fetchAll(q => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let qq = (q as any).eq('source', '__total__');
-      if (shop !== 'all') qq = qq.eq('hostname', shop);
+      qq = applyShopFilter(qq, shop, 'hostname');
       return qq;
     });
 
@@ -57,7 +58,7 @@ export async function GET(request: NextRequest) {
     const campRows = await fetchAll(q => {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let qq = (q as any).eq('source', 'google').eq('medium', 'cpc');
-      if (shop !== 'all') qq = qq.eq('hostname', shop);
+      qq = applyShopFilter(qq, shop, 'hostname');
       return qq;
     });
 

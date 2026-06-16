@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Sparkles, RefreshCw, TrendingUp, TrendingDown, AlertTriangle, ArrowUpRight } from 'lucide-react';
 import { useDashboard } from '@/lib/dashboard-context';
+import { shopFilterLabel } from '@/lib/shop-filter';
 import { cn } from '@/lib/utils';
 
 type InsightKind = 'positive' | 'negative' | 'neutral' | 'alert';
@@ -80,7 +81,7 @@ export function InsightsCard() {
             <p className="text-xs text-muted mt-0.5">
               Sklep:{' '}
               <span className="font-medium text-fg-soft">
-                {filters.shop === 'all' ? 'wszystkie sklepy' : filters.shop}
+                {shopFilterLabel(filters.shop)}
               </span>
               {' · '}
               {range === 'quarter' ? 'ostatni kwartał (90 dni)' : `ostatnie ${range === '30d' ? '30' : '7'} dni`}

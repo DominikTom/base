@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabase';
 import { isInWarsawDateRange, shiftDate, warsawDateKey } from '@/lib/warsaw-date';
 import { fetchEurRatesByDate, gaToPln } from '@/lib/ad-cost';
+import { shopFilterToList, applyShopFilter } from '@/lib/shop-filter';
 
 export async function POST(request: NextRequest) {
   try {
@@ -11,8 +12,11 @@ export async function POST(request: NextRequest) {
     const fetchTo = shiftDate(dateTo, 1);
     const CANCELLED_STATUS = 'anulowane';
 
+    // EUR currency tylko gdy WSZYSTKIE wybrane sklepy są EUR (multi-select
+    // mix mybed.pl + mybed.de → PLN bo nie ma jednej waluty).
     const EUR_SHOPS = ['mybed.de', 'amazon.de', 'kaufland.de'];
-    const isEurShop = shop !== 'all' && EUR_SHOPS.includes(shop);
+    const shopList = shopFilterToList(shop);
+    const isEurShop = shopList.length > 0 && shopList.every(s => EUR_SHOPS.includes(s));
     const currency = isEurShop ? 'EUR' : 'PLN';
 
     const orderCrossFields = ['supplier', 'delivery_city', 'coupon_code', 'source_shop'];
@@ -71,7 +75,7 @@ export async function POST(request: NextRequest) {
       const withDate = select.includes('order_date') ? select : `${select}, order_date`;
       let q = db.from('fact_orders').select(withDate)
         .gte('order_date', fetchFrom).lte('order_date', fetchTo + 'T23:59:59');
-      if (shop !== 'all') q = q.eq('source_shop', shop);
+      q = applyShopFilter(q, shop);
       q = applyCross(q, orderCrossFields);
       return q;
     }
@@ -81,7 +85,7 @@ export async function POST(request: NextRequest) {
       const withDate = select.includes('order_date') ? select : `${select}, order_date`;
       let q = db.from('fact_orders').select(withDate)
         .gte('order_date', fetchFrom).lte('order_date', fetchTo + 'T23:59:59');
-      if (shop !== 'all') q = q.eq('source_shop', shop);
+      q = applyShopFilter(q, shop);
       q = applyCross(q, orderCrossFields);
       return q;
     }
@@ -123,7 +127,7 @@ export async function POST(request: NextRequest) {
       function buildQ() {
         let q = db.from('fact_orders').select('order_id, order_date')
           .gte('order_date', fetchFrom).lte('order_date', fetchTo + 'T23:59:59');
-        if (shop !== 'all') q = q.eq('source_shop', shop);
+        q = applyShopFilter(q, shop);
         q = applyCross(q, orderCrossFields);
         return q;
       }

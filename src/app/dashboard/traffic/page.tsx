@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useDashboard } from '@/lib/dashboard-context';
+import { shopFilterToList, shopFilterLabel } from '@/lib/shop-filter';
 import { KpiCard } from '@/components/ui/kpi-card';
 import { ChartCard } from '@/components/charts/chart-card';
 import { SimplePieChart } from '@/components/charts/pie-chart';
@@ -77,15 +78,15 @@ export default function TrafficPage() {
     }
   }
 
-  // Map shop filter to hostname for GA4
-  const shopToHostname: Record<string, string> = {
-    'mybed.pl': 'mybed.pl',
-    'mybed.de': 'mybed.de',
-    'mittohome.pl': 'mittohome.pl',
-  };
-  const hostnameFilter = filters.shop === 'all'
+  // Map shop filter to hostname for GA4. Multi-select: CSV jako URL param —
+  // endpoint /api/dashboard/marketing/google sam zrobi IN. Tutaj 'all' gdy nic
+  // nie wybrano, single hostname gdy 1 sklep, CSV gdy multi.
+  const shopList = shopFilterToList(filters.shop);
+  const hostnameFilter = shopList.length === 0
     ? 'all'
-    : (shopToHostname[filters.shop] || '__none__');
+    : shopList.length === 1
+      ? (shopList[0] || '__none__')
+      : shopList.join(',');
 
   useEffect(() => {
     async function fetchData() {
@@ -183,7 +184,7 @@ export default function TrafficPage() {
       )}
       {hostnameFilter === '__none__' && (
         <div className="text-sm text-amber-400">
-          Brak mapowania sklepu <span className="font-medium">{filters.shop}</span> do GA4 hostname.
+          Brak mapowania sklepu <span className="font-medium">{shopFilterLabel(filters.shop)}</span> do GA4 hostname.
         </div>
       )}
 

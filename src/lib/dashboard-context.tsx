@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState, useCallback, type ReactNode } from 'react';
 import { format, subDays, startOfMonth, endOfMonth, subMonths } from 'date-fns';
-import type { Shop, CompareMode, DashboardFilters } from '@/types/database';
+import type { CompareMode, DashboardFilters } from '@/types/database';
 
 export interface CrossFilter {
   field: string;   // e.g. "product_name", "fabric_collection", "supplier"
@@ -14,7 +14,7 @@ interface DashboardContextType {
   filters: DashboardFilters;
   crossFilters: CrossFilter[];
   setDateRange: (from: string, to: string) => void;
-  setShop: (shop: Shop) => void;
+  setShop: (shop: string) => void;
   setCompare: (compare: CompareMode) => void;
   applyPreset: (preset: string) => void;
   addCrossFilter: (filter: CrossFilter) => void;
@@ -39,7 +39,7 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
     setFilters(f => ({ ...f, dateFrom: from, dateTo: to }));
   }, []);
 
-  const setShop = useCallback((shop: Shop) => {
+  const setShop = useCallback((shop: string) => {
     setFilters(f => ({ ...f, shop }));
   }, []);
 
