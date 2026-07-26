@@ -1,0 +1,22 @@
+{
+  "functions": {
+    "src/app/api/studio/generations/route.ts": {
+      "maxDuration": 300
+    },
+    "src/app/api/studio/generations/[id]/retry/route.ts": {
+      "maxDuration": 300
+    },
+    "src/app/api/studio/edits/route.ts": {
+      "maxDuration": 300
+    },
+    "src/app/api/studio/trash/purge/route.ts": {
+      "maxDuration": 300
+    }
+  },
+  "crons": [
+    {
+      "path": "/api/studio/trash/purge",
+      "schedule": "30 3 * * *"
+    }
+  ]
+}

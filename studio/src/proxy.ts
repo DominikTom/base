@@ -4,17 +4,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  if (
-    pathname === '/login' ||
-    pathname.startsWith('/auth/') ||
-    pathname.startsWith('/api/health') ||
-    pathname.startsWith('/api/etl/') ||
-    pathname === '/'
-  ) {
-    return NextResponse.next();
-  }
-
-  if (pathname.startsWith('/dashboard') || pathname.startsWith('/api/dashboard')) {
+  if (pathname.startsWith('/studio')) {
     let response = NextResponse.next({ request: { headers: request.headers } });
 
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -41,16 +31,19 @@ export async function proxy(request: NextRequest) {
       data: { user },
     } = await supabase.auth.getUser();
 
-    if (!user && pathname.startsWith('/dashboard')) {
+    if (!user) {
       const url = request.nextUrl.clone();
       url.pathname = '/login';
+      url.search = `?next=${encodeURIComponent(pathname)}`;
       return NextResponse.redirect(url);
     }
+
+    return response;
   }
 
   return NextResponse.next();
 }
 
 export const config = {
-  matcher: ['/dashboard/:path*', '/api/dashboard/:path*', '/login'],
+  matcher: ['/studio/:path*', '/login'],
 };

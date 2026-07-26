@@ -1,0 +1,52 @@
+@import "tailwindcss";
+
+:root {
+  --background: #faf8f5;
+  --foreground: #26221f;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+
+  /* MyBed Visual Studio — paleta premium: off-white, grafit, terakota */
+  --color-studio-bg: #faf8f5;
+  --color-studio-surface: #ffffff;
+  --color-studio-border: #e8e3dc;
+  --color-studio-ink: #26221f;
+  --color-studio-muted: #8a8178;
+  --color-studio-accent: #c2643f;
+  --color-studio-accent-dark: #a54f2e;
+  --color-studio-accent-soft: #f7e9e2;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), system-ui, sans-serif;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #efeae3;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #d5cdc2;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #bfb5a7;
+}
+
+* {
+  scrollbar-color: #d5cdc2 #efeae3;
+}
