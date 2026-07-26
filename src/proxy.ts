@@ -14,7 +14,11 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
-  if (pathname.startsWith('/dashboard') || pathname.startsWith('/api/dashboard')) {
+  if (
+    pathname.startsWith('/dashboard') ||
+    pathname.startsWith('/api/dashboard') ||
+    pathname.startsWith('/studio')
+  ) {
     let response = NextResponse.next({ request: { headers: request.headers } });
 
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -41,9 +45,10 @@ export async function proxy(request: NextRequest) {
       data: { user },
     } = await supabase.auth.getUser();
 
-    if (!user && pathname.startsWith('/dashboard')) {
+    if (!user && (pathname.startsWith('/dashboard') || pathname.startsWith('/studio'))) {
       const url = request.nextUrl.clone();
       url.pathname = '/login';
+      url.search = `?next=${encodeURIComponent(pathname)}`;
       return NextResponse.redirect(url);
     }
   }
@@ -52,5 +57,5 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/dashboard/:path*', '/api/dashboard/:path*', '/login'],
+  matcher: ['/dashboard/:path*', '/api/dashboard/:path*', '/studio/:path*', '/login'],
 };

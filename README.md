@@ -35,6 +35,25 @@ The easiest way to deploy your Next.js app is to use the [Vercel Platform](https
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
 
+## MyBed Visual Studio (`/studio`)
+
+Wewnętrzne narzędzie do generowania i edycji wizualizacji produktowych
+(packshot → fotorealistyczna aranżacja wnętrza). Sekcje: Nowa wizualizacja,
+Biblioteka, Inspiracje, Kosz.
+
+- Modele: Nano Banana Pro (`gemini-3-pro-image`, domyślny), Nano Banana 2
+  (`gemini-3.1-flash-image`), GPT Image 2 (`gpt-image-2`, natywne maskowanie).
+  Warstwa abstrakcji: `src/lib/studio/providers/` (interfejs `ImageProvider`).
+- Wymagane env vars (Vercel → Settings → Environment Variables):
+  `GEMINI_API_KEY`, `OPENAI_API_KEY`. Opcjonalne nadpisania nazw modeli:
+  `GEMINI_PRO_IMAGE_MODEL`, `GEMINI_FLASH_IMAGE_MODEL`, `OPENAI_IMAGE_MODEL`.
+  Diagnostyka konfiguracji: `GET /api/studio/health`.
+- Storage: prywatne buckety `packshots`, `inspirations`, `generations`
+  (pliki serwowane przez proxy `GET /api/studio/file`).
+- Kosz: soft delete, automatyczne czyszczenie po 30 dniach
+  (cron `GET /api/studio/trash/purge`, codziennie 03:30 UTC).
+- Schemat DB: `supabase/migrations/009_mybed_visual_studio.sql`.
+
 ## Auto commit + push (GitHub/Vercel flow)
 
 If your Vercel project redeploys on every push to GitHub, you can use:

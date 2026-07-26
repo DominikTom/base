@@ -4,6 +4,19 @@ import { createBrowserClient } from '@supabase/ssr';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
+/**
+ * TODO(google-oauth): docelowo logowanie Google OAuth ograniczone do domeny
+ * @mybed.pl. Kroki (nie implementować bez decyzji zespołu):
+ * 1. Supabase Dashboard → Authentication → Providers → Google (client ID/secret
+ *    z Google Cloud Console, authorized redirect:
+ *    https://sebckrbvoghfdrppdxyt.supabase.co/auth/v1/callback).
+ * 2. W formularzu poniżej: supabase.auth.signInWithOAuth({ provider: 'google',
+ *    options: { queryParams: { hd: 'mybed.pl' } } }) + weryfikacja domeny
+ *    e-maila po stronie serwera (hook lub trigger na auth.users).
+ * Rejestracja e-mail+hasło pozostaje wyłączona publicznie — konta zakłada
+ * admin w panelu Supabase (Authentication → Users → Add user).
+ */
+
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState('');
@@ -31,7 +44,8 @@ export default function LoginPage() {
           ? 'Nieprawidłowy email lub hasło'
           : error.message);
       } else {
-        router.push('/dashboard/overview');
+        const next = new URLSearchParams(window.location.search).get('next');
+        router.push(next && next.startsWith('/') ? next : '/dashboard/overview');
       }
     } catch (err) {
       setError(String(err));

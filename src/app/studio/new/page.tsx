@@ -1,0 +1,392 @@
+'use client';
+
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { Check, ImagePlus, Sparkles } from 'lucide-react';
+import { RoomIcon } from '@/components/studio/room-icon';
+import { useToast } from '@/components/studio/toast';
+import { Badge, Button, Card, PageTitle, Spinner, labelForStrength } from '@/components/studio/ui';
+import { apiForm, apiGet, apiJson } from '@/lib/studio/client';
+import { DEFAULT_GENERATION_MODEL, STUDIO_MODELS, type StudioModelId } from '@/lib/studio/models';
+import { cn } from '@/lib/utils';
+import type { GenerationRow, InspirationSetRow, PackshotRow, RoomRow } from '@/lib/studio/types';
+
+interface PackshotItem extends PackshotRow {
+  image_url: string;
+}
+interface SetItem extends InspirationSetRow {
+  room_name: string | null;
+  image_count: number;
+  cover_url: string | null;
+}
+
+export default function NewVisualizationPage() {
+  const router = useRouter();
+  const { toast } = useToast();
+
+  const [rooms, setRooms] = useState<RoomRow[]>([]);
+  const [packshots, setPackshots] = useState<PackshotItem[]>([]);
+  const [sets, setSets] = useState<SetItem[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const [packshotId, setPackshotId] = useState<string | null>(null);
+  const [roomId, setRoomId] = useState<string | null>(null);
+  const [styleText, setStyleText] = useState('');
+  const [setId, setSetId] = useState<string | null>(null);
+  const [strength, setStrength] = useState(3);
+  const [notes, setNotes] = useState('');
+  const [model, setModel] = useState<StudioModelId>(DEFAULT_GENERATION_MODEL);
+
+  const [uploading, setUploading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const [r, p, s] = await Promise.all([
+          apiGet<{ rooms: RoomRow[] }>('/api/studio/rooms'),
+          apiGet<{ packshots: PackshotItem[] }>('/api/studio/packshots'),
+          apiGet<{ sets: SetItem[] }>('/api/studio/inspirations'),
+        ]);
+        setRooms(r.rooms);
+        setPackshots(p.packshots);
+        setSets(s.sets);
+
+        // Duplikacja ustawień: /studio/new?from=<id generacji>
+        const from = new URLSearchParams(window.location.search).get('from');
+        if (from) {
+          const d = await apiGet<{ generation: GenerationRow }>(`/api/studio/generations/${from}`);
+          const g = d.generation;
+          if (g.packshot_id) setPackshotId(g.packshot_id);
+          if (g.room_id) setRoomId(g.room_id);
+          setStyleText(g.style_text ?? '');
+          setSetId(g.inspiration_set_id);
+          if (g.inspiration_strength) setStrength(g.inspiration_strength);
+          setNotes(g.manual_notes ?? '');
+          if (STUDIO_MODELS.some((m) => m.id === g.model)) setModel(g.model as StudioModelId);
+        }
+      } catch (err) {
+        toast('error', err instanceof Error ? err.message : 'Nie udało się załadować danych.');
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [toast]);
+
+  const handleUpload = useCallback(
+    async (file: File) => {
+      if (file.size > 20 * 1024 * 1024) {
+        toast('error', 'Plik jest za duży — limit to 20 MB.');
+        return;
+      }
+      setUploading(true);
+      try {
+        const form = new FormData();
+        form.append('file', file);
+        const res = await apiForm<{ packshot: PackshotItem }>('/api/studio/packshots', form);
+        setPackshots((prev) => [res.packshot, ...prev]);
+        setPackshotId(res.packshot.id);
+        toast('success', 'Packshot wgrany.');
+      } catch (err) {
+        toast('error', err instanceof Error ? err.message : 'Upload nie powiódł się.');
+      } finally {
+        setUploading(false);
+      }
+    },
+    [toast]
+  );
+
+  async function handleSubmit() {
+    if (!packshotId) return toast('error', 'Wybierz albo wgraj packshot produktu.');
+    if (!roomId) return toast('error', 'Wybierz pokój.');
+    setSubmitting(true);
+    try {
+      const res = await apiJson<{ generation: GenerationRow }>('/api/studio/generations', 'POST', {
+        packshotId,
+        roomId,
+        styleText: styleText || undefined,
+        inspirationSetId: setId,
+        inspirationStrength: setId ? strength : undefined,
+        manualNotes: notes || undefined,
+        model,
+        async: true,
+      });
+      router.push(`/studio/generations/${res.generation.id}`);
+    } catch (err) {
+      toast('error', err instanceof Error ? err.message : 'Nie udało się rozpocząć generacji.');
+      setSubmitting(false);
+    }
+  }
+
+  const suggestedSets = roomId ? sets.filter((s) => s.room_id === roomId) : [];
+  const otherSets = roomId ? sets.filter((s) => s.room_id !== roomId) : sets;
+  const selectedModel = STUDIO_MODELS.find((m) => m.id === model);
+
+  if (loading) {
+    return (
+      <div className="flex h-64 items-center justify-center">
+        <Spinner className="h-8 w-8" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-w-4xl">
+      <PageTitle
+        title="Nowa wizualizacja"
+        subtitle="Packshot produktu + pokój + styl — resztą zajmie się model."
+      />
+
+      <div className="space-y-6">
+        {/* Krok 1: Packshot */}
+        <Card className="p-6">
+          <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-studio-muted">
+            1. Packshot produktu
+          </h2>
+          <div
+            onDragOver={(e) => {
+              e.preventDefault();
+              setDragOver(true);
+            }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setDragOver(false);
+              const file = e.dataTransfer.files[0];
+              if (file) void handleUpload(file);
+            }}
+            onClick={() => fileInputRef.current?.click()}
+            className={cn(
+              'mt-3 flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed px-6 py-8 text-center transition-colors',
+              dragOver
+                ? 'border-studio-accent bg-studio-accent-soft'
+                : 'border-studio-border hover:border-studio-accent/50'
+            )}
+          >
+            {uploading ? (
+              <Spinner className="h-8 w-8" />
+            ) : (
+              <ImagePlus className="h-8 w-8 text-studio-muted" />
+            )}
+            <p className="text-sm font-medium text-studio-ink">
+              Przeciągnij packshot albo kliknij, żeby wybrać plik
+            </p>
+            <p className="text-xs text-studio-muted">PNG, JPG lub WEBP, do 20 MB</p>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) void handleUpload(file);
+                e.target.value = '';
+              }}
+            />
+          </div>
+
+          {packshots.length > 0 && (
+            <div className="mt-4 grid grid-cols-4 gap-3 sm:grid-cols-6">
+              {packshots.slice(0, 12).map((p) => (
+                <button
+                  key={p.id}
+                  onClick={() => setPackshotId(p.id === packshotId ? null : p.id)}
+                  className={cn(
+                    'group relative aspect-square overflow-hidden rounded-lg border-2 bg-white transition-all',
+                    packshotId === p.id
+                      ? 'border-studio-accent ring-2 ring-studio-accent/30'
+                      : 'border-studio-border hover:border-studio-accent/50'
+                  )}
+                  title={p.original_filename ?? undefined}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={p.image_url}
+                    alt={p.original_filename ?? 'packshot'}
+                    className="h-full w-full object-contain"
+                    loading="lazy"
+                  />
+                  {packshotId === p.id && (
+                    <span className="absolute right-1 top-1 rounded-full bg-studio-accent p-1 text-white">
+                      <Check className="h-3 w-3" />
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+        </Card>
+
+        {/* Krok 2: Pokój */}
+        <Card className="p-6">
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-studio-muted">
+            2. Pokój
+          </h2>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {rooms.map((room) => (
+              <button
+                key={room.id}
+                onClick={() => setRoomId(room.id === roomId ? null : room.id)}
+                className={cn(
+                  'flex flex-col items-center gap-2 rounded-xl border-2 px-3 py-4 text-center transition-all',
+                  roomId === room.id
+                    ? 'border-studio-accent bg-studio-accent-soft'
+                    : 'border-studio-border hover:border-studio-accent/50'
+                )}
+              >
+                <RoomIcon
+                  icon={room.icon}
+                  className={cn(
+                    'h-6 w-6',
+                    roomId === room.id ? 'text-studio-accent-dark' : 'text-studio-muted'
+                  )}
+                />
+                <span className="text-sm font-medium leading-tight">{room.name}</span>
+              </button>
+            ))}
+          </div>
+        </Card>
+
+        {/* Krok 3: Styl */}
+        <Card className="p-6">
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-studio-muted">
+            3. Styl aranżacji
+          </h2>
+          <label className="mb-1.5 block text-xs font-medium text-studio-muted">
+            Opis własny (opcjonalnie)
+          </label>
+          <textarea
+            value={styleText}
+            onChange={(e) => setStyleText(e.target.value)}
+            rows={2}
+            maxLength={2000}
+            placeholder="np. japandi, jasne drewno dębowe, len, poranne światło"
+            className="w-full rounded-xl border border-studio-border bg-white px-4 py-3 text-sm outline-none transition-colors placeholder:text-studio-muted/60 focus:border-studio-accent"
+          />
+
+          <label className="mb-1.5 mt-4 block text-xs font-medium text-studio-muted">
+            Zestaw inspiracji (opcjonalnie)
+          </label>
+          {sets.length === 0 ? (
+            <p className="text-sm text-studio-muted">
+              Brak zestawów — możesz je dodać w sekcji Inspiracje.
+            </p>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {[...suggestedSets, ...otherSets].map((s) => (
+                <button
+                  key={s.id}
+                  onClick={() => setSetId(s.id === setId ? null : s.id)}
+                  className={cn(
+                    'flex items-center gap-2 rounded-full border-2 py-1 pl-1 pr-3 text-sm transition-all',
+                    setId === s.id
+                      ? 'border-studio-accent bg-studio-accent-soft font-medium'
+                      : 'border-studio-border hover:border-studio-accent/50'
+                  )}
+                >
+                  {s.cover_url ? (
+                    /* eslint-disable-next-line @next/next/no-img-element */
+                    <img
+                      src={s.cover_url}
+                      alt=""
+                      className="h-6 w-6 rounded-full object-cover"
+                    />
+                  ) : (
+                    <span className="h-6 w-6 rounded-full bg-studio-bg" />
+                  )}
+                  {s.name}
+                  <span className="text-xs text-studio-muted">({s.image_count})</span>
+                  {suggestedSets.includes(s) && <Badge tone="accent">pasuje do pokoju</Badge>}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {setId && (
+            <div className="mt-5 rounded-xl bg-studio-bg p-4">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-medium text-studio-muted">Siła inspiracji</label>
+                <span className="text-sm font-semibold text-studio-accent-dark">
+                  {strength} — {labelForStrength(strength)}
+                </span>
+              </div>
+              <input
+                type="range"
+                min={1}
+                max={5}
+                step={1}
+                value={strength}
+                onChange={(e) => setStrength(Number(e.target.value))}
+                className="mt-2 w-full accent-studio-accent"
+              />
+              <div className="mt-1 flex justify-between text-[10px] text-studio-muted">
+                <span>1 · subtelnie</span>
+                <span>5 · wiernie</span>
+              </div>
+            </div>
+          )}
+        </Card>
+
+        {/* Krok 4: Uwagi */}
+        <Card className="p-6">
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-studio-muted">
+            4. Uwagi ręczne (opcjonalnie)
+          </h2>
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            rows={2}
+            maxLength={2000}
+            placeholder="np. dodaj roślinę po lewej stronie, okno z widokiem na ogród"
+            className="w-full rounded-xl border border-studio-border bg-white px-4 py-3 text-sm outline-none transition-colors placeholder:text-studio-muted/60 focus:border-studio-accent"
+          />
+        </Card>
+
+        {/* Krok 5: Model */}
+        <Card className="p-6">
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-studio-muted">
+            5. Model generacji
+          </h2>
+          <div className="grid gap-3 sm:grid-cols-3">
+            {STUDIO_MODELS.map((m) => (
+              <button
+                key={m.id}
+                onClick={() => setModel(m.id)}
+                className={cn(
+                  'flex flex-col gap-1.5 rounded-xl border-2 p-4 text-left transition-all',
+                  model === m.id
+                    ? 'border-studio-accent bg-studio-accent-soft'
+                    : 'border-studio-border hover:border-studio-accent/50'
+                )}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold">{m.label}</span>
+                  {m.id === DEFAULT_GENERATION_MODEL && <Badge tone="accent">domyślny</Badge>}
+                </div>
+                <span className="text-xs text-studio-muted">{m.vendor}</span>
+                <span className="text-xs leading-snug text-studio-ink/80">{m.description}</span>
+                <span className="mt-1 text-xs font-medium text-studio-accent-dark">
+                  {m.whenToUse}
+                </span>
+              </button>
+            ))}
+          </div>
+        </Card>
+
+        <div className="flex items-center justify-end gap-4 pb-8">
+          {selectedModel && (
+            <p className="text-sm text-studio-muted">
+              Szacowany czas: ~{selectedModel.estimatedSeconds} s
+            </p>
+          )}
+          <Button onClick={handleSubmit} disabled={submitting} className="px-8 py-3 text-base">
+            {submitting ? <Spinner className="h-5 w-5 text-white" /> : <Sparkles className="h-5 w-5" />}
+            Generuj wizualizację
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
