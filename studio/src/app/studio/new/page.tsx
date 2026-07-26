@@ -9,7 +9,14 @@ import { Badge, Button, Card, PageTitle, Spinner, labelForStrength } from '@/com
 import { apiForm, apiGet, apiJson } from '@/lib/studio/client';
 import { DEFAULT_GENERATION_MODEL, STUDIO_MODELS, type StudioModelId } from '@/lib/studio/models';
 import { cn } from '@/lib/utils';
-import type { GenerationRow, InspirationSetRow, PackshotRow, RoomRow } from '@/lib/studio/types';
+import {
+  MAX_PACKSHOTS_PER_GENERATION,
+  type GenerationRow,
+  type InspirationSetRow,
+  type PackshotRole,
+  type PackshotRow,
+  type RoomRow,
+} from '@/lib/studio/types';
 
 interface PackshotItem extends PackshotRow {
   image_url: string;
@@ -29,7 +36,8 @@ export default function NewVisualizationPage() {
   const [sets, setSets] = useState<SetItem[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const [packshotId, setPackshotId] = useState<string | null>(null);
+  /** Wybrane packshoty w kolejności klikania; pierwszy automatycznie = główny. */
+  const [selectedPackshots, setSelectedPackshots] = useState<{ id: string; role: PackshotRole }[]>([]);
   const [roomId, setRoomId] = useState<string | null>(null);
   const [styleText, setStyleText] = useState('');
   const [setId, setSetId] = useState<string | null>(null);
@@ -57,9 +65,16 @@ export default function NewVisualizationPage() {
         // Duplikacja ustawień: /studio/new?from=<id generacji>
         const from = new URLSearchParams(window.location.search).get('from');
         if (from) {
-          const d = await apiGet<{ generation: GenerationRow }>(`/api/studio/generations/${from}`);
+          const d = await apiGet<{
+            generation: GenerationRow;
+            packshots?: { id: string; role: PackshotRole }[];
+          }>(`/api/studio/generations/${from}`);
           const g = d.generation;
-          if (g.packshot_id) setPackshotId(g.packshot_id);
+          if (d.packshots?.length) {
+            setSelectedPackshots(d.packshots.map(({ id, role }) => ({ id, role })));
+          } else if (g.packshot_id) {
+            setSelectedPackshots([{ id: g.packshot_id, role: 'main' }]);
+          }
           if (g.room_id) setRoomId(g.room_id);
           setStyleText(g.style_text ?? '');
           setSetId(g.inspiration_set_id);
@@ -87,7 +102,11 @@ export default function NewVisualizationPage() {
         form.append('file', file);
         const res = await apiForm<{ packshot: PackshotItem }>('/api/studio/packshots', form);
         setPackshots((prev) => [res.packshot, ...prev]);
-        setPackshotId(res.packshot.id);
+        setSelectedPackshots((prev) =>
+          prev.length >= MAX_PACKSHOTS_PER_GENERATION
+            ? prev
+            : [...prev, { id: res.packshot.id, role: prev.length === 0 ? 'main' : 'addition' }]
+        );
         toast('success', 'Packshot wgrany.');
       } catch (err) {
         toast('error', err instanceof Error ? err.message : 'Upload nie powiódł się.');
@@ -98,13 +117,41 @@ export default function NewVisualizationPage() {
     [toast]
   );
 
+  /** Zaznaczenie/odznaczenie kafelka; pierwszy wybrany automatycznie = główny. */
+  function togglePackshot(id: string) {
+    setSelectedPackshots((prev) => {
+      if (prev.some((p) => p.id === id)) {
+        const next = prev.filter((p) => p.id !== id);
+        // Zawsze przynajmniej jeden główny, jeśli coś zostało.
+        return next.length > 0 && !next.some((p) => p.role === 'main')
+          ? next.map((p, i) => (i === 0 ? { ...p, role: 'main' as const } : p))
+          : next;
+      }
+      if (prev.length >= MAX_PACKSHOTS_PER_GENERATION) {
+        toast('error', `Maksymalnie ${MAX_PACKSHOTS_PER_GENERATION} packshotów w jednej wizualizacji.`);
+        return prev;
+      }
+      return [...prev, { id, role: prev.length === 0 ? 'main' : 'addition' }];
+    });
+  }
+
+  function togglePackshotRole(id: string) {
+    setSelectedPackshots((prev) => {
+      const next = prev.map((p) =>
+        p.id === id ? { ...p, role: (p.role === 'main' ? 'addition' : 'main') as PackshotRole } : p
+      );
+      // Ostatniego głównego nie da się zdegradować — musi zostać co najmniej jeden.
+      return next.some((p) => p.role === 'main') ? next : prev;
+    });
+  }
+
   async function handleSubmit() {
-    if (!packshotId) return toast('error', 'Wybierz albo wgraj packshot produktu.');
+    if (selectedPackshots.length === 0) return toast('error', 'Wybierz albo wgraj packshot produktu.');
     if (!roomId) return toast('error', 'Wybierz pokój.');
     setSubmitting(true);
     try {
       const res = await apiJson<{ generation: GenerationRow }>('/api/studio/generations', 'POST', {
-        packshotId,
+        packshots: selectedPackshots,
         roomId,
         styleText: styleText || undefined,
         inspirationSetId: setId,
@@ -143,8 +190,12 @@ export default function NewVisualizationPage() {
         {/* Krok 1: Packshot */}
         <Card className="p-6">
           <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-studio-muted">
-            1. Packshot produktu
+            1. Packshoty produktów (do {MAX_PACKSHOTS_PER_GENERATION})
           </h2>
+          <p className="text-xs text-studio-muted">
+            Pierwszy wybrany zostaje <strong>głównym</strong> produktem, kolejne — dodatkami.
+            Kliknij etykietę roli na miniaturze, żeby ją zmienić (może być kilka głównych, np. kolekcja mebli).
+          </p>
           <div
             onDragOver={(e) => {
               e.preventDefault();
@@ -189,33 +240,64 @@ export default function NewVisualizationPage() {
 
           {packshots.length > 0 && (
             <div className="mt-4 grid grid-cols-4 gap-3 sm:grid-cols-6">
-              {packshots.slice(0, 12).map((p) => (
-                <button
-                  key={p.id}
-                  onClick={() => setPackshotId(p.id === packshotId ? null : p.id)}
-                  className={cn(
-                    'group relative aspect-square overflow-hidden rounded-lg border-2 bg-white transition-all',
-                    packshotId === p.id
-                      ? 'border-studio-accent ring-2 ring-studio-accent/30'
-                      : 'border-studio-border hover:border-studio-accent/50'
-                  )}
-                  title={p.original_filename ?? undefined}
-                >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={p.image_url}
-                    alt={p.original_filename ?? 'packshot'}
-                    className="h-full w-full object-contain"
-                    loading="lazy"
-                  />
-                  {packshotId === p.id && (
-                    <span className="absolute right-1 top-1 rounded-full bg-studio-accent p-1 text-white">
-                      <Check className="h-3 w-3" />
-                    </span>
-                  )}
-                </button>
-              ))}
+              {packshots.slice(0, 18).map((p) => {
+                const selection = selectedPackshots.find((s) => s.id === p.id);
+                return (
+                  <div
+                    key={p.id}
+                    onClick={() => togglePackshot(p.id)}
+                    role="button"
+                    className={cn(
+                      'group relative aspect-square cursor-pointer overflow-hidden rounded-lg border-2 bg-white transition-all',
+                      selection
+                        ? 'border-studio-accent ring-2 ring-studio-accent/30'
+                        : 'border-studio-border hover:border-studio-accent/50'
+                    )}
+                    title={p.original_filename ?? undefined}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={p.image_url}
+                      alt={p.original_filename ?? 'packshot'}
+                      className="h-full w-full object-contain"
+                      loading="lazy"
+                    />
+                    {selection && (
+                      <>
+                        <span className="absolute right-1 top-1 rounded-full bg-studio-accent p-1 text-white">
+                          <Check className="h-3 w-3" />
+                        </span>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            togglePackshotRole(p.id);
+                          }}
+                          title="Kliknij, żeby zmienić rolę"
+                          className={cn(
+                            'absolute inset-x-1 bottom-1 rounded-md px-1 py-0.5 text-center text-[10px] font-semibold uppercase tracking-wide transition-colors',
+                            selection.role === 'main'
+                              ? 'bg-studio-accent text-white hover:bg-studio-accent-dark'
+                              : 'bg-studio-ink/70 text-white hover:bg-studio-ink'
+                          )}
+                        >
+                          {selection.role === 'main' ? 'Główny' : 'Dodatek'}
+                        </button>
+                      </>
+                    )}
+                  </div>
+                );
+              })}
             </div>
+          )}
+          {selectedPackshots.length > 1 && (
+            <p className="mt-3 text-xs text-studio-muted">
+              Wybrano {selectedPackshots.length}:{' '}
+              {selectedPackshots.filter((s) => s.role === 'main').length} główn
+              {selectedPackshots.filter((s) => s.role === 'main').length === 1 ? 'y' : 'e'},{' '}
+              {selectedPackshots.filter((s) => s.role === 'addition').length} dodatk
+              {selectedPackshots.filter((s) => s.role === 'addition').length === 1 ? '' : 'ów'}.
+              Wszystkie produkty pozostaną wiernie odwzorowane w jednej scenie.
+            </p>
           )}
         </Card>
 

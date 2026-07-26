@@ -41,6 +41,18 @@ export interface InspirationImageRow {
   created_at: string;
 }
 
+export type PackshotRole = 'main' | 'addition';
+
+export interface GenerationPackshotRow {
+  generation_id: string;
+  packshot_id: string;
+  role: PackshotRole;
+  sort_order: number;
+}
+
+/** Maksymalna liczba packshotów w jednej wizualizacji. */
+export const MAX_PACKSHOTS_PER_GENERATION = 5;
+
 export type GenerationStatus = 'pending' | 'done' | 'error';
 
 export interface GenerationRow {

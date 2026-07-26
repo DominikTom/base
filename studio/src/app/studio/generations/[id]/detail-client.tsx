@@ -32,6 +32,12 @@ type GenerationDetail = GenerationRow & {
 interface DetailResponse {
   generation: GenerationDetail;
   packshot: { id: string; image_url: string; original_filename: string | null } | null;
+  packshots?: {
+    id: string;
+    role: 'main' | 'addition';
+    image_url: string;
+    original_filename: string | null;
+  }[];
   tree: (GenerationRow & { image_url: string | null })[];
 }
 
@@ -146,7 +152,11 @@ export function GenerationDetailClient({ id }: { id: string }) {
     // "Generuj ponownie z tymi ustawieniami" — nowa generacja, te same parametry.
     try {
       const res = await apiJson<{ generation: GenerationRow }>('/api/studio/generations', 'POST', {
-        packshotId: g.packshot_id,
+        packshots: data?.packshots?.length
+          ? data.packshots.map(({ id, role }) => ({ id, role }))
+          : g.packshot_id
+            ? [{ id: g.packshot_id, role: 'main' }]
+            : [],
         roomId: g.room_id,
         styleText: g.style_text ?? undefined,
         inspirationSetId: g.inspiration_set_id,
@@ -285,25 +295,38 @@ export function GenerationDetailClient({ id }: { id: string }) {
             <h2 className="text-xs font-semibold uppercase tracking-wide text-studio-muted">
               Kontekst generacji
             </h2>
-            {data.packshot && (
-              <div className="flex items-center gap-3">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={data.packshot.image_url}
-                  alt="Packshot"
-                  className="h-14 w-14 rounded-lg border border-studio-border bg-white object-contain"
-                />
-                <div>
-                  <p className="font-medium">Packshot źródłowy</p>
-                  <p className="text-xs text-studio-muted">
-                    {data.packshot.original_filename ?? '—'}
-                  </p>
-                  <Link
-                    href={`/studio/editor?type=packshot&id=${data.packshot.id}`}
-                    className="text-xs text-studio-accent-dark hover:underline"
-                  >
-                    edytuj packshot pędzlem
-                  </Link>
+            {(data.packshots?.length ?? 0) > 0 && (
+              <div>
+                <p className="mb-2 font-medium">
+                  {data.packshots!.length === 1 ? 'Packshot źródłowy' : `Packshoty źródłowe (${data.packshots!.length})`}
+                </p>
+                <div className="space-y-2">
+                  {data.packshots!.map((pk) => (
+                    <div key={pk.id} className="flex items-center gap-3">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={pk.image_url}
+                        alt="Packshot"
+                        className="h-12 w-12 rounded-lg border border-studio-border bg-white object-contain"
+                      />
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <Badge tone={pk.role === 'main' ? 'accent' : 'neutral'}>
+                            {pk.role === 'main' ? 'główny' : 'dodatek'}
+                          </Badge>
+                        </div>
+                        <p className="truncate text-xs text-studio-muted">
+                          {pk.original_filename ?? '—'}
+                        </p>
+                        <Link
+                          href={`/studio/editor?type=packshot&id=${pk.id}`}
+                          className="text-xs text-studio-accent-dark hover:underline"
+                        >
+                          edytuj pędzlem
+                        </Link>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             )}

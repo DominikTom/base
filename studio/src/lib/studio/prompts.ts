@@ -7,9 +7,9 @@
 /**
  * ŻELAZNA ZASADA — ochrona produktu. Packshot mebla jest nienaruszalny.
  */
-export const PRODUCT_LOCK_PROMPT_PL = `Packshot mebla jest nienaruszalny — zachowaj identyczną bryłę, proporcje, konstrukcję, kolor tapicerki, materiał, szwy, nóżki i wszystkie detale produktu. Zmieniaj WYŁĄCZNIE otoczenie: pomieszczenie, tło, oświetlenie, dekoracje, dodatki.`;
+export const PRODUCT_LOCK_PROMPT_PL = `Packshoty mebli są nienaruszalne — zachowaj identyczną bryłę, proporcje, konstrukcję, kolor tapicerki, materiał, szwy, nóżki i wszystkie detale każdego produktu. Zmieniaj WYŁĄCZNIE otoczenie: pomieszczenie, tło, oświetlenie, dekoracje, dodatki.`;
 
-export const PRODUCT_LOCK_PROMPT_EN = `IRON RULE — PRODUCT INTEGRITY: The furniture product shown in the first reference image (the packshot) is untouchable. Reproduce it EXACTLY: identical shape, proportions, construction, upholstery color, fabric and material texture, stitching, seams, legs, and every product detail. Do NOT restyle, recolor, reshape, redesign or "improve" the product in any way. You may ONLY change the surroundings: the room, background, lighting, decorations and accessories. The product must remain photographically faithful to the packshot.`;
+export const PRODUCT_LOCK_PROMPT_EN = `IRON RULE — PRODUCT INTEGRITY: The furniture products shown in the packshot images are untouchable. Reproduce every one of them EXACTLY: identical shape, proportions, construction, upholstery color, fabric and material texture, stitching, seams, legs, and every product detail. Do NOT restyle, recolor, reshape, redesign or "improve" any product in any way. You may ONLY change the surroundings: the room, background, lighting, decorations and accessories. Each product must remain photographically faithful to its packshot.`;
 
 /**
  * Siła inspiracji 1–5. Każdy poziom to przetestowana fraza + limit obrazów
@@ -71,18 +71,36 @@ export interface BuildPromptInput {
   inspirationStrength?: number | null;
   hasInspirationImages?: boolean;
   manualNotes?: string | null;
+  /** Liczba packshotów głównych (bohaterowie sceny). */
+  mainCount?: number;
+  /** Liczba packshotów-dodatków (produkty uzupełniające). */
+  additionCount?: number;
 }
 
 /**
- * Składa pełny prompt generacji: ochrona produktu → scena → styl →
- * instrukcja inspiracji → uwagi ręczne.
+ * Składa pełny prompt generacji: ochrona produktów → role packshotów →
+ * scena → styl → instrukcja inspiracji → uwagi ręczne.
  */
 export function buildGenerationPrompt(input: BuildPromptInput): string {
   const parts: string[] = [PRODUCT_LOCK_PROMPT_EN];
 
-  parts.push(
-    'TASK: Place the product from the packshot (first image) in a photorealistic interior scene described below. Professional interior photography, realistic perspective, natural shadows and reflections consistent with the scene lighting, high-end furniture catalog quality.'
-  );
+  const mains = Math.max(1, input.mainCount ?? 1);
+  const additions = Math.max(0, input.additionCount ?? 0);
+  const total = mains + additions;
+
+  if (total === 1) {
+    parts.push(
+      'TASK: Place the product from the packshot (first image) in a photorealistic interior scene described below. Professional interior photography, realistic perspective, natural shadows and reflections consistent with the scene lighting, high-end furniture catalog quality.'
+    );
+  } else {
+    const rolesLine =
+      additions > 0
+        ? `The first ${mains === 1 ? 'image is the MAIN product packshot — the hero of the scene' : `${mains} images are MAIN product packshots — co-heroes of the scene, e.g. a matching furniture collection`}. The next ${additions === 1 ? 'image is a SUPPORTING product packshot' : `${additions} images are SUPPORTING product packshots`} — place ${additions === 1 ? 'it' : 'them'} naturally in the scene as complementary furniture/accessories, less prominent than the main product${mains > 1 ? 's' : ''}.`
+        : `The first ${mains} images are all MAIN product packshots — present them together as one coherent furniture collection, arranged naturally in the same scene with sensible spacing and composition.`;
+    parts.push(
+      `TASK: Arrange ALL ${total} products from the packshot images together in ONE photorealistic interior scene described below. ${rolesLine} Professional interior photography, realistic perspective, consistent scale between products, natural shadows and reflections consistent with the scene lighting, high-end furniture catalog quality.`
+    );
+  }
 
   if (input.roomBasePrompt) {
     const roomLabel = input.roomName ? ` (${input.roomName})` : '';

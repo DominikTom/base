@@ -26,22 +26,45 @@ export async function GET(request: NextRequest, ctx: Ctx) {
   };
   const { rooms, inspiration_sets, ...row } = data as Row;
 
-  // Packshot źródłowy
-  let packshot: { id: string; image_url: string; original_filename: string | null } | null = null;
-  if (row.packshot_id) {
-    const { data: pk } = await auth.supabase
+  // Packshoty źródłowe (1–5, z rolami; fallback do pojedynczego packshot_id)
+  const { data: links } = await auth.supabase
+    .from('generation_packshots')
+    .select('packshot_id, role, sort_order')
+    .eq('generation_id', row.id);
+  const orderedLinks =
+    links && links.length > 0
+      ? [...links].sort((a, b) =>
+          a.role === b.role ? a.sort_order - b.sort_order : a.role === 'main' ? -1 : 1
+        )
+      : row.packshot_id
+        ? [{ packshot_id: row.packshot_id, role: 'main', sort_order: 0 }]
+        : [];
+
+  let packshots: {
+    id: string;
+    role: string;
+    image_url: string;
+    original_filename: string | null;
+  }[] = [];
+  if (orderedLinks.length > 0) {
+    const { data: pks } = await auth.supabase
       .from('packshots')
       .select('id, storage_path, original_filename')
-      .eq('id', row.packshot_id)
-      .maybeSingle();
-    if (pk) {
-      packshot = {
-        id: pk.id,
-        image_url: studioFileUrl('packshots', pk.storage_path),
-        original_filename: pk.original_filename,
-      };
-    }
+      .in('id', orderedLinks.map((l) => l.packshot_id));
+    const byId = new Map((pks ?? []).map((p) => [p.id, p]));
+    packshots = orderedLinks.flatMap((l) => {
+      const pk = byId.get(l.packshot_id);
+      return pk
+        ? [{
+            id: pk.id,
+            role: l.role,
+            image_url: studioFileUrl('packshots', pk.storage_path),
+            original_filename: pk.original_filename,
+          }]
+        : [];
+    });
   }
+  const packshot = packshots[0] ?? null;
 
   // Drzewo wersji: korzeń → wszyscy potomkowie (edycje pędzlem jako dzieci).
   let rootId = row.id;
@@ -90,6 +113,7 @@ export async function GET(request: NextRequest, ctx: Ctx) {
       author_name: author.data?.display_name ?? null,
     },
     packshot,
+    packshots,
     tree: tree.map(withUrl),
   });
 }

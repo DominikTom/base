@@ -10,8 +10,16 @@ import type { GenerationRow } from '@/lib/studio/types';
 /** Generacja potrafi trwać kilka minut (modele obrazowe + upload wyniku). */
 export const maxDuration = 300;
 
+const packshotEntry = z.object({
+  id: z.string().uuid(),
+  role: z.enum(['main', 'addition']).default('main'),
+});
+
 const createSchema = z.object({
-  packshotId: z.string().uuid(),
+  /** Stary format (pojedynczy packshot) — nadal wspierany. */
+  packshotId: z.string().uuid().optional(),
+  /** Nowy format: 1–5 packshotów z rolami; min. jeden główny. */
+  packshots: z.array(packshotEntry).min(1).max(5).optional(),
   roomId: z.string().uuid(),
   styleText: z.string().max(2000).optional(),
   inspirationSetId: z.string().uuid().nullish(),
@@ -34,6 +42,31 @@ export async function POST(request: NextRequest) {
     );
   }
   const input = parsed.data;
+
+  // Normalizacja packshotów: nowy format (lista z rolami) albo stary (pojedynczy).
+  let packshotList = input.packshots ?? (input.packshotId ? [{ id: input.packshotId, role: 'main' as const }] : []);
+  if (packshotList.length === 0) {
+    return NextResponse.json({ error: 'Wybierz przynajmniej jeden packshot.' }, { status: 400 });
+  }
+  const uniqueIds = new Set(packshotList.map((p) => p.id));
+  if (uniqueIds.size !== packshotList.length) {
+    return NextResponse.json({ error: 'Packshoty nie mogą się powtarzać.' }, { status: 400 });
+  }
+  if (!packshotList.some((p) => p.role === 'main')) {
+    // Automatyczne wykrycie: bez jawnie głównego — pierwszy zostaje głównym.
+    packshotList = packshotList.map((p, i) => (i === 0 ? { ...p, role: 'main' as const } : p));
+  }
+  const mains = packshotList.filter((p) => p.role === 'main');
+  const additions = packshotList.filter((p) => p.role === 'addition');
+
+  const { count: foundPackshots } = await auth.supabase
+    .from('packshots')
+    .select('id', { count: 'exact', head: true })
+    .in('id', [...uniqueIds])
+    .is('deleted_at', null);
+  if ((foundPackshots ?? 0) !== uniqueIds.size) {
+    return NextResponse.json({ error: 'Któryś z packshotów nie istnieje albo jest w koszu.' }, { status: 400 });
+  }
 
   const { data: room, error: roomErr } = await auth.supabase
     .from('rooms')
@@ -61,13 +94,15 @@ export async function POST(request: NextRequest) {
     inspirationStrength: strength,
     hasInspirationImages,
     manualNotes: input.manualNotes,
+    mainCount: mains.length,
+    additionCount: additions.length,
   });
 
   const { data: created, error: insErr } = await auth.supabase
     .from('generations')
     .insert({
       user_id: auth.user.id,
-      packshot_id: input.packshotId,
+      packshot_id: mains[0].id,
       room_id: input.roomId,
       style_text: input.styleText ?? null,
       inspiration_set_id: input.inspirationSetId ?? null,
@@ -82,6 +117,24 @@ export async function POST(request: NextRequest) {
   if (insErr || !created) {
     return NextResponse.json(
       { error: `Nie udało się utworzyć generacji: ${insErr?.message}` },
+      { status: 500 }
+    );
+  }
+
+  // Powiązania packshotów z rolami (główne najpierw, kolejność wg wyboru).
+  const orderedForInsert = [...mains, ...additions];
+  const { error: linkErr } = await auth.supabase.from('generation_packshots').insert(
+    orderedForInsert.map((p, i) => ({
+      generation_id: (created as GenerationRow).id,
+      packshot_id: p.id,
+      role: p.role,
+      sort_order: i,
+    }))
+  );
+  if (linkErr) {
+    await auth.supabase.from('generations').delete().eq('id', (created as GenerationRow).id);
+    return NextResponse.json(
+      { error: `Nie udało się zapisać packshotów generacji: ${linkErr.message}` },
       { status: 500 }
     );
   }

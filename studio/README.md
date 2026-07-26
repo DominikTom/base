@@ -36,6 +36,16 @@ Identyfikatory można nadpisać env varami `GEMINI_PRO_IMAGE_MODEL`,
 Warstwa abstrakcji: `src/lib/studio/providers/` (interfejs `ImageProvider` —
 dodanie kolejnego modelu, np. FLUX Fill, to jedna klasa + wpis w rejestrze).
 
+## Wiele packshotów w jednej wizualizacji
+
+Do wizualizacji można dodać **do 5 packshotów**. Pierwszy wybrany automatycznie
+zostaje **głównym** produktem (bohaterem sceny), kolejne — **dodatkami**;
+rolę zmienia się kliknięciem etykiety na miniaturze. Dozwolone jest wiele
+głównych (np. kolekcja mebli twardych: 3 komody + RTV) — prompt instruuje
+model, żeby potraktował je jako spójną kolekcję, a wszystkie produkty
+pozostały wiernie odwzorowane. Powiązania: tabela `generation_packshots`
+(migracja `010_generation_packshots.sql`).
+
 ## Architektura
 
 - Auth: Supabase (e-mail + hasło), wspólny projekt z dashboardem

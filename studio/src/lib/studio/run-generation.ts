@@ -64,22 +64,16 @@ export async function runGeneration(
         annotated,
       });
     } else {
-      // --- Generacja z packshota ---
-      if (!generation.packshot_id) throw new Error('Brak packshota dla generacji.');
-      const { data: packshot, error: pkErr } = await supabase
-        .from('packshots')
-        .select('*')
-        .eq('id', generation.packshot_id)
-        .single();
-      if (pkErr || !packshot) throw new Error('Nie znaleziono packshota.');
+      // --- Generacja z packshotów (1–5, główne najpierw) ---
+      const packshotImages = await loadGenerationPackshots(supabase, generation);
+      if (packshotImages.length === 0) throw new Error('Brak packshota dla generacji.');
 
-      const packshotImage = await downloadFromBucket(supabase, 'packshots', packshot.storage_path);
-      const references = await loadInspirationReferences(supabase, generation);
+      const references = await loadInspirationReferences(supabase, generation, packshotImages.length);
 
       result = await provider.generate({
         prompt: generation.full_prompt_sent ?? '',
-        packshot: packshotImage,
-        references,
+        packshot: packshotImages[0],
+        references: [...packshotImages.slice(1), ...references],
         imageSize: generation.model === 'nano-banana-pro' ? '2K' : '1K',
       });
     }
@@ -145,10 +139,52 @@ async function loadEditSource(
   throw new Error('Edycja nie ma źródła (rodzic ani packshot).');
 }
 
+/**
+ * Packshoty generacji w kolejności: główne → dodatki (wg sort_order).
+ * Fallback do pojedynczego generations.packshot_id dla starych rekordów.
+ */
+async function loadGenerationPackshots(
+  supabase: SupabaseClient,
+  generation: GenerationRow
+): Promise<ImageInput[]> {
+  const { data: links } = await supabase
+    .from('generation_packshots')
+    .select('packshot_id, role, sort_order')
+    .eq('generation_id', generation.id);
+
+  let orderedIds: string[];
+  if (links && links.length > 0) {
+    orderedIds = [...links]
+      .sort((a, b) =>
+        a.role === b.role ? a.sort_order - b.sort_order : a.role === 'main' ? -1 : 1
+      )
+      .map((l) => l.packshot_id);
+  } else if (generation.packshot_id) {
+    orderedIds = [generation.packshot_id];
+  } else {
+    return [];
+  }
+
+  const { data: packshots } = await supabase
+    .from('packshots')
+    .select('id, storage_path')
+    .in('id', orderedIds);
+  const pathById = new Map((packshots ?? []).map((p) => [p.id, p.storage_path]));
+
+  const images: ImageInput[] = [];
+  for (const id of orderedIds) {
+    const path = pathById.get(id);
+    if (!path) throw new Error('Nie znaleziono jednego z packshotów generacji.');
+    images.push(await downloadFromBucket(supabase, 'packshots', path));
+  }
+  return images;
+}
+
 /** Obrazy referencyjne z zestawu inspiracji, ograniczone siłą inspiracji. */
 async function loadInspirationReferences(
   supabase: SupabaseClient,
-  generation: GenerationRow
+  generation: GenerationRow,
+  usedInputSlots: number
 ): Promise<ImageInput[]> {
   if (!generation.inspiration_set_id || !generation.inspiration_strength) return [];
   const level = INSPIRATION_STRENGTH_LEVELS[generation.inspiration_strength];
@@ -160,7 +196,10 @@ async function loadInspirationReferences(
     .eq('set_id', generation.inspiration_set_id)
     .order('created_at', { ascending: true });
 
-  const limit = Math.min(level.maxReferenceImages, MAX_TOTAL_INPUT_IMAGES - 1);
+  const limit = Math.max(
+    0,
+    Math.min(level.maxReferenceImages, MAX_TOTAL_INPUT_IMAGES - usedInputSlots)
+  );
   const picked = ((images ?? []) as InspirationImageRow[]).slice(0, limit);
 
   const results: ImageInput[] = [];
