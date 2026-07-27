@@ -274,10 +274,13 @@ export function MaskEditor({
 
   function addReferences(files: FileList | null) {
     if (!files) return;
+    // Kopia synchronicznie — FileList jest żywy i pustoszeje po wyczyszczeniu
+    // inputa, zanim aktualizator stanu zdąży się wykonać.
+    const incoming = [...files];
     const allowed = ['image/png', 'image/jpeg', 'image/webp'];
     setReferences((prev) => {
       const next = [...prev];
-      for (const f of [...files]) {
+      for (const f of incoming) {
         if (next.length >= MAX_EDIT_REFERENCES) break;
         if (!allowed.includes(f.type) || f.size > 20 * 1024 * 1024) continue;
         next.push({ file: f, url: URL.createObjectURL(f) });

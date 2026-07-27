@@ -51,10 +51,13 @@ export default function InspirationsPage() {
 
   function addPendingFiles(files: FileList | null) {
     if (!files) return;
+    // Kopia synchronicznie — FileList jest żywy i pustoszeje po wyczyszczeniu
+    // inputa, zanim aktualizator stanu zdąży się wykonać.
+    const incoming = [...files];
     const allowed = ['image/png', 'image/jpeg', 'image/webp'];
     setPendingFiles((prev) => {
       const next = [...prev];
-      for (const f of [...files]) {
+      for (const f of incoming) {
         if (next.length >= 30) break;
         if (!allowed.includes(f.type)) {
           toast('error', `${f.name}: nieobsługiwany format (PNG, JPG, WEBP).`);
