@@ -7,6 +7,7 @@ import { ArrowLeft, ImagePlus, Star, Trash2, X } from 'lucide-react';
 import { useToast } from '@/components/studio/toast';
 import { Badge, Button, Card, EmptyState, PageTitle, Spinner } from '@/components/studio/ui';
 import { apiGet, apiJson } from '@/lib/studio/client';
+import { readImageDimensions, uploadToStorageFromBrowser } from '@/lib/studio/supabase-browser';
 import { cn } from '@/lib/utils';
 import type { InspirationImageRow, InspirationSetRow, RoomRow } from '@/lib/studio/types';
 
@@ -53,20 +54,41 @@ export function InspirationSetClient({ id }: { id: string }) {
     if (list.length === 0) return;
     setUploading(true);
     try {
-      const form = new FormData();
-      for (const f of list) form.append('files', f);
-      const res = await fetch(`/api/studio/inspirations/${id}/images`, {
-        method: 'POST',
-        body: form,
-      });
-      const json = (await res.json()) as {
-        images?: ImageItem[];
-        errors?: string[];
-        error?: string;
-      };
-      if (!res.ok) throw new Error(json.error ?? 'Upload nie powiódł się.');
-      if (json.errors?.length) toast('error', `Część plików pominięto: ${json.errors.join('; ')}`);
-      if (json.images?.length) toast('success', `Wgrano ${json.images.length} obrazów.`);
+      // Upload z przeglądarki prosto do Storage (omija limit 4,5 MB Vercela),
+      // potem rejestracja ścieżek w API.
+      const allowed = ['image/png', 'image/jpeg', 'image/webp'];
+      const registered: { path: string; width: number | null; height: number | null }[] = [];
+      const skipped: string[] = [];
+      for (const f of list.slice(0, 30)) {
+        if (!allowed.includes(f.type)) {
+          skipped.push(`${f.name}: nieobsługiwany format`);
+          continue;
+        }
+        if (f.size > 20 * 1024 * 1024) {
+          skipped.push(`${f.name}: plik przekracza 20 MB`);
+          continue;
+        }
+        try {
+          const dims = await readImageDimensions(f);
+          const ext = f.type === 'image/jpeg' ? 'jpg' : f.type === 'image/webp' ? 'webp' : 'png';
+          const path = `${id}/${crypto.randomUUID()}.${ext}`;
+          await uploadToStorageFromBrowser('inspirations', path, f, f.type);
+          registered.push({ path, width: dims.width, height: dims.height });
+        } catch (err) {
+          skipped.push(`${f.name}: ${err instanceof Error ? err.message : 'upload nie powiódł się'}`);
+        }
+      }
+
+      if (registered.length > 0) {
+        const json = await apiJson<{ images: ImageItem[]; errors?: string[] }>(
+          `/api/studio/inspirations/${id}/images`,
+          'POST',
+          { files: registered }
+        );
+        if (json.errors?.length) skipped.push(...json.errors);
+        if (json.images.length) toast('success', `Wgrano ${json.images.length} obrazów.`);
+      }
+      if (skipped.length > 0) toast('error', `Część plików pominięto: ${skipped.join('; ')}`);
       await load();
     } catch (err) {
       toast('error', err instanceof Error ? err.message : 'Upload nie powiódł się.');

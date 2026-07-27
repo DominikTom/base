@@ -7,7 +7,8 @@ import { ArrowLeft } from 'lucide-react';
 import { MaskEditor, type MaskEditorSubmit } from '@/components/studio/mask-editor';
 import { useToast } from '@/components/studio/toast';
 import { PageTitle, Spinner } from '@/components/studio/ui';
-import { apiForm, apiGet } from '@/lib/studio/client';
+import { apiGet, apiJson } from '@/lib/studio/client';
+import { getBrowserUserId, uploadToStorageFromBrowser } from '@/lib/studio/supabase-browser';
 import type { GenerationRow, PackshotRow } from '@/lib/studio/types';
 
 export function EditorClient({
@@ -55,15 +56,24 @@ export function EditorClient({
   async function handleSubmit(payload: MaskEditorSubmit) {
     setBusy(true);
     try {
-      const form = new FormData();
-      form.append('sourceType', sourceType);
-      form.append('sourceId', sourceId);
-      form.append('instruction', payload.instruction);
-      form.append('model', payload.model);
-      form.append('mask', payload.mask, 'mask.png');
-      form.append('annotated', payload.annotated, 'annotated.png');
-      form.append('async', '1');
-      const res = await apiForm<{ generation: GenerationRow }>('/api/studio/edits', form);
+      // Maska + annotacja idą z przeglądarki prosto do Storage (RLS) —
+      // omijamy limit 4,5 MB body na funkcjach Vercela.
+      const userId = await getBrowserUserId();
+      const maskPath = `masks/${userId}/${crypto.randomUUID()}-mask.png`;
+      const annotatedPath = maskPath.replace(/-mask\.png$/, '-annotated.png');
+      await Promise.all([
+        uploadToStorageFromBrowser('generations', maskPath, payload.mask, 'image/png'),
+        uploadToStorageFromBrowser('generations', annotatedPath, payload.annotated, 'image/png'),
+      ]);
+
+      const res = await apiJson<{ generation: GenerationRow }>('/api/studio/edits', 'POST', {
+        sourceType,
+        sourceId,
+        instruction: payload.instruction,
+        model: payload.model,
+        maskPath,
+        async: true,
+      });
       router.push(`/studio/generations/${res.generation.id}`);
     } catch (err) {
       toast('error', err instanceof Error ? err.message : 'Nie udało się rozpocząć edycji.');

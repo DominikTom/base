@@ -3,43 +3,34 @@ import { z } from 'zod';
 import { DEFAULT_EDIT_MODEL, isStudioModelId } from '@/lib/studio/models';
 import { annotatedPathForMask, runGeneration } from '@/lib/studio/run-generation';
 import { requireStudioUser } from '@/lib/studio/supabase-server';
-import { studioFileUrl, uploadToBucket } from '@/lib/studio/storage';
+import { studioFileUrl } from '@/lib/studio/storage';
 import type { GenerationRow } from '@/lib/studio/types';
 
 export const maxDuration = 300;
 
-/** Maski/annotacje 4K potrafią być duże, ale trzymamy rozsądny limit. */
-const MAX_MASK_BYTES = 40 * 1024 * 1024;
-
-const fieldsSchema = z.object({
+const bodySchema = z.object({
   sourceType: z.enum(['generation', 'packshot']),
   sourceId: z.string().uuid(),
   instruction: z.string().min(1, 'Opisz, co zmienić w zaznaczonym obszarze.').max(2000),
   model: z.string().refine(isStudioModelId, 'Nieznany model.').default(DEFAULT_EDIT_MODEL),
+  /**
+   * Ścieżka maski w buckecie `generations` (wgranej z przeglądarki prosto do
+   * Storage — omija limit 4,5 MB body Vercela). Annotowana kopia leży pod
+   * ścieżką pochodną (-annotated.png).
+   */
+  maskPath: z.string().min(1).max(500),
+  async: z.boolean().optional(),
 });
 
 /**
- * Edycja pędzlem: przyjmuje maskę (PNG, przezroczysty obszar = do edycji)
- * oraz annotowaną kopię (czerwona półprzezroczysta maska) i tworzy NOWĄ WERSJĘ
- * podpiętą do rodzica (drzewo wersji).
+ * Edycja pędzlem: maska (PNG, przezroczysty obszar = do edycji) i annotowana
+ * kopia są już w Storage; tworzymy NOWĄ WERSJĘ podpiętą do rodzica.
  */
 export async function POST(request: NextRequest) {
   const auth = await requireStudioUser();
   if (auth instanceof NextResponse) return auth;
 
-  let form: FormData;
-  try {
-    form = await request.formData();
-  } catch {
-    return NextResponse.json({ error: 'Oczekiwano multipart/form-data.' }, { status: 400 });
-  }
-
-  const parsed = fieldsSchema.safeParse({
-    sourceType: form.get('sourceType'),
-    sourceId: form.get('sourceId'),
-    instruction: form.get('instruction'),
-    model: form.get('model') ?? undefined,
-  });
+  const parsed = bodySchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
     return NextResponse.json(
       { error: parsed.error.issues[0]?.message ?? 'Nieprawidłowe dane.' },
@@ -48,13 +39,27 @@ export async function POST(request: NextRequest) {
   }
   const input = parsed.data;
 
-  const mask = form.get('mask');
-  const annotated = form.get('annotated');
-  if (!(mask instanceof File) || !(annotated instanceof File)) {
-    return NextResponse.json({ error: 'Brak maski lub annotowanej kopii obrazu.' }, { status: 400 });
+  // Maska musi leżeć w katalogu masek tego użytkownika.
+  if (
+    !input.maskPath.startsWith(`masks/${auth.user.id}/`) ||
+    !input.maskPath.endsWith('-mask.png') ||
+    input.maskPath.includes('..')
+  ) {
+    return NextResponse.json({ error: 'Nieprawidłowa ścieżka maski.' }, { status: 400 });
   }
-  if (mask.size > MAX_MASK_BYTES || annotated.size > MAX_MASK_BYTES) {
-    return NextResponse.json({ error: 'Maska jest za duża.' }, { status: 400 });
+
+  // Szybka weryfikacja, że oba pliki faktycznie są w Storage.
+  const [maskCheck, annotatedCheck] = await Promise.all([
+    auth.supabase.storage.from('generations').createSignedUrl(input.maskPath, 60),
+    auth.supabase.storage
+      .from('generations')
+      .createSignedUrl(annotatedPathForMask(input.maskPath), 60),
+  ]);
+  if (maskCheck.error || annotatedCheck.error) {
+    return NextResponse.json(
+      { error: 'Nie znaleziono maski w Storage — spróbuj ponownie zastosować zmianę.' },
+      { status: 400 }
+    );
   }
 
   // Źródło edycji + kontekst dziedziczony do drzewa wersji
@@ -101,6 +106,7 @@ export async function POST(request: NextRequest) {
       room_id: roomId,
       model: input.model,
       edit_instruction: input.instruction,
+      mask_storage_path: input.maskPath,
       shared: inheritedShared,
       status: 'pending',
     })
@@ -114,45 +120,14 @@ export async function POST(request: NextRequest) {
   }
   const generation = created as GenerationRow;
 
-  const maskPath = `masks/${auth.user.id}/${generation.id}-mask.png`;
-  try {
-    await uploadToBucket(
-      auth.supabase,
-      'generations',
-      maskPath,
-      Buffer.from(await mask.arrayBuffer()),
-      'image/png'
-    );
-    await uploadToBucket(
-      auth.supabase,
-      'generations',
-      annotatedPathForMask(maskPath),
-      Buffer.from(await annotated.arrayBuffer()),
-      'image/png'
-    );
-  } catch (err) {
-    await auth.supabase
-      .from('generations')
-      .update({ status: 'error', error_message: `Upload maski nie powiódł się: ${String(err)}` })
-      .eq('id', generation.id);
-    return NextResponse.json({ error: 'Upload maski nie powiódł się.' }, { status: 500 });
-  }
-
-  await auth.supabase
-    .from('generations')
-    .update({ mask_storage_path: maskPath })
-    .eq('id', generation.id);
-
-  const pendingRow = { ...generation, mask_storage_path: maskPath };
-
-  if (form.get('async') === '1') {
+  if (input.async) {
     after(async () => {
-      await runGeneration(auth.supabase, pendingRow);
+      await runGeneration(auth.supabase, generation);
     });
-    return NextResponse.json({ generation: { ...pendingRow, image_url: null } });
+    return NextResponse.json({ generation: { ...generation, image_url: null } });
   }
 
-  const finished = await runGeneration(auth.supabase, pendingRow);
+  const finished = await runGeneration(auth.supabase, generation);
   return NextResponse.json({
     generation: {
       ...finished,

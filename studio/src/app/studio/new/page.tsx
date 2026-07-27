@@ -6,7 +6,12 @@ import { Check, ImagePlus, Sparkles } from 'lucide-react';
 import { RoomIcon } from '@/components/studio/room-icon';
 import { useToast } from '@/components/studio/toast';
 import { Badge, Button, Card, PageTitle, Spinner, labelForStrength } from '@/components/studio/ui';
-import { apiForm, apiGet, apiJson } from '@/lib/studio/client';
+import { apiGet, apiJson } from '@/lib/studio/client';
+import {
+  getBrowserUserId,
+  readImageDimensions,
+  uploadToStorageFromBrowser,
+} from '@/lib/studio/supabase-browser';
 import { DEFAULT_GENERATION_MODEL, STUDIO_MODELS, type StudioModelId } from '@/lib/studio/models';
 import { cn } from '@/lib/utils';
 import {
@@ -96,11 +101,26 @@ export default function NewVisualizationPage() {
         toast('error', 'Plik jest za duży — limit to 20 MB.');
         return;
       }
+      const allowed = ['image/png', 'image/jpeg', 'image/webp'];
+      if (!allowed.includes(file.type)) {
+        toast('error', 'Nieobsługiwany format. Dozwolone: PNG, JPG, WEBP.');
+        return;
+      }
       setUploading(true);
       try {
-        const form = new FormData();
-        form.append('file', file);
-        const res = await apiForm<{ packshot: PackshotItem }>('/api/studio/packshots', form);
+        // Upload prosto do Storage (RLS) — omija limit 4,5 MB body Vercela.
+        const dims = await readImageDimensions(file);
+        const userId = await getBrowserUserId();
+        const ext = file.type === 'image/jpeg' ? 'jpg' : file.type === 'image/webp' ? 'webp' : 'png';
+        const path = `${userId}/${crypto.randomUUID()}.${ext}`;
+        await uploadToStorageFromBrowser('packshots', path, file, file.type);
+
+        const res = await apiJson<{ packshot: PackshotItem }>('/api/studio/packshots', 'POST', {
+          path,
+          originalFilename: file.name,
+          width: dims.width,
+          height: dims.height,
+        });
         setPackshots((prev) => [res.packshot, ...prev]);
         setSelectedPackshots((prev) =>
           prev.length >= MAX_PACKSHOTS_PER_GENERATION

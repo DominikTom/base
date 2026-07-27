@@ -1,20 +1,27 @@
-import { imageSize } from 'image-size';
 import { NextResponse, type NextRequest } from 'next/server';
-import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { requireStudioUser } from '@/lib/studio/supabase-server';
-import {
-  ALLOWED_IMAGE_TYPES,
-  extForMime,
-  MAX_UPLOAD_BYTES,
-  removeFromBucket,
-  studioFileUrl,
-  uploadToBucket,
-} from '@/lib/studio/storage';
+import { removeFromBucket, studioFileUrl } from '@/lib/studio/storage';
 
 type Ctx = RouteContext<'/api/studio/inspirations/[id]/images'>;
 
-/** Upload wielu plików naraz do zestawu inspiracji. */
+const registerSchema = z.object({
+  files: z
+    .array(
+      z.object({
+        path: z.string().min(1).max(500),
+        width: z.number().int().positive().nullish(),
+        height: z.number().int().positive().nullish(),
+      })
+    )
+    .min(1, 'Brak plików do zarejestrowania.')
+    .max(30, 'Maksymalnie 30 plików naraz.'),
+});
+
+/**
+ * Rejestracja obrazów wgranych client-side do bucketu `inspirations`
+ * (upload z przeglądarki omija limit 4,5 MB body Vercela).
+ */
 export async function POST(request: NextRequest, ctx: Ctx) {
   const auth = await requireStudioUser();
   if (auth instanceof NextResponse) return auth;
@@ -29,60 +36,45 @@ export async function POST(request: NextRequest, ctx: Ctx) {
     return NextResponse.json({ error: 'Nie znaleziono zestawu.' }, { status: 404 });
   }
 
-  let form: FormData;
-  try {
-    form = await request.formData();
-  } catch {
-    return NextResponse.json({ error: 'Oczekiwano multipart/form-data.' }, { status: 400 });
-  }
-
-  const files = form.getAll('files').filter((f): f is File => f instanceof File);
-  if (files.length === 0) {
-    return NextResponse.json({ error: 'Brak plików do wgrania.' }, { status: 400 });
-  }
-  if (files.length > 30) {
-    return NextResponse.json({ error: 'Maksymalnie 30 plików naraz.' }, { status: 400 });
+  const parsed = registerSchema.safeParse(await request.json().catch(() => null));
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: parsed.error.issues[0]?.message ?? 'Nieprawidłowe dane.' },
+      { status: 400 }
+    );
   }
 
   const uploaded = [];
   const errors: string[] = [];
-  for (const file of files) {
-    if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
-      errors.push(`${file.name}: nieobsługiwany format`);
+  for (const file of parsed.data.files) {
+    if (
+      !file.path.startsWith(`${setId}/`) ||
+      file.path.includes('..') ||
+      !/\.(png|jpg|jpeg|webp)$/i.test(file.path)
+    ) {
+      errors.push(`${file.path}: nieprawidłowa ścieżka`);
       continue;
     }
-    if (file.size > MAX_UPLOAD_BYTES) {
-      errors.push(`${file.name}: plik przekracza 20 MB`);
-      continue;
-    }
-    const buffer = Buffer.from(await file.arrayBuffer());
-    let width: number | null = null;
-    let height: number | null = null;
-    try {
-      const dim = imageSize(buffer);
-      width = dim.width ?? null;
-      height = dim.height ?? null;
-    } catch {
-      errors.push(`${file.name}: nie wygląda na poprawny obraz`);
-      continue;
-    }
-    const path = `${setId}/${randomUUID()}.${extForMime(file.type)}`;
-    try {
-      await uploadToBucket(auth.supabase, 'inspirations', path, buffer, file.type);
-    } catch {
-      errors.push(`${file.name}: upload nie powiódł się`);
+    const exists = await auth.supabase.storage.from('inspirations').createSignedUrl(file.path, 60);
+    if (exists.error) {
+      errors.push(`${file.path}: nie znaleziono pliku w Storage`);
       continue;
     }
     const { data: row, error } = await auth.supabase
       .from('inspiration_images')
-      .insert({ set_id: setId, storage_path: path, width, height })
+      .insert({
+        set_id: setId,
+        storage_path: file.path,
+        width: file.width ?? null,
+        height: file.height ?? null,
+      })
       .select()
       .single();
     if (error || !row) {
-      errors.push(`${file.name}: zapis do bazy nie powiódł się`);
+      errors.push(`${file.path}: zapis do bazy nie powiódł się`);
       continue;
     }
-    uploaded.push({ ...row, image_url: studioFileUrl('inspirations', path) });
+    uploaded.push({ ...row, image_url: studioFileUrl('inspirations', file.path) });
   }
 
   // Pierwszy obraz zestawu zostaje okładką.
