@@ -170,24 +170,42 @@ export function buildGenerationPrompt(input: BuildPromptInput): string {
   return parts.join('\n\n');
 }
 
+/** Domyślna instrukcja, gdy user dał tylko obrazy referencyjne bez opisu. */
+export const DEFAULT_REFERENCE_EDIT_INSTRUCTION_EN =
+  'Replace the content of the marked region with the product(s) from the attached reference image(s)';
+
+function editChangeLine(instruction: string, referenceCount: number): string {
+  const change = instruction.trim() || DEFAULT_REFERENCE_EDIT_INSTRUCTION_EN;
+  if (referenceCount === 0) return `Apply this change: ${change}.`;
+  return [
+    `Apply this change: ${change}.`,
+    `You also receive ${referenceCount === 1 ? 'one PRODUCT REFERENCE image' : `${referenceCount} PRODUCT REFERENCE images`} — ${referenceCount === 1 ? 'it shows' : 'they show'} the exact product(s) to place inside the edited region. Reproduce the reference product(s) faithfully: identical shape, proportions, colors, materials and details, adjusted only in perspective, scale and lighting to fit the scene naturally.`,
+  ].join(' ');
+}
+
 /**
  * Prompt edycji dla modeli Gemini (technika adnotacji — bez natywnej maski):
- * wysyłamy oryginał + kopię z czerwoną półprzezroczystą maską.
+ * wysyłamy oryginał + kopię z czerwoną półprzezroczystą maską (+ referencje).
  */
-export function buildGeminiAnnotatedEditPrompt(instruction: string): string {
+export function buildGeminiAnnotatedEditPrompt(instruction: string, referenceCount = 0): string {
+  const imageList =
+    referenceCount > 0
+      ? `You receive images in this order: (1) the ORIGINAL image, (2) an ANNOTATED copy of the same image where a region is marked with a semi-transparent red overlay, ${referenceCount === 1 ? '(3) a PRODUCT REFERENCE image' : `(3+) ${referenceCount} PRODUCT REFERENCE images`}.`
+      : 'You receive two images: (1) the ORIGINAL image, and (2) an ANNOTATED copy of the same image where a region is marked with a semi-transparent red overlay.';
   return [
-    'You receive two images: (1) the ORIGINAL image, and (2) an ANNOTATED copy of the same image where a region is marked with a semi-transparent red overlay.',
-    `Edit ONLY the region marked in red on the annotated image. Apply this change: ${instruction.trim()}.`,
+    imageList,
+    `Edit ONLY the region marked in red on the annotated image. ${editChangeLine(instruction, referenceCount)}`,
     'Keep everything outside the marked region pixel-identical to the ORIGINAL image. Return the full edited image at the same resolution, without any red markings.',
   ].join('\n');
 }
 
 /**
- * Prompt edycji dla GPT Image (natywna maska — obszar przezroczysty = do edycji).
+ * Prompt edycji dla GPT Image (natywna maska — obszar przezroczysty = do edycji;
+ * dodatkowe obrazy w image[] służą jako referencje produktów).
  */
-export function buildOpenAiMaskEditPrompt(instruction: string): string {
+export function buildOpenAiMaskEditPrompt(instruction: string, referenceCount = 0): string {
   return [
-    `Apply this change inside the masked (editable) region: ${instruction.trim()}.`,
+    `${editChangeLine(instruction, referenceCount)}`,
     'Blend the edit naturally with the surrounding image: match lighting, perspective, grain and color grading. Everything outside the mask must remain unchanged.',
   ].join('\n');
 }

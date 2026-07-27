@@ -1,11 +1,13 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { Lightbulb, Plus } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { ImagePlus, Lightbulb, Plus, X } from 'lucide-react';
 import { useToast } from '@/components/studio/toast';
 import { Badge, Button, Card, EmptyState, PageTitle, Spinner } from '@/components/studio/ui';
 import { apiGet, apiJson } from '@/lib/studio/client';
+import { readImageDimensions, uploadToStorageFromBrowser } from '@/lib/studio/supabase-browser';
 import type { InspirationSetRow, RoomRow } from '@/lib/studio/types';
 
 interface SetItem extends InspirationSetRow {
@@ -16,6 +18,7 @@ interface SetItem extends InspirationSetRow {
 
 export default function InspirationsPage() {
   const { toast } = useToast();
+  const router = useRouter();
   const [sets, setSets] = useState<SetItem[]>([]);
   const [rooms, setRooms] = useState<RoomRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -24,6 +27,8 @@ export default function InspirationsPage() {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [roomId, setRoomId] = useState('');
+  const [pendingFiles, setPendingFiles] = useState<{ file: File; url: string }[]>([]);
+  const filesInputRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
     try {
@@ -44,21 +49,64 @@ export default function InspirationsPage() {
     void load();
   }, [load]);
 
+  function addPendingFiles(files: FileList | null) {
+    if (!files) return;
+    const allowed = ['image/png', 'image/jpeg', 'image/webp'];
+    setPendingFiles((prev) => {
+      const next = [...prev];
+      for (const f of [...files]) {
+        if (next.length >= 30) break;
+        if (!allowed.includes(f.type)) {
+          toast('error', `${f.name}: nieobsługiwany format (PNG, JPG, WEBP).`);
+          continue;
+        }
+        if (f.size > 20 * 1024 * 1024) {
+          toast('error', `${f.name}: plik przekracza 20 MB.`);
+          continue;
+        }
+        next.push({ file: f, url: URL.createObjectURL(f) });
+      }
+      return next;
+    });
+  }
+
   async function handleCreate() {
     if (!name.trim()) return toast('error', 'Podaj nazwę zestawu.');
     setCreating(true);
     try {
-      await apiJson('/api/studio/inspirations', 'POST', {
+      const created = await apiJson<{ set: { id: string } }>('/api/studio/inspirations', 'POST', {
         name: name.trim(),
         description: description.trim() || undefined,
         roomId: roomId || null,
       });
-      toast('success', 'Zestaw utworzony.');
+      const setId = created.set.id;
+
+      // Zdjęcia wybrane w formularzu — upload od razu, bez wchodzenia w zestaw.
+      if (pendingFiles.length > 0) {
+        const registered: { path: string; width: number | null; height: number | null }[] = [];
+        for (const { file } of pendingFiles) {
+          const dims = await readImageDimensions(file);
+          const ext = file.type === 'image/jpeg' ? 'jpg' : file.type === 'image/webp' ? 'webp' : 'png';
+          const path = `${setId}/${crypto.randomUUID()}.${ext}`;
+          await uploadToStorageFromBrowser('inspirations', path, file, file.type);
+          registered.push({ path, width: dims.width, height: dims.height });
+        }
+        await apiJson(`/api/studio/inspirations/${setId}/images`, 'POST', { files: registered });
+      }
+
+      toast(
+        'success',
+        pendingFiles.length > 0
+          ? `Zestaw utworzony z ${pendingFiles.length} obrazami.`
+          : 'Zestaw utworzony.'
+      );
+      pendingFiles.forEach((p) => URL.revokeObjectURL(p.url));
+      setPendingFiles([]);
       setName('');
       setDescription('');
       setRoomId('');
       setShowForm(false);
-      await load();
+      router.push(`/studio/inspirations/${setId}`);
     } catch (err) {
       toast('error', err instanceof Error ? err.message : 'Nie udało się utworzyć zestawu.');
     } finally {
@@ -108,12 +156,70 @@ export default function InspirationsPage() {
             maxLength={1000}
             className="w-full rounded-xl border border-studio-border bg-white px-3 py-2.5 text-sm outline-none focus:border-studio-accent"
           />
+
+          {/* Zdjęcia od razu przy tworzeniu zestawu */}
+          <div
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => {
+              e.preventDefault();
+              addPendingFiles(e.dataTransfer.files);
+            }}
+            className="rounded-xl border-2 border-dashed border-studio-border p-3"
+          >
+            <div className="flex flex-wrap items-center gap-2">
+              {pendingFiles.map((p, i) => (
+                <div
+                  key={p.url}
+                  className="relative h-16 w-16 overflow-hidden rounded-lg border border-studio-border bg-white"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={p.url} alt="" className="h-full w-full object-cover" />
+                  <button
+                    onClick={() => {
+                      URL.revokeObjectURL(p.url);
+                      setPendingFiles((prev) => prev.filter((_, idx) => idx !== i));
+                    }}
+                    className="absolute right-0.5 top-0.5 rounded-full bg-black/60 p-0.5 text-white hover:bg-black"
+                    aria-label="Usuń"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              ))}
+              <button
+                onClick={() => filesInputRef.current?.click()}
+                className="flex h-16 w-16 flex-col items-center justify-center gap-0.5 rounded-lg border-2 border-dashed border-studio-border text-studio-muted transition-colors hover:border-studio-accent hover:text-studio-accent"
+                title="Dodaj zdjęcia inspiracji"
+              >
+                <ImagePlus className="h-5 w-5" />
+              </button>
+              {pendingFiles.length === 0 && (
+                <p className="text-xs text-studio-muted">
+                  Dodaj zdjęcia inspiracji od razu (przeciągnij tutaj albo kliknij +) — trafią do
+                  zestawu przy utworzeniu.
+                </p>
+              )}
+            </div>
+            <input
+              ref={filesInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              multiple
+              className="hidden"
+              onChange={(e) => {
+                addPendingFiles(e.target.files);
+                e.target.value = '';
+              }}
+            />
+          </div>
+
           <div className="flex justify-end gap-2">
             <Button variant="ghost" onClick={() => setShowForm(false)}>
               Anuluj
             </Button>
             <Button onClick={handleCreate} disabled={creating}>
-              {creating && <Spinner className="h-4 w-4 text-white" />} Utwórz zestaw
+              {creating && <Spinner className="h-4 w-4 text-white" />}
+              {pendingFiles.length > 0 ? `Utwórz zestaw (${pendingFiles.length} zdjęć)` : 'Utwórz zestaw'}
             </Button>
           </div>
         </Card>

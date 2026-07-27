@@ -11,7 +11,7 @@ export const maxDuration = 300;
 const bodySchema = z.object({
   sourceType: z.enum(['generation', 'packshot']),
   sourceId: z.string().uuid(),
-  instruction: z.string().min(1, 'Opisz, co zmienić w zaznaczonym obszarze.').max(2000),
+  instruction: z.string().max(2000).optional(),
   model: z.string().refine(isStudioModelId, 'Nieznany model.').default(DEFAULT_EDIT_MODEL),
   /**
    * Ścieżka maski w buckecie `generations` (wgranej z przeglądarki prosto do
@@ -19,6 +19,11 @@ const bodySchema = z.object({
    * ścieżką pochodną (-annotated.png).
    */
   maskPath: z.string().min(1).max(500),
+  /**
+   * Obrazy referencyjne produktów do wstawienia w zaznaczony obszar
+   * (wgrane client-side do bucketu `generations` pod edit-refs/{userId}/).
+   */
+  referencePaths: z.array(z.string().min(1).max(500)).max(4).optional(),
   async: z.boolean().optional(),
 });
 
@@ -38,6 +43,19 @@ export async function POST(request: NextRequest) {
     );
   }
   const input = parsed.data;
+  const referencePaths = input.referencePaths ?? [];
+
+  const instruction =
+    input.instruction?.trim() ||
+    (referencePaths.length > 0
+      ? 'Wstaw produkt(y) z załączonych obrazów referencyjnych w zaznaczonym obszarze.'
+      : null);
+  if (!instruction) {
+    return NextResponse.json(
+      { error: 'Opisz, co zmienić w zaznaczonym obszarze, albo dodaj obrazy referencyjne.' },
+      { status: 400 }
+    );
+  }
 
   // Maska musi leżeć w katalogu masek tego użytkownika.
   if (
@@ -47,17 +65,29 @@ export async function POST(request: NextRequest) {
   ) {
     return NextResponse.json({ error: 'Nieprawidłowa ścieżka maski.' }, { status: 400 });
   }
+  for (const refPath of referencePaths) {
+    if (
+      !refPath.startsWith(`edit-refs/${auth.user.id}/`) ||
+      refPath.includes('..') ||
+      !/\.(png|jpg|jpeg|webp)$/i.test(refPath)
+    ) {
+      return NextResponse.json({ error: 'Nieprawidłowa ścieżka obrazu referencyjnego.' }, { status: 400 });
+    }
+  }
 
-  // Szybka weryfikacja, że oba pliki faktycznie są w Storage.
-  const [maskCheck, annotatedCheck] = await Promise.all([
+  // Szybka weryfikacja, że pliki faktycznie są w Storage.
+  const checks = await Promise.all([
     auth.supabase.storage.from('generations').createSignedUrl(input.maskPath, 60),
     auth.supabase.storage
       .from('generations')
       .createSignedUrl(annotatedPathForMask(input.maskPath), 60),
+    ...referencePaths.map((p) =>
+      auth.supabase.storage.from('generations').createSignedUrl(p, 60)
+    ),
   ]);
-  if (maskCheck.error || annotatedCheck.error) {
+  if (checks.some((c) => c.error)) {
     return NextResponse.json(
-      { error: 'Nie znaleziono maski w Storage — spróbuj ponownie zastosować zmianę.' },
+      { error: 'Nie znaleziono maski lub referencji w Storage — spróbuj ponownie.' },
       { status: 400 }
     );
   }
@@ -105,7 +135,8 @@ export async function POST(request: NextRequest) {
       parent_generation_id: parentGenerationId,
       room_id: roomId,
       model: input.model,
-      edit_instruction: input.instruction,
+      edit_instruction: instruction,
+      edit_reference_paths: referencePaths.length > 0 ? referencePaths : null,
       mask_storage_path: input.maskPath,
       shared: inheritedShared,
       status: 'pending',

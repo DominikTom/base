@@ -28,6 +28,11 @@ export interface EditParams {
    * adnotacji dla modeli bez natywnego maskowania (Gemini).
    */
   annotated?: ImageInput;
+  /**
+   * Obrazy referencyjne produktów do wstawienia/podmiany w zaznaczonym
+   * obszarze (np. packshoty lamp, roślin).
+   */
+  references?: ImageInput[];
 }
 
 export interface ImageResult {

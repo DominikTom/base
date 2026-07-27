@@ -15,6 +15,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { BeforeAfterSlider } from '@/components/studio/before-after-slider';
+import { Lightbox } from '@/components/studio/lightbox';
 import { useToast } from '@/components/studio/toast';
 import { Badge, Button, Card, Spinner, StatusBadge, labelForStrength } from '@/components/studio/ui';
 import { apiGet, apiJson, formatDate, formatDuration } from '@/lib/studio/client';
@@ -55,6 +56,7 @@ export function GenerationDetailClient({ id }: { id: string }) {
   const [showCompare, setShowCompare] = useState(true);
   const [sets, setSets] = useState<SetOption[]>([]);
   const [addingToSet, setAddingToSet] = useState(false);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
   const pollRef = useRef<number | null>(null);
 
   const load = useCallback(async () => {
@@ -274,7 +276,14 @@ export function GenerationDetailClient({ id }: { id: string }) {
                   src={g.image_url}
                   alt="Wizualizacja"
                   className="w-full cursor-zoom-in rounded-xl"
-                  onClick={() => window.open(g.image_url!, '_blank')}
+                  onClick={() => setLightboxOpen(true)}
+                />
+              )}
+              {lightboxOpen && g.image_url && (
+                <Lightbox
+                  imageUrl={g.image_url}
+                  downloadUrl={`${g.image_url}&download=1`}
+                  onClose={() => setLightboxOpen(false)}
                 />
               )}
               {isEdit && parent?.image_url && (
@@ -341,6 +350,22 @@ export function GenerationDetailClient({ id }: { id: string }) {
             )}
             {g.manual_notes && <InfoRow label="Uwagi" value={g.manual_notes} />}
             {g.edit_instruction && <InfoRow label="Instrukcja edycji" value={g.edit_instruction} />}
+            {(g.edit_reference_paths?.length ?? 0) > 0 && (
+              <div>
+                <p className="mb-1 text-xs text-studio-muted">Referencje edycji</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {g.edit_reference_paths!.map((p) => (
+                    /* eslint-disable-next-line @next/next/no-img-element */
+                    <img
+                      key={p}
+                      src={`/api/studio/file?b=generations&p=${encodeURIComponent(p)}`}
+                      alt="Referencja"
+                      className="h-12 w-12 rounded-lg border border-studio-border bg-white object-contain"
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
             <InfoRow label="Autor" value={g.author_name ?? '—'} />
             <InfoRow label="Data" value={formatDate(g.created_at)} />
             <InfoRow label="Czas generacji" value={formatDuration(g.duration_ms)} />

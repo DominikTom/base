@@ -6,7 +6,7 @@ import { removeFromBucket } from './storage';
 export async function purgeGeneration(supabase: SupabaseClient, id: string): Promise<void> {
   const { data: gen } = await supabase
     .from('generations')
-    .select('id, storage_path, mask_storage_path')
+    .select('id, storage_path, mask_storage_path, edit_reference_paths')
     .eq('id', id)
     .maybeSingle();
   if (!gen) return;
@@ -14,6 +14,7 @@ export async function purgeGeneration(supabase: SupabaseClient, id: string): Pro
     gen.storage_path,
     gen.mask_storage_path,
     gen.mask_storage_path ? annotatedPathForMask(gen.mask_storage_path) : null,
+    ...((gen.edit_reference_paths as string[] | null) ?? []),
   ].filter((p): p is string => Boolean(p));
   await removeFromBucket(supabase, 'generations', paths);
   const { error } = await supabase.from('generations').delete().eq('id', id);

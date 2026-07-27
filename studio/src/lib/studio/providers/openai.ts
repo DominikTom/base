@@ -78,6 +78,15 @@ export class OpenAiImageProvider implements ImageProvider {
       new Blob([new Uint8Array(params.image.data)], { type: params.image.mimeType }),
       'image.png'
     );
+    // Maska działa na pierwszym obrazie; kolejne obrazy służą jako referencje
+    // produktów do wstawienia w edytowany obszar.
+    for (const [i, ref] of (params.references ?? []).entries()) {
+      form.append(
+        'image[]',
+        new Blob([new Uint8Array(ref.data)], { type: ref.mimeType }),
+        `reference-${i}.png`
+      );
+    }
     form.append(
       'mask',
       new Blob([new Uint8Array(params.mask.data)], { type: 'image/png' }),

@@ -69,6 +69,7 @@ export interface GenerationRow {
   full_prompt_sent: string | null;
   mask_storage_path: string | null;
   edit_instruction: string | null;
+  edit_reference_paths: string[] | null;
   storage_path: string | null;
   width: number | null;
   height: number | null;

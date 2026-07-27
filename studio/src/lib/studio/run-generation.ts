@@ -54,14 +54,19 @@ export async function runGeneration(
         'generations',
         annotatedPathForMask(generation.mask_storage_path)
       );
+      const references: ImageInput[] = [];
+      for (const refPath of generation.edit_reference_paths ?? []) {
+        references.push(await downloadFromBucket(supabase, 'generations', refPath));
+      }
       const isOpenAi = generation.model === 'gpt-image-2';
       result = await provider.edit({
         prompt: isOpenAi
-          ? buildOpenAiMaskEditPrompt(generation.edit_instruction)
-          : buildGeminiAnnotatedEditPrompt(generation.edit_instruction),
+          ? buildOpenAiMaskEditPrompt(generation.edit_instruction, references.length)
+          : buildGeminiAnnotatedEditPrompt(generation.edit_instruction, references.length),
         image: source,
         mask,
         annotated,
+        references,
       });
     } else {
       // --- Generacja z packshotów (1–5, główne najpierw) ---

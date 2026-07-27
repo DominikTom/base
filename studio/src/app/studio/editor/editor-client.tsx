@@ -61,17 +61,25 @@ export function EditorClient({
       const userId = await getBrowserUserId();
       const maskPath = `masks/${userId}/${crypto.randomUUID()}-mask.png`;
       const annotatedPath = maskPath.replace(/-mask\.png$/, '-annotated.png');
+      const referencePaths = payload.references.map((f, i) => {
+        const ext = f.type === 'image/jpeg' ? 'jpg' : f.type === 'image/webp' ? 'webp' : 'png';
+        return `edit-refs/${userId}/${crypto.randomUUID()}-${i}.${ext}`;
+      });
       await Promise.all([
         uploadToStorageFromBrowser('generations', maskPath, payload.mask, 'image/png'),
         uploadToStorageFromBrowser('generations', annotatedPath, payload.annotated, 'image/png'),
+        ...payload.references.map((f, i) =>
+          uploadToStorageFromBrowser('generations', referencePaths[i], f, f.type)
+        ),
       ]);
 
       const res = await apiJson<{ generation: GenerationRow }>('/api/studio/edits', 'POST', {
         sourceType,
         sourceId,
-        instruction: payload.instruction,
+        instruction: payload.instruction || undefined,
         model: payload.model,
         maskPath,
+        referencePaths: referencePaths.length > 0 ? referencePaths : undefined,
         async: true,
       });
       router.push(`/studio/generations/${res.generation.id}`);

@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Brush, Eraser, Trash2, Undo2, Wand2 } from 'lucide-react';
+import { Brush, Eraser, ImagePlus, Trash2, Undo2, Wand2, X } from 'lucide-react';
 import { useToast } from '@/components/studio/toast';
 import { Badge, Button, Card, Spinner } from '@/components/studio/ui';
 import { DEFAULT_EDIT_MODEL, STUDIO_MODELS, type StudioModelId } from '@/lib/studio/models';
@@ -26,7 +26,11 @@ export interface MaskEditorSubmit {
   annotated: Blob;
   instruction: string;
   model: StudioModelId;
+  /** Packshoty/zdjęcia produktów do wstawienia w zaznaczony obszar. */
+  references: File[];
 }
+
+const MAX_EDIT_REFERENCES = 4;
 
 /**
  * Edytor maski: warstwa 1 = obraz (<img>), warstwa 2 = maska rysowana pędzlem.
@@ -63,6 +67,8 @@ export function MaskEditor({
   const [brushSize, setBrushSize] = useState(40);
   const [strokes, setStrokes] = useState<Stroke[]>([]);
   const [instruction, setInstruction] = useState('');
+  const [references, setReferences] = useState<{ file: File; url: string }[]>([]);
+  const refInputRef = useRef<HTMLInputElement>(null);
   const [model, setModel] = useState<StudioModelId>(defaultModel);
 
   const currentStroke = useRef<Stroke | null>(null);
@@ -266,13 +272,34 @@ export function MaskEditor({
     return { mask, annotated };
   }, [natural]);
 
+  function addReferences(files: FileList | null) {
+    if (!files) return;
+    const allowed = ['image/png', 'image/jpeg', 'image/webp'];
+    setReferences((prev) => {
+      const next = [...prev];
+      for (const f of [...files]) {
+        if (next.length >= MAX_EDIT_REFERENCES) break;
+        if (!allowed.includes(f.type) || f.size > 20 * 1024 * 1024) continue;
+        next.push({ file: f, url: URL.createObjectURL(f) });
+      }
+      return next;
+    });
+  }
+
+  function removeReference(index: number) {
+    setReferences((prev) => {
+      URL.revokeObjectURL(prev[index]?.url);
+      return prev.filter((_, i) => i !== index);
+    });
+  }
+
   async function handleSubmit() {
     if (!hasMask) {
       toast('error', 'Zaznacz pędzlem obszar do zmiany.');
       return;
     }
-    if (!instruction.trim()) {
-      toast('error', 'Opisz, co zmienić w zaznaczonym obszarze.');
+    if (!instruction.trim() && references.length === 0) {
+      toast('error', 'Opisz, co zmienić w zaznaczonym obszarze, albo dodaj obraz referencyjny.');
       return;
     }
     const exported = await exportMasks();
@@ -280,7 +307,12 @@ export function MaskEditor({
       toast('error', 'Eksport maski nie powiódł się.');
       return;
     }
-    await onSubmit({ ...exported, instruction: instruction.trim(), model });
+    await onSubmit({
+      ...exported,
+      instruction: instruction.trim(),
+      model,
+      references: references.map((r) => r.file),
+    });
   }
 
   const editModels = useMemo(() => STUDIO_MODELS, []);
@@ -383,9 +415,55 @@ export function MaskEditor({
             onChange={(e) => setInstruction(e.target.value)}
             rows={3}
             maxLength={2000}
-            placeholder="np. zmień poduszki na lniane, beżowe"
+            placeholder={
+              references.length > 0
+                ? 'opcjonalnie — np. ustaw je symetrycznie po obu stronach łóżka'
+                : 'np. zmień poduszki na lniane, beżowe'
+            }
             className="w-full rounded-xl border border-studio-border bg-white px-3 py-2.5 text-sm outline-none transition-colors placeholder:text-studio-muted/60 focus:border-studio-accent"
           />
+
+          <p className="mb-1.5 mt-3 text-sm font-medium">
+            Obrazy referencyjne <span className="font-normal text-studio-muted">(opcjonalnie, do {MAX_EDIT_REFERENCES})</span>
+          </p>
+          <p className="mb-2 text-xs text-studio-muted">
+            np. packshoty lamp czy roślin — model wstawi dokładnie te produkty w zaznaczone miejsce.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {references.map((r, i) => (
+              <div key={r.url} className="relative h-16 w-16 overflow-hidden rounded-lg border border-studio-border bg-white">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={r.url} alt="" className="h-full w-full object-contain" />
+                <button
+                  onClick={() => removeReference(i)}
+                  className="absolute right-0.5 top-0.5 rounded-full bg-black/60 p-0.5 text-white hover:bg-black"
+                  aria-label="Usuń referencję"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            ))}
+            {references.length < MAX_EDIT_REFERENCES && (
+              <button
+                onClick={() => refInputRef.current?.click()}
+                className="flex h-16 w-16 items-center justify-center rounded-lg border-2 border-dashed border-studio-border text-studio-muted transition-colors hover:border-studio-accent hover:text-studio-accent"
+                title="Dodaj obraz referencyjny"
+              >
+                <ImagePlus className="h-5 w-5" />
+              </button>
+            )}
+            <input
+              ref={refInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              multiple
+              className="hidden"
+              onChange={(e) => {
+                addReferences(e.target.files);
+                e.target.value = '';
+              }}
+            />
+          </div>
         </Card>
 
         <Card className="p-4">

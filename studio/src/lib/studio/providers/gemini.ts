@@ -54,6 +54,7 @@ export class GeminiImageProvider implements ImageProvider {
     const parts: GeminiPart[] = [
       imagePart(params.image),
       imagePart(params.annotated),
+      ...(params.references ?? []).map(imagePart),
       { text: params.prompt },
     ];
     return this.call(parts);
