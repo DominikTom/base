@@ -50,14 +50,14 @@ export const INSPIRATION_STRENGTH_LEVELS: Record<number, InspirationStrengthLeve
     labelPl: 'Mocne odwzorowanie stylu',
     maxReferenceImages: 6,
     phraseEn:
-      'Strongly reproduce the style of the attached inspiration images: their palette, materials, furniture styling, decor density, lighting and mood. The generated interior should look like it belongs to the same interior-design project as the inspirations.',
+      'Strongly reproduce the style of the inspiration images: their palette, wall/floor materials, decor styling and density, lighting and mood. The generated interior should look like it belongs to the same interior-design project as the inspirations.',
   },
   5: {
     level: 5,
     labelPl: 'Odtwórz klimat referencji tak wiernie, jak się da',
     maxReferenceImages: 12,
     phraseEn:
-      'Recreate the atmosphere of the attached inspiration images as faithfully as possible: palette, materials, textures, decor, window styles, lighting direction and mood. Short of copying them pixel by pixel, the result should feel like another photograph from the exact same styled interior series.',
+      'Recreate the atmosphere of the inspiration images as faithfully as possible: palette, room materials, textures, decor, window styles, lighting direction and mood. Short of copying them pixel by pixel, the result should feel like another photograph from the exact same styled interior series — with the packshot product(s) placed in it unchanged.',
   },
 };
 
@@ -69,12 +69,28 @@ export interface BuildPromptInput {
   roomBasePrompt?: string | null;
   styleText?: string | null;
   inspirationStrength?: number | null;
-  hasInspirationImages?: boolean;
+  /** Faktyczna liczba obrazów w wybranym zestawie inspiracji. */
+  inspirationImageCount?: number;
   manualNotes?: string | null;
   /** Liczba packshotów głównych (bohaterowie sceny). */
   mainCount?: number;
   /** Liczba packshotów-dodatków (produkty uzupełniające). */
   additionCount?: number;
+}
+
+/** Ile obrazów referencyjnych faktycznie trafi do modelu przy danych parametrach. */
+export function effectiveReferenceCount(
+  strength: number | null | undefined,
+  inspirationImageCount: number,
+  packshotCount: number
+): number {
+  if (!strength) return 0;
+  const level = INSPIRATION_STRENGTH_LEVELS[strength];
+  if (!level) return 0;
+  return Math.max(
+    0,
+    Math.min(level.maxReferenceImages, inspirationImageCount, MAX_TOTAL_INPUT_IMAGES - packshotCount)
+  );
 }
 
 /**
@@ -86,21 +102,48 @@ export function buildGenerationPrompt(input: BuildPromptInput): string {
 
   const mains = Math.max(1, input.mainCount ?? 1);
   const additions = Math.max(0, input.additionCount ?? 0);
-  const total = mains + additions;
+  const packshotCount = mains + additions;
+  const refCount = effectiveReferenceCount(
+    input.inspirationStrength,
+    input.inspirationImageCount ?? 0,
+    packshotCount
+  );
+  const totalImages = packshotCount + refCount;
 
-  if (total === 1) {
-    parts.push(
-      'TASK: Place the product from the packshot (first image) in a photorealistic interior scene described below. Professional interior photography, realistic perspective, natural shadows and reflections consistent with the scene lighting, high-end furniture catalog quality.'
-    );
+  // Jawna mapa obrazów wejściowych — model musi wiedzieć, który obraz jest
+  // packshotem, a który tylko referencją stylu (inaczej miesza cechy mebli
+  // z inspiracji z produktem).
+  const mapLines: string[] = [`INPUT IMAGES (${totalImages} total):`];
+  if (packshotCount === 1) {
+    mapLines.push('- Image 1: PRODUCT PACKSHOT (the main product).');
+  } else if (additions === 0) {
+    mapLines.push(`- Images 1–${mains}: PRODUCT PACKSHOTS — all MAIN products (a matching furniture collection).`);
   } else {
-    const rolesLine =
-      additions > 0
-        ? `The first ${mains === 1 ? 'image is the MAIN product packshot — the hero of the scene' : `${mains} images are MAIN product packshots — co-heroes of the scene, e.g. a matching furniture collection`}. The next ${additions === 1 ? 'image is a SUPPORTING product packshot' : `${additions} images are SUPPORTING product packshots`} — place ${additions === 1 ? 'it' : 'them'} naturally in the scene as complementary furniture/accessories, less prominent than the main product${mains > 1 ? 's' : ''}.`
-        : `The first ${mains} images are all MAIN product packshots — present them together as one coherent furniture collection, arranged naturally in the same scene with sensible spacing and composition.`;
-    parts.push(
-      `TASK: Arrange ALL ${total} products from the packshot images together in ONE photorealistic interior scene described below. ${rolesLine} Professional interior photography, realistic perspective, consistent scale between products, natural shadows and reflections consistent with the scene lighting, high-end furniture catalog quality.`
+    mapLines.push(
+      mains === 1
+        ? '- Image 1: PRODUCT PACKSHOT — the MAIN product (hero of the scene).'
+        : `- Images 1–${mains}: PRODUCT PACKSHOTS — MAIN products (co-heroes of the scene).`
+    );
+    mapLines.push(
+      additions === 1
+        ? `- Image ${mains + 1}: PRODUCT PACKSHOT — a SUPPORTING product (complementary, less prominent).`
+        : `- Images ${mains + 1}–${packshotCount}: PRODUCT PACKSHOTS — SUPPORTING products (complementary, less prominent).`
     );
   }
+  if (refCount > 0) {
+    mapLines.push(
+      `- ${refCount === 1 ? `Image ${totalImages}` : `Images ${packshotCount + 1}–${totalImages}`}: STYLE INSPIRATION references — they describe the ROOM ONLY (palette, wall/floor materials, decor, lighting, mood). NEVER place furniture from these images into the scene as products and NEVER transfer their shapes, fabrics or details onto the packshot products.`
+    );
+  }
+  parts.push(mapLines.join('\n'));
+
+  const arrangeLine =
+    packshotCount === 1
+      ? 'Place the product from the packshot in a photorealistic interior scene described below.'
+      : `Arrange ALL ${packshotCount} packshot products together in ONE photorealistic interior scene described below, with consistent scale between products.`;
+  parts.push(
+    `TASK: ${arrangeLine} Professional interior photography, realistic perspective, natural shadows and reflections consistent with the scene lighting, high-end furniture catalog quality. Render every packshot product tack-sharp, at the same level of detail and texture crispness as its packshot — do not soften, blur, repaint or simplify the product's fabric, pattern or edges.`
+  );
 
   if (input.roomBasePrompt) {
     const roomLabel = input.roomName ? ` (${input.roomName})` : '';
@@ -111,9 +154,13 @@ export function buildGenerationPrompt(input: BuildPromptInput): string {
     parts.push(`STYLE DIRECTION: ${input.styleText.trim()}`);
   }
 
-  if (input.hasInspirationImages && input.inspirationStrength) {
+  if (refCount > 0 && input.inspirationStrength) {
     const level = INSPIRATION_STRENGTH_LEVELS[input.inspirationStrength];
-    if (level) parts.push(`INSPIRATION REFERENCES: ${level.phraseEn}`);
+    if (level) {
+      parts.push(
+        `INSPIRATION REFERENCES: ${level.phraseEn} The inspirations apply to the room and decor only — the packshot products themselves stay exactly as in their packshots.`
+      );
+    }
   }
 
   if (input.manualNotes?.trim()) {

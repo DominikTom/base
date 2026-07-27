@@ -77,14 +77,15 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Nie znaleziono wybranego pokoju.' }, { status: 400 });
   }
 
-  let hasInspirationImages = false;
+  let inspirationImageCount = 0;
   if (input.inspirationSetId) {
     const { count } = await auth.supabase
       .from('inspiration_images')
       .select('id', { count: 'exact', head: true })
       .eq('set_id', input.inspirationSetId);
-    hasInspirationImages = (count ?? 0) > 0;
+    inspirationImageCount = count ?? 0;
   }
+  const hasInspirationImages = inspirationImageCount > 0;
 
   const strength = input.inspirationSetId ? (input.inspirationStrength ?? 3) : null;
   const fullPrompt = buildGenerationPrompt({
@@ -92,7 +93,7 @@ export async function POST(request: NextRequest) {
     roomBasePrompt: room.base_prompt,
     styleText: input.styleText,
     inspirationStrength: strength,
-    hasInspirationImages,
+    inspirationImageCount,
     manualNotes: input.manualNotes,
     mainCount: mains.length,
     additionCount: additions.length,
