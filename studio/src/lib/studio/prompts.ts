@@ -76,6 +76,8 @@ export interface BuildPromptInput {
   mainCount?: number;
   /** Liczba packshotów-dodatków (produkty uzupełniające). */
   additionCount?: number;
+  /** Format kadru (np. '3:4') — wymuszany też na poziomie API modelu. */
+  aspectRatio?: string | null;
 }
 
 /** Ile obrazów referencyjnych faktycznie trafi do modelu przy danych parametrach. */
@@ -144,6 +146,18 @@ export function buildGenerationPrompt(input: BuildPromptInput): string {
   parts.push(
     `TASK: ${arrangeLine} Professional interior photography, realistic perspective, natural shadows and reflections consistent with the scene lighting, high-end furniture catalog quality. Render every packshot product tack-sharp, at the same level of detail and texture crispness as its packshot — do not soften, blur, repaint or simplify the product's fabric, pattern or edges.`
   );
+
+  if (input.aspectRatio) {
+    const orientation =
+      input.aspectRatio === '1:1'
+        ? 'square'
+        : ['3:4', '9:16'].includes(input.aspectRatio)
+          ? 'vertical (portrait)'
+          : 'horizontal (landscape)';
+    parts.push(
+      `FRAME: The output image MUST have a strict ${input.aspectRatio} aspect ratio — a ${orientation} frame. Compose the scene deliberately for this format: fill the frame edge to edge, no letterboxing, borders or padding.`
+    );
+  }
 
   if (input.roomBasePrompt) {
     const roomLabel = input.roomName ? ` (${input.roomName})` : '';

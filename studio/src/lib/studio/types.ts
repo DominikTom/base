@@ -53,6 +53,19 @@ export interface GenerationPackshotRow {
 /** Maksymalna liczba packshotów w jednej wizualizacji. */
 export const MAX_PACKSHOTS_PER_GENERATION = 5;
 
+/** Format kadru generacji — twardo wymuszany na poziomie API modeli. */
+export type AspectRatio = '1:1' | '3:4' | '9:16' | '4:3' | '16:9';
+
+export const ASPECT_RATIOS: { id: AspectRatio; labelPl: string }[] = [
+  { id: '1:1', labelPl: 'Kwadrat' },
+  { id: '3:4', labelPl: 'Pion' },
+  { id: '9:16', labelPl: 'Pion (stories)' },
+  { id: '4:3', labelPl: 'Poziom' },
+  { id: '16:9', labelPl: 'Poziom (szeroki)' },
+];
+
+export const DEFAULT_ASPECT_RATIO: AspectRatio = '4:3';
+
 export type GenerationStatus = 'pending' | 'done' | 'error';
 
 export interface GenerationRow {
@@ -71,6 +84,7 @@ export interface GenerationRow {
   edit_instruction: string | null;
   edit_reference_paths: string[] | null;
   storage_path: string | null;
+  aspect_ratio: string | null;
   width: number | null;
   height: number | null;
   status: GenerationStatus;

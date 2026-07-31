@@ -25,6 +25,7 @@ const createSchema = z.object({
   inspirationSetId: z.string().uuid().nullish(),
   inspirationStrength: z.number().int().min(1).max(5).nullish(),
   manualNotes: z.string().max(2000).optional(),
+  aspectRatio: z.enum(['1:1', '3:4', '9:16', '4:3', '16:9']).default('4:3'),
   model: z.string().refine(isStudioModelId, 'Nieznany model generacji.'),
   /** Wysyłka bez czekania na wynik — klient sam polluje status. */
   async: z.boolean().optional(),
@@ -97,6 +98,7 @@ export async function POST(request: NextRequest) {
     manualNotes: input.manualNotes,
     mainCount: mains.length,
     additionCount: additions.length,
+    aspectRatio: input.aspectRatio,
   });
 
   const { data: created, error: insErr } = await auth.supabase
@@ -109,6 +111,7 @@ export async function POST(request: NextRequest) {
       inspiration_set_id: input.inspirationSetId ?? null,
       inspiration_strength: hasInspirationImages ? strength : null,
       manual_notes: input.manualNotes ?? null,
+      aspect_ratio: input.aspectRatio,
       model: input.model,
       full_prompt_sent: fullPrompt,
       status: 'pending',

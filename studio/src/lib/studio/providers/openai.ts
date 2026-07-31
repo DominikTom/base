@@ -44,6 +44,24 @@ function explicitSizeFor(image: { data: Buffer }): string {
 export class OpenAiImageProvider implements ImageProvider {
   constructor(private apiModel: string) {}
 
+  /** Twarde wymuszenie formatu kadru: jawny rozmiar WxH (wymiary /16). */
+  private sizeForAspect(aspectRatio?: string): string {
+    switch (aspectRatio) {
+      case '1:1':
+        return '1024x1024';
+      case '3:4':
+        return '1152x1536';
+      case '9:16':
+        return '864x1536';
+      case '4:3':
+        return '1536x1152';
+      case '16:9':
+        return '1536x864';
+      default:
+        return 'auto';
+    }
+  }
+
   async generate(params: GenerateParams): Promise<ImageResult> {
     // Generacja z packshotem to w praktyce edycja obrazów referencyjnych.
     const form = new FormData();
@@ -61,7 +79,7 @@ export class OpenAiImageProvider implements ImageProvider {
         `reference-${i}.png`
       );
     }
-    form.append('size', 'auto');
+    form.append('size', this.sizeForAspect(params.aspectRatio));
     form.append('quality', 'high');
     return this.call(form);
   }

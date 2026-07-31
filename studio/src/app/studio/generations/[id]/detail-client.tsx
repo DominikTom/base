@@ -164,6 +164,7 @@ export function GenerationDetailClient({ id }: { id: string }) {
         inspirationSetId: g.inspiration_set_id,
         inspirationStrength: g.inspiration_strength ?? undefined,
         manualNotes: g.manual_notes ?? undefined,
+        aspectRatio: g.aspect_ratio ?? undefined,
         model: g.model,
         async: true,
       });
@@ -341,6 +342,7 @@ export function GenerationDetailClient({ id }: { id: string }) {
             )}
             <InfoRow label="Pokój" value={g.room_name ?? '—'} />
             <InfoRow label="Model" value={modelMeta?.label ?? g.model} />
+            {g.aspect_ratio && <InfoRow label="Format" value={g.aspect_ratio} />}
             {g.style_text && <InfoRow label="Styl" value={g.style_text} />}
             {g.set_name && (
               <InfoRow

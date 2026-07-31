@@ -15,7 +15,10 @@ import {
 import { DEFAULT_GENERATION_MODEL, STUDIO_MODELS, type StudioModelId } from '@/lib/studio/models';
 import { cn } from '@/lib/utils';
 import {
+  ASPECT_RATIOS,
+  DEFAULT_ASPECT_RATIO,
   MAX_PACKSHOTS_PER_GENERATION,
+  type AspectRatio,
   type GenerationRow,
   type InspirationSetRow,
   type PackshotRole,
@@ -48,6 +51,7 @@ export default function NewVisualizationPage() {
   const [setId, setSetId] = useState<string | null>(null);
   const [strength, setStrength] = useState(3);
   const [notes, setNotes] = useState('');
+  const [aspectRatio, setAspectRatio] = useState<AspectRatio>(DEFAULT_ASPECT_RATIO);
   const [model, setModel] = useState<StudioModelId>(DEFAULT_GENERATION_MODEL);
 
   const [uploading, setUploading] = useState(false);
@@ -85,6 +89,9 @@ export default function NewVisualizationPage() {
           setSetId(g.inspiration_set_id);
           if (g.inspiration_strength) setStrength(g.inspiration_strength);
           setNotes(g.manual_notes ?? '');
+          if (g.aspect_ratio && ASPECT_RATIOS.some((a) => a.id === g.aspect_ratio)) {
+            setAspectRatio(g.aspect_ratio as AspectRatio);
+          }
           if (STUDIO_MODELS.some((m) => m.id === g.model)) setModel(g.model as StudioModelId);
         }
       } catch (err) {
@@ -177,6 +184,7 @@ export default function NewVisualizationPage() {
         inspirationSetId: setId,
         inspirationStrength: setId ? strength : undefined,
         manualNotes: notes || undefined,
+        aspectRatio,
         model,
         async: true,
       });
@@ -446,10 +454,51 @@ export default function NewVisualizationPage() {
           />
         </Card>
 
-        {/* Krok 5: Model */}
+        {/* Krok 5: Format kadru */}
         <Card className="p-6">
           <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-studio-muted">
-            5. Model generacji
+            5. Format kadru
+          </h2>
+          <div className="flex flex-wrap gap-3">
+            {ASPECT_RATIOS.map((ar) => {
+              const [w, h] = ar.id.split(':').map(Number);
+              return (
+                <button
+                  key={ar.id}
+                  onClick={() => setAspectRatio(ar.id)}
+                  className={cn(
+                    'flex flex-col items-center gap-2 rounded-xl border-2 px-4 py-3 transition-all',
+                    aspectRatio === ar.id
+                      ? 'border-studio-accent bg-studio-accent-soft'
+                      : 'border-studio-border hover:border-studio-accent/50'
+                  )}
+                  title={`Proporcje ${ar.id}`}
+                >
+                  <span
+                    className={cn(
+                      'rounded-sm border-2',
+                      aspectRatio === ar.id ? 'border-studio-accent-dark' : 'border-studio-muted'
+                    )}
+                    style={{ width: w >= h ? 36 : (36 * w) / h, height: w >= h ? (36 * h) / w : 36 }}
+                  />
+                  <span className="text-xs font-medium leading-tight">
+                    {ar.labelPl}
+                    <span className="block text-center text-[10px] text-studio-muted">{ar.id}</span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+          <p className="mt-3 text-xs text-studio-muted">
+            Proporcje są twardo wymuszane na poziomie API modelu — wynik zawsze wyjdzie w wybranym
+            formacie.
+          </p>
+        </Card>
+
+        {/* Krok 6: Model */}
+        <Card className="p-6">
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-studio-muted">
+            6. Model generacji
           </h2>
           <div className="grid gap-3 sm:grid-cols-3">
             {STUDIO_MODELS.map((m) => (

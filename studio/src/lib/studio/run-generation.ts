@@ -80,6 +80,7 @@ export async function runGeneration(
         packshot: packshotImages[0],
         references: [...packshotImages.slice(1), ...references],
         imageSize: generation.model === 'nano-banana-pro' ? '2K' : '1K',
+        aspectRatio: generation.aspect_ratio ?? undefined,
       });
     }
 
