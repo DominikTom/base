@@ -76,6 +76,11 @@ export interface BuildPromptInput {
   mainCount?: number;
   /** Liczba packshotów-dodatków (produkty uzupełniające). */
   additionCount?: number;
+  /**
+   * Notatki per packshot ("gdzie ustawić, co na nim położyć"), w kolejności
+   * obrazów wejściowych (główne, potem dodatki). Mogą być po polsku.
+   */
+  packshotNotes?: (string | null | undefined)[];
   /** Format kadru (np. '3:4') — wymuszany też na poziomie API modelu. */
   aspectRatio?: string | null;
 }
@@ -138,6 +143,20 @@ export function buildGenerationPrompt(input: BuildPromptInput): string {
     );
   }
   parts.push(mapLines.join('\n'));
+
+  // Instrukcje umiejscowienia przypisane do konkretnych packshotów.
+  const noteLines = (input.packshotNotes ?? [])
+    .slice(0, packshotCount)
+    .map((note, i) => (note?.trim() ? `- Image ${i + 1}: ${note.trim()}` : null))
+    .filter((l): l is string => Boolean(l));
+  if (noteLines.length > 0) {
+    parts.push(
+      [
+        'PRODUCT PLACEMENT NOTES (follow faithfully; they may be written in Polish — e.g. where to put the product and what to place on it):',
+        ...noteLines,
+      ].join('\n')
+    );
+  }
 
   const arrangeLine =
     packshotCount === 1

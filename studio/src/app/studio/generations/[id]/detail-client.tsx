@@ -36,6 +36,7 @@ interface DetailResponse {
   packshots?: {
     id: string;
     role: 'main' | 'addition';
+    note: string | null;
     image_url: string;
     original_filename: string | null;
   }[];
@@ -155,7 +156,7 @@ export function GenerationDetailClient({ id }: { id: string }) {
     try {
       const res = await apiJson<{ generation: GenerationRow }>('/api/studio/generations', 'POST', {
         packshots: data?.packshots?.length
-          ? data.packshots.map(({ id, role }) => ({ id, role }))
+          ? data.packshots.map(({ id, role, note }) => ({ id, role, note: note ?? undefined }))
           : g.packshot_id
             ? [{ id: g.packshot_id, role: 'main' }]
             : [],
@@ -328,6 +329,9 @@ export function GenerationDetailClient({ id }: { id: string }) {
                         <p className="truncate text-xs text-studio-muted">
                           {pk.original_filename ?? '—'}
                         </p>
+                        {pk.note && (
+                          <p className="text-xs italic text-studio-ink/70">„{pk.note}"</p>
+                        )}
                         <Link
                           href={`/studio/editor?type=packshot&id=${pk.id}`}
                           className="text-xs text-studio-accent-dark hover:underline"

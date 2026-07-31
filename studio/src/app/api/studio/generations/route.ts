@@ -13,6 +13,8 @@ export const maxDuration = 300;
 const packshotEntry = z.object({
   id: z.string().uuid(),
   role: z.enum(['main', 'addition']).default('main'),
+  /** "Gdzie ustawić, co na nim położyć" — trafia do promptu przy tym obrazie. */
+  note: z.string().max(500).optional(),
 });
 
 const createSchema = z.object({
@@ -98,6 +100,7 @@ export async function POST(request: NextRequest) {
     manualNotes: input.manualNotes,
     mainCount: mains.length,
     additionCount: additions.length,
+    packshotNotes: [...mains, ...additions].map((p) => p.note ?? null),
     aspectRatio: input.aspectRatio,
   });
 
@@ -132,6 +135,7 @@ export async function POST(request: NextRequest) {
       generation_id: (created as GenerationRow).id,
       packshot_id: p.id,
       role: p.role,
+      note: p.note?.trim() || null,
       sort_order: i,
     }))
   );

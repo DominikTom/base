@@ -29,7 +29,7 @@ export async function GET(request: NextRequest, ctx: Ctx) {
   // Packshoty źródłowe (1–5, z rolami; fallback do pojedynczego packshot_id)
   const { data: links } = await auth.supabase
     .from('generation_packshots')
-    .select('packshot_id, role, sort_order')
+    .select('packshot_id, role, sort_order, note')
     .eq('generation_id', row.id);
   const orderedLinks =
     links && links.length > 0
@@ -37,12 +37,13 @@ export async function GET(request: NextRequest, ctx: Ctx) {
           a.role === b.role ? a.sort_order - b.sort_order : a.role === 'main' ? -1 : 1
         )
       : row.packshot_id
-        ? [{ packshot_id: row.packshot_id, role: 'main', sort_order: 0 }]
+        ? [{ packshot_id: row.packshot_id, role: 'main', sort_order: 0, note: null }]
         : [];
 
   let packshots: {
     id: string;
     role: string;
+    note: string | null;
     image_url: string;
     original_filename: string | null;
   }[] = [];
@@ -58,6 +59,7 @@ export async function GET(request: NextRequest, ctx: Ctx) {
         ? [{
             id: pk.id,
             role: l.role,
+            note: l.note ?? null,
             image_url: studioFileUrl('packshots', pk.storage_path),
             original_filename: pk.original_filename,
           }]

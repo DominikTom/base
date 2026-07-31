@@ -45,7 +45,9 @@ export default function NewVisualizationPage() {
   const [loading, setLoading] = useState(true);
 
   /** Wybrane packshoty w kolejności klikania; pierwszy automatycznie = główny. */
-  const [selectedPackshots, setSelectedPackshots] = useState<{ id: string; role: PackshotRole }[]>([]);
+  const [selectedPackshots, setSelectedPackshots] = useState<
+    { id: string; role: PackshotRole; note: string }[]
+  >([]);
   const [roomId, setRoomId] = useState<string | null>(null);
   const [styleText, setStyleText] = useState('');
   const [setId, setSetId] = useState<string | null>(null);
@@ -76,13 +78,15 @@ export default function NewVisualizationPage() {
         if (from) {
           const d = await apiGet<{
             generation: GenerationRow;
-            packshots?: { id: string; role: PackshotRole }[];
+            packshots?: { id: string; role: PackshotRole; note: string | null }[];
           }>(`/api/studio/generations/${from}`);
           const g = d.generation;
           if (d.packshots?.length) {
-            setSelectedPackshots(d.packshots.map(({ id, role }) => ({ id, role })));
+            setSelectedPackshots(
+              d.packshots.map(({ id, role, note }) => ({ id, role, note: note ?? '' }))
+            );
           } else if (g.packshot_id) {
-            setSelectedPackshots([{ id: g.packshot_id, role: 'main' }]);
+            setSelectedPackshots([{ id: g.packshot_id, role: 'main', note: '' }]);
           }
           if (g.room_id) setRoomId(g.room_id);
           setStyleText(g.style_text ?? '');
@@ -132,7 +136,7 @@ export default function NewVisualizationPage() {
         setSelectedPackshots((prev) =>
           prev.length >= MAX_PACKSHOTS_PER_GENERATION
             ? prev
-            : [...prev, { id: res.packshot.id, role: prev.length === 0 ? 'main' : 'addition' }]
+            : [...prev, { id: res.packshot.id, role: prev.length === 0 ? 'main' : 'addition', note: '' }]
         );
         toast('success', 'Packshot wgrany.');
       } catch (err) {
@@ -158,8 +162,12 @@ export default function NewVisualizationPage() {
         toast('error', `Maksymalnie ${MAX_PACKSHOTS_PER_GENERATION} packshotów w jednej wizualizacji.`);
         return prev;
       }
-      return [...prev, { id, role: prev.length === 0 ? 'main' : 'addition' }];
+      return [...prev, { id, role: prev.length === 0 ? 'main' : 'addition', note: '' }];
     });
+  }
+
+  function setPackshotNote(id: string, note: string) {
+    setSelectedPackshots((prev) => prev.map((p) => (p.id === id ? { ...p, note } : p)));
   }
 
   function togglePackshotRole(id: string) {
@@ -317,15 +325,53 @@ export default function NewVisualizationPage() {
               })}
             </div>
           )}
-          {selectedPackshots.length > 1 && (
-            <p className="mt-3 text-xs text-studio-muted">
-              Wybrano {selectedPackshots.length}:{' '}
-              {selectedPackshots.filter((s) => s.role === 'main').length} główn
-              {selectedPackshots.filter((s) => s.role === 'main').length === 1 ? 'y' : 'e'},{' '}
-              {selectedPackshots.filter((s) => s.role === 'addition').length} dodatk
-              {selectedPackshots.filter((s) => s.role === 'addition').length === 1 ? '' : 'ów'}.
-              Wszystkie produkty pozostaną wiernie odwzorowane w jednej scenie.
-            </p>
+          {selectedPackshots.length > 0 && (
+            <div className="mt-4 space-y-2">
+              {selectedPackshots.map((s) => {
+                const pk = packshots.find((p) => p.id === s.id);
+                return (
+                  <div
+                    key={s.id}
+                    className="flex items-center gap-3 rounded-xl bg-studio-bg p-2.5"
+                  >
+                    {pk ? (
+                      /* eslint-disable-next-line @next/next/no-img-element */
+                      <img
+                        src={pk.image_url}
+                        alt={pk.original_filename ?? 'packshot'}
+                        className="h-12 w-12 shrink-0 rounded-lg border border-studio-border bg-white object-contain"
+                      />
+                    ) : (
+                      <span className="h-12 w-12 shrink-0 rounded-lg border border-studio-border bg-white" />
+                    )}
+                    <button
+                      onClick={() => togglePackshotRole(s.id)}
+                      title="Kliknij, żeby zmienić rolę"
+                      className={cn(
+                        'shrink-0 rounded-full px-3 py-1 text-xs font-semibold transition-colors',
+                        s.role === 'main'
+                          ? 'bg-studio-accent text-white hover:bg-studio-accent-dark'
+                          : 'bg-studio-ink/70 text-white hover:bg-studio-ink'
+                      )}
+                    >
+                      {s.role === 'main' ? 'Główny' : 'Dodatek'}
+                    </button>
+                    <input
+                      value={s.note}
+                      onChange={(e) => setPackshotNote(s.id, e.target.value)}
+                      maxLength={500}
+                      placeholder="Gdzie ustawić? Co na nim położyć? (np. przy oknie, na nim lniany pled)"
+                      className="w-full min-w-0 flex-1 rounded-lg border border-studio-border bg-white px-3 py-2 text-sm outline-none transition-colors placeholder:text-studio-muted/60 focus:border-studio-accent"
+                    />
+                  </div>
+                );
+              })}
+              {selectedPackshots.length > 1 && (
+                <p className="text-xs text-studio-muted">
+                  Wszystkie produkty pozostaną wiernie odwzorowane w jednej scenie.
+                </p>
+              )}
+            </div>
           )}
         </Card>
 
@@ -442,16 +488,20 @@ export default function NewVisualizationPage() {
         {/* Krok 4: Uwagi */}
         <Card className="p-6">
           <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-studio-muted">
-            4. Uwagi ręczne (opcjonalnie)
+            4. Uwagi ogólne (opcjonalnie)
           </h2>
           <textarea
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
             rows={2}
             maxLength={2000}
-            placeholder="np. dodaj roślinę po lewej stronie, okno z widokiem na ogród"
+            placeholder="np. miękkie poranne światło; nie używaj roślin w wizce"
             className="w-full rounded-xl border border-studio-border bg-white px-4 py-3 text-sm outline-none transition-colors placeholder:text-studio-muted/60 focus:border-studio-accent"
           />
+          <p className="mt-1.5 text-xs text-studio-muted">
+            Uwagi dotyczące całej sceny (światło, klimat, czego nie używać). Umiejscowienie
+            konkretnego produktu wpisz w polu przy jego packshocie w kroku 1.
+          </p>
         </Card>
 
         {/* Krok 5: Format kadru */}
