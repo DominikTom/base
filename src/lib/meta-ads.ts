@@ -147,6 +147,14 @@ export interface MetaAdInsightRow {
   spend: number;
   conversions: number;
   conversionValue: number;
+  leads: number;
+  // Rozbicie purchase na okna atrybucji; conversions/conversionValue = okno domyślne konta
+  conversions1dClick: number;
+  conversions7dClick: number;
+  conversions1dView: number;
+  conversionValue1dClick: number;
+  conversionValue7dClick: number;
+  conversionValue1dView: number;
   cpc: number;
   cpm: number;
   ctr: number;
@@ -158,6 +166,20 @@ export interface MetaAdInsightRow {
   videoP95: number;
   videoP100: number;
   thruplays: number;
+}
+
+export interface MetaCampaignRow {
+  campaignId: string;
+  accountId: string;
+  name: string | null;
+  objective: string | null;
+  status: string | null;
+  effectiveStatus: string | null;
+  buyingType: string | null;
+  dailyBudget: number | null;
+  lifetimeBudget: number | null;
+  startTime: string | null;
+  stopTime: string | null;
 }
 
 export interface MetaCreativeMeta {
@@ -177,10 +199,31 @@ export interface MetaCreativeMeta {
   isDynamic: boolean;
 }
 
-function extractAction(arr: Array<{ action_type: string; value?: string }> | undefined, type: string): number {
+type MetaActionEntry = {
+  action_type: string;
+  value?: string;
+  '1d_click'?: string;
+  '7d_click'?: string;
+  '1d_view'?: string;
+};
+
+function extractAction(arr: MetaActionEntry[] | undefined, type: string): number {
   if (!arr) return 0;
   const row = arr.find(a => a.action_type === type);
   return row ? parseFloat(row.value || '0') : 0;
+}
+
+// Wartość akcji dla konkretnego okna atrybucji. Meta dokleja klucze
+// '1d_click'/'7d_click'/'1d_view' do wpisów actions/action_values tylko gdy
+// zapytanie zawiera action_attribution_windows; brak klucza = 0 dla okna.
+function extractActionWindow(
+  arr: MetaActionEntry[] | undefined,
+  type: string,
+  window: '1d_click' | '7d_click' | '1d_view'
+): number {
+  if (!arr) return 0;
+  const row = arr.find(a => a.action_type === type);
+  return row?.[window] ? parseFloat(row[window] || '0') : 0;
 }
 
 function extractVideoMetric(arr: Array<{ action_type: string; value?: string }> | undefined): number {
@@ -240,8 +283,12 @@ export async function fetchAdInsights(
     'video_thruplay_watched_actions',
   ].join(',');
 
+  // Okna atrybucji: Meta dokleja per-window wartości do actions/action_values.
+  // Kolumny bazowe (value) pozostają oknem domyślnym konta (zwykle 7d_click+1d_view).
+  const attributionWindows = encodeURIComponent(JSON.stringify(['1d_click', '7d_click', '1d_view']));
+
   const rows: MetaAdInsightRow[] = [];
-  let url: string | null = `${META_BASE_URL}/${accountId}/insights?fields=${fields}&time_range=%7B%22since%22%3A%22${dateFrom}%22%2C%22until%22%3A%22${dateTo}%22%7D&time_increment=1&level=ad&limit=200&access_token=${token}` as string | null;
+  let url: string | null = `${META_BASE_URL}/${accountId}/insights?fields=${fields}&time_range=%7B%22since%22%3A%22${dateFrom}%22%2C%22until%22%3A%22${dateTo}%22%7D&time_increment=1&level=ad&limit=200&action_attribution_windows=${attributionWindows}&access_token=${token}` as string | null;
 
   while (url) {
     const res: Response = await fetch(url);
@@ -269,6 +316,13 @@ export async function fetchAdInsights(
         spend: parseFloat(row.spend || '0'),
         conversions: extractAction(row.actions, 'purchase'),
         conversionValue: extractAction(row.action_values, 'purchase'),
+        leads: extractAction(row.actions, 'lead'),
+        conversions1dClick: extractActionWindow(row.actions, 'purchase', '1d_click'),
+        conversions7dClick: extractActionWindow(row.actions, 'purchase', '7d_click'),
+        conversions1dView: extractActionWindow(row.actions, 'purchase', '1d_view'),
+        conversionValue1dClick: extractActionWindow(row.action_values, 'purchase', '1d_click'),
+        conversionValue7dClick: extractActionWindow(row.action_values, 'purchase', '7d_click'),
+        conversionValue1dView: extractActionWindow(row.action_values, 'purchase', '1d_view'),
         cpc: parseFloat(row.cpc || '0'),
         cpm: parseFloat(row.cpm || '0'),
         ctr: parseFloat(row.ctr || '0'),
@@ -428,4 +482,164 @@ export async function fetchCreativeMeta(
     autoTags,
     isDynamic,
   };
+}
+
+// =============================================================
+// CAMPAIGN DIMENSION
+// =============================================================
+
+export async function fetchCampaigns(accountId: string): Promise<MetaCampaignRow[]> {
+  const token = getAccessTokenFor(accountId);
+  const fields = [
+    'id', 'name', 'objective', 'status', 'effective_status',
+    'buying_type', 'daily_budget', 'lifetime_budget', 'start_time', 'stop_time',
+  ].join(',');
+
+  const rows: MetaCampaignRow[] = [];
+  let url: string | null = `${META_BASE_URL}/${accountId}/campaigns?fields=${fields}&limit=200&access_token=${token}` as string | null;
+
+  while (url) {
+    const res: Response = await fetch(url);
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`Meta /campaigns error for ${accountId}: ${text}`);
+    }
+    const json = await res.json();
+    for (const c of json.data || []) {
+      rows.push({
+        campaignId: c.id,
+        accountId,
+        name: c.name || null,
+        objective: c.objective || null,
+        status: c.status || null,
+        effectiveStatus: c.effective_status || null,
+        buyingType: c.buying_type || null,
+        // Meta zwraca budżety w najmniejszej jednostce waluty (grosze/centy)
+        dailyBudget: c.daily_budget ? parseInt(c.daily_budget, 10) / 100 : null,
+        lifetimeBudget: c.lifetime_budget ? parseInt(c.lifetime_budget, 10) / 100 : null,
+        startTime: c.start_time || null,
+        stopTime: c.stop_time || null,
+      });
+    }
+    url = json.paging?.next || null;
+  }
+
+  return rows;
+}
+
+// =============================================================
+// AD PREVIEW (iframe + wideo HD + obraz) — patrz docs proxy podglądu
+// =============================================================
+
+export const PREVIEW_FORMATS = [
+  'DESKTOP_FEED_STANDARD',
+  'MOBILE_FEED_STANDARD',
+  'INSTAGRAM_STANDARD',
+  'INSTAGRAM_STORY',
+] as const;
+
+// Natywny podgląd Meta: /{ad_id}/previews zwraca gotowy <iframe> renderujący
+// reklamę jak w feedzie. Nie każdy format jest dostępny dla każdej reklamy —
+// próbujemy po kolei aż któryś zwróci niepuste body. URL iframe'a jest
+// podpisany i wygasa, stąd cache: 'no-store'.
+export async function fetchAdPreviewHtml(
+  adId: string,
+  accountId: string,
+  preferredFormat?: string
+): Promise<{ html: string; format: string } | null> {
+  const token = getAccessTokenFor(accountId);
+  const formatsToTry = preferredFormat
+    ? [preferredFormat, ...PREVIEW_FORMATS.filter(f => f !== preferredFormat)]
+    : [...PREVIEW_FORMATS];
+
+  for (const format of formatsToTry) {
+    try {
+      const res = await fetch(
+        `${META_BASE_URL}/${adId}/previews?ad_format=${encodeURIComponent(format)}&access_token=${token}`,
+        { cache: 'no-store' }
+      );
+      if (!res.ok) continue;
+      const json = await res.json();
+      let body: string | undefined = json?.data?.[0]?.body;
+      if (!body) continue;
+      // Meta czasem zwraca body z zakodowanymi encjami HTML
+      body = body
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&amp;/g, '&')
+        .replace(/&quot;/g, '"');
+      return { html: body, format };
+    } catch {
+      // pojedynczy format może paść — próbujemy następny
+    }
+  }
+  return null;
+}
+
+// Świeży URL źródła MP4 (pełna rozdzielczość) + plakat HD. Source na fbcdn
+// jest podpisany i wygasa — pobieramy przy KAŻDYM żądaniu, bez cache.
+export async function fetchVideoSource(
+  videoId: string,
+  accountId: string
+): Promise<{ source: string | null; poster: string | null }> {
+  const token = getAccessTokenFor(accountId);
+  const res = await fetch(
+    `${META_BASE_URL}/${videoId}?fields=source,picture,thumbnails{uri,width,height}&access_token=${token}`,
+    { cache: 'no-store' }
+  );
+  if (!res.ok) return { source: null, poster: null };
+  const data = await res.json();
+
+  let poster: string | null = null;
+  const thumbs: Array<{ uri: string; width: number }> = data.thumbnails?.data || [];
+  if (thumbs.length > 0) {
+    poster = [...thumbs].sort((a, b) => b.width - a.width)[0].uri;
+  }
+  if (!poster) poster = data.picture || null;
+
+  return { source: data.source || null, poster };
+}
+
+// Łańcuch priorytetów źródła obrazka dla proxy ?adId= — od pełnowymiarowego
+// image_url, przez object_story_spec i miniatury wideo, po adimages z hasha;
+// thumbnail_url (64 px) jest absolutnie ostatnim fallbackiem.
+export async function resolveAdImageUrl(adId: string, accountId: string): Promise<string | null> {
+  const token = getAccessTokenFor(accountId);
+  const res = await fetch(
+    `${META_BASE_URL}/${adId}?fields=creative{image_url,image_hash,thumbnail_url,video_id,object_story_spec}&access_token=${token}`,
+    { cache: 'no-store' }
+  );
+  if (!res.ok) return null;
+  const data = await res.json();
+  const creative = data.creative;
+  if (!creative) return null;
+
+  if (creative.image_url) return creative.image_url;
+  if (creative.object_story_spec?.video_data?.image_url) {
+    return creative.object_story_spec.video_data.image_url;
+  }
+  if (creative.object_story_spec?.link_data?.picture) {
+    return creative.object_story_spec.link_data.picture;
+  }
+
+  if (creative.video_id) {
+    const { poster } = await fetchVideoSource(creative.video_id, accountId);
+    if (poster) return poster;
+  }
+
+  if (creative.image_hash) {
+    try {
+      const imgRes = await fetch(
+        `${META_BASE_URL}/${accountId}/adimages?hashes=${encodeURIComponent(JSON.stringify([creative.image_hash]))}&fields=permalink_url,url,url_128&access_token=${token}`,
+        { cache: 'no-store' }
+      );
+      if (imgRes.ok) {
+        const imgData = await imgRes.json();
+        const first = imgData?.data?.[0];
+        if (first) return first.permalink_url || first.url || first.url_128 || null;
+      }
+    } catch { /* non-fatal */ }
+  }
+
+  return creative.thumbnail_url || null;
 }

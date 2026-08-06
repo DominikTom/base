@@ -10,6 +10,12 @@ import { DataTable, type Column } from '@/components/ui/data-table';
 import { formatCurrency, formatNumber, cn } from '@/lib/utils';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { DollarSign, Target, TrendingUp, MousePointerClick, Eye, Percent, RefreshCw, CheckCircle, XCircle } from 'lucide-react';
+import type { AttributionWindow } from '@/lib/marketing-constants';
+import type { AdsPayload } from '@/components/marketing/types';
+import { AccountsSummary } from '@/components/marketing/accounts-summary';
+import { CampaignsTab } from '@/components/marketing/campaigns-tab';
+import { AdsetsTab } from '@/components/marketing/adsets-tab';
+import { CreativesTab } from '@/components/marketing/creatives-tab';
 
 interface MarketingData {
   kpis: {
@@ -47,10 +53,31 @@ interface MarketingData {
   }>;
 }
 
+type MarketingTab = 'przeglad' | 'konta' | 'kampanie' | 'zestawy' | 'kreacje';
+
+const TABS: Array<{ id: MarketingTab; label: string }> = [
+  { id: 'przeglad', label: 'Przegląd' },
+  { id: 'konta', label: 'Konta & KPI' },
+  { id: 'kampanie', label: 'Kampanie' },
+  { id: 'zestawy', label: 'Zestawy reklam' },
+  { id: 'kreacje', label: 'Kreacje' },
+];
+
 export default function MarketingPage() {
   const { filters } = useDashboard();
+  const [tab, setTab] = useState<MarketingTab>('przeglad');
+
+  // Przegląd (poziom kampanii, fact_daily_adspend) — jak dotychczas
   const [data, setData] = useState<MarketingData | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // Nowe zakładki (poziom reklam, fact_daily_ad_performance) — lazy fetch
+  const [adsData, setAdsData] = useState<AdsPayload | null>(null);
+  const [adsLoading, setAdsLoading] = useState(false);
+  const [adsKey, setAdsKey] = useState('');
+  const [attribution, setAttribution] = useState<AttributionWindow>('default');
+
+  const filtersKey = `${filters.dateFrom}|${filters.dateTo}|${filters.shop}`;
 
   useEffect(() => {
     async function fetchData() {
@@ -73,6 +100,146 @@ export default function MarketingPage() {
     fetchData();
   }, [filters]);
 
+  // Dane ad-level dopiero po wejściu w nową zakładkę (rate limity Graph API
+  // nie cierpią, bo to czysty odczyt z bazy — ale payload jest spory).
+  useEffect(() => {
+    if (tab === 'przeglad') return;
+    if (adsData && adsKey === filtersKey) return;
+    let cancelled = false;
+    setAdsLoading(true);
+    const params = new URLSearchParams({
+      date_from: filters.dateFrom,
+      date_to: filters.dateTo,
+      shop: filters.shop,
+    });
+    fetch(`/api/dashboard/marketing/ads?${params}`)
+      .then(r => r.json())
+      .then(json => {
+        if (cancelled) return;
+        setAdsData(json.error ? null : json);
+        setAdsKey(filtersKey);
+      })
+      .catch(() => { if (!cancelled) setAdsData(null); })
+      .finally(() => { if (!cancelled) setAdsLoading(false); });
+    return () => { cancelled = true; };
+  }, [tab, filtersKey, adsData, adsKey, filters.dateFrom, filters.dateTo, filters.shop]);
+
+  const handleCampaignMetaSaved = (
+    campaignId: string,
+    fields: { purpose: string | null; funnelStage: string | null; notes: string | null }
+  ) => {
+    setAdsData(prev => prev
+      ? {
+          ...prev,
+          campaigns: prev.campaigns.map(c =>
+            c.campaignId === campaignId ? { ...c, ...fields } : c
+          ),
+        }
+      : prev);
+  };
+
+  const isOverview = tab === 'przeglad';
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-semibold text-zinc-100">Marketing Performance</h1>
+          {isOverview && data?.coverage.meta && (
+            <p className="text-xs text-zinc-500 mt-1">
+              Meta: <span className="text-zinc-400">{data.coverage.meta.from}</span>
+              {' → '}
+              <span className="text-zinc-400">{data.coverage.meta.to}</span>
+              {' · '}
+              {daysBetween(data.coverage.meta.from, data.coverage.meta.to)} dni
+              {' · '}
+              {formatNumber(data.coverage.meta.rows)} wierszy
+            </p>
+          )}
+          {!isOverview && adsData?.coverage && (
+            <p className="text-xs text-zinc-500 mt-1">
+              Ad-level: <span className="text-zinc-400">{adsData.coverage.from}</span>
+              {' → '}
+              <span className="text-zinc-400">{adsData.coverage.to}</span>
+              {' · '}
+              {formatNumber(adsData.coverage.rows)} wierszy
+            </p>
+          )}
+        </div>
+        {isOverview
+          ? <SyncMetaButton lastSync={data?.lastSync ?? null} />
+          : <SyncAdsButton onDone={() => { setAdsKey(''); setAdsData(null); }} />}
+      </div>
+
+      {/* Zakładki */}
+      <div className="flex gap-1 border-b border-zinc-800 overflow-x-auto">
+        {TABS.map(t => (
+          <button
+            key={t.id}
+            onClick={() => setTab(t.id)}
+            className={cn(
+              'px-4 py-2.5 text-sm whitespace-nowrap transition-colors border-b-2 -mb-px',
+              tab === t.id
+                ? 'border-blue-500 text-blue-400 font-medium'
+                : 'border-transparent text-zinc-400 hover:text-zinc-200'
+            )}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {isOverview ? (
+        <OverviewTab data={data} loading={loading} />
+      ) : adsLoading ? (
+        <div className="flex items-center justify-center h-96">
+          <div className="animate-pulse text-zinc-500">Ładowanie danych ad-level...</div>
+        </div>
+      ) : !adsData || adsData.ads.length === 0 ? (
+        <div className="flex flex-col items-center justify-center h-96 gap-3">
+          <p className="text-zinc-500">Brak danych ad-level w tym zakresie dat.</p>
+          <p className="text-xs text-zinc-600">
+            Użyj przycisku „Sync ad-level” powyżej, żeby pobrać reklamy, kreacje i metryki z Meta API.
+          </p>
+        </div>
+      ) : tab === 'konta' ? (
+        <AccountsSummary data={adsData} attribution={attribution} />
+      ) : tab === 'kampanie' ? (
+        <CampaignsTab
+          campaigns={adsData.campaigns}
+          dateFrom={filters.dateFrom}
+          dateTo={filters.dateTo}
+          shop={filters.shop}
+          attribution={attribution}
+          onAttributionChange={setAttribution}
+          onMetaSaved={handleCampaignMetaSaved}
+        />
+      ) : tab === 'zestawy' ? (
+        <AdsetsTab
+          adsets={adsData.adsets}
+          dateFrom={filters.dateFrom}
+          dateTo={filters.dateTo}
+          shop={filters.shop}
+          attribution={attribution}
+          onAttributionChange={setAttribution}
+        />
+      ) : (
+        <CreativesTab
+          data={adsData}
+          dateFrom={filters.dateFrom}
+          dateTo={filters.dateTo}
+          shop={filters.shop}
+          attribution={attribution}
+          onAttributionChange={setAttribution}
+        />
+      )}
+    </div>
+  );
+}
+
+// ============ Przegląd (dotychczasowa zawartość zakładki) ============
+
+function OverviewTab({ data, loading }: { data: MarketingData | null; loading: boolean }) {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-96">
@@ -107,24 +274,6 @@ export default function MarketingPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-semibold text-zinc-100">Marketing Performance</h1>
-          {data.coverage.meta && (
-            <p className="text-xs text-zinc-500 mt-1">
-              Meta: <span className="text-zinc-400">{data.coverage.meta.from}</span>
-              {' → '}
-              <span className="text-zinc-400">{data.coverage.meta.to}</span>
-              {' · '}
-              {daysBetween(data.coverage.meta.from, data.coverage.meta.to)} dni
-              {' · '}
-              {formatNumber(data.coverage.meta.rows)} wierszy
-            </p>
-          )}
-        </div>
-        <SyncMetaButton lastSync={data.lastSync} />
-      </div>
-
       {/* KPI Cards */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
         <KpiCard
@@ -305,6 +454,70 @@ function SyncMetaButton({ lastSync }: { lastSync: { at: string; rows: number } |
         className="flex items-center gap-2 px-3 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-sm rounded-lg transition-colors disabled:opacity-50">
         {syncing ? <RefreshCw size={14} className="animate-spin" /> : <RefreshCw size={14} />}
         {syncing ? 'Sync...' : 'Sync Meta'}
+      </button>
+    </div>
+  );
+}
+
+// Sync ad-level (reklamy + kreacje + dim_campaigns) — POST /api/etl/meta-ad-sync
+// w chunkach ≤90 dni; po zakończeniu odświeża dane zakładek.
+function SyncAdsButton({ onDone }: { onDone: () => void }) {
+  const [syncing, setSyncing] = useState(false);
+  const [days, setDays] = useState(30);
+  const [progress, setProgress] = useState<{ current: number; total: number } | null>(null);
+  const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
+
+  async function handleSync() {
+    setSyncing(true);
+    setResult(null);
+    setProgress(null);
+    try {
+      const chunks = buildBackfillChunks(days);
+      let totalRows = 0;
+      for (let i = 0; i < chunks.length; i++) {
+        setProgress({ current: i + 1, total: chunks.length });
+        const { since, until } = chunks[i];
+        const res = await fetch(`/api/etl/meta-ad-sync?since=${since}&until=${until}`, { method: 'POST' });
+        const json = await parseJsonOrThrow(res);
+        if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
+        totalRows += json.totalRows || 0;
+      }
+      setResult({ ok: true, message: `Ad-level: pobrano ${totalRows} wierszy za ${days} dni` });
+      onDone();
+    } catch (err) {
+      setResult({ ok: false, message: err instanceof Error ? err.message : String(err) });
+    } finally {
+      setSyncing(false);
+      setProgress(null);
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-3">
+      {progress ? (
+        <span className="text-xs text-zinc-400 flex items-center gap-1">
+          Chunk {progress.current}/{progress.total}…
+        </span>
+      ) : result ? (
+        <span className={`text-xs flex items-center gap-1 ${result.ok ? 'text-emerald-400' : 'text-red-400'}`}>
+          {result.ok ? <CheckCircle size={14} /> : <XCircle size={14} />}
+          {result.message}
+        </span>
+      ) : null}
+      <select
+        value={days}
+        onChange={e => setDays(parseInt(e.target.value, 10))}
+        disabled={syncing}
+        className="bg-zinc-800 text-zinc-200 text-sm rounded-lg px-2 py-2 border border-zinc-700 disabled:opacity-50"
+      >
+        {BACKFILL_OPTIONS.map(o => (
+          <option key={o.value} value={o.value}>{o.label}</option>
+        ))}
+      </select>
+      <button onClick={handleSync} disabled={syncing}
+        className="flex items-center gap-2 px-3 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-sm rounded-lg transition-colors disabled:opacity-50">
+        {syncing ? <RefreshCw size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+        {syncing ? 'Sync...' : 'Sync ad-level'}
       </button>
     </div>
   );

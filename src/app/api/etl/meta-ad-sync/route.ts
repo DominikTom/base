@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabase';
-import { fetchAdInsights, fetchCreativeMeta, getAdAccountIds } from '@/lib/meta-ads';
+import { fetchAdInsights, fetchCampaigns, fetchCreativeMeta, getAdAccountIds } from '@/lib/meta-ads';
 import { getEurPlnRates } from '@/lib/nbp';
 
 export const maxDuration = 60;
@@ -77,9 +77,43 @@ async function syncAdsRange(dateFromStr: string, dateToStr: string, accountFilte
 
       let totalRows = 0;
       let newCreatives = 0;
+      let campaignsSynced = 0;
       const results: Record<string, number> = {};
 
       for (const accountId of accountIds) {
+        // Wymiar kampanii (objective, status, budżety). Upsert TYLKO kolumn z API —
+        // pola manualne (purpose, funnel_stage, notes) zostają nietknięte.
+        try {
+          const campaigns = await fetchCampaigns(accountId);
+          if (campaigns.length > 0) {
+            const campaignRows = campaigns.map(c => ({
+              campaign_id: c.campaignId,
+              account_id: c.accountId,
+              name: c.name,
+              objective: c.objective,
+              status: c.status,
+              effective_status: c.effectiveStatus,
+              buying_type: c.buyingType,
+              daily_budget: c.dailyBudget,
+              lifetime_budget: c.lifetimeBudget,
+              start_time: c.startTime,
+              stop_time: c.stopTime,
+              last_seen_at: new Date().toISOString(),
+            }));
+            for (let i = 0; i < campaignRows.length; i += 500) {
+              const { error } = await db.from('dim_campaigns').upsert(
+                campaignRows.slice(i, i + 500),
+                { onConflict: 'campaign_id' }
+              );
+              if (error) throw new Error(error.message);
+            }
+            campaignsSynced += campaigns.length;
+          }
+        } catch (err) {
+          // Non-fatal: brak dim_campaigns nie blokuje syncu metryk
+          console.warn(`dim_campaigns sync failed for ${accountId}:`, err);
+        }
+
         const rows = await fetchAdInsights(accountId, dateFromStr, dateToStr);
         const isEurAccount = rows[0]?.currency === 'EUR';
         const rateByDate = isEurAccount
@@ -107,6 +141,13 @@ async function syncAdsRange(dateFromStr: string, dateToStr: string, accountFilte
           original_currency: r.currency,
           conversions: r.conversions,
           conversion_value: Math.round(r.conversionValue * rate * 100) / 100,
+          leads: r.leads,
+          conversions_1d_click: r.conversions1dClick,
+          conversions_7d_click: r.conversions7dClick,
+          conversions_1d_view: r.conversions1dView,
+          conversion_value_1d_click: Math.round(r.conversionValue1dClick * rate * 100) / 100,
+          conversion_value_7d_click: Math.round(r.conversionValue7dClick * rate * 100) / 100,
+          conversion_value_1d_view: Math.round(r.conversionValue1dView * rate * 100) / 100,
           cpc: r.cpc > 0 ? Math.round(r.cpc * rate * 10000) / 10000 : null,
           cpm: r.cpm > 0 ? Math.round(r.cpm * rate * 10000) / 10000 : null,
           ctr: r.ctr > 0 ? r.ctr : null,
@@ -212,6 +253,7 @@ async function syncAdsRange(dateFromStr: string, dateToStr: string, accountFilte
         accounts: results,
         totalRows,
         newCreatives,
+        campaignsSynced,
         dateRange: { from: dateFromStr, to: dateToStr },
       });
     } catch (err) {
