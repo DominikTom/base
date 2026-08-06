@@ -13,7 +13,14 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import {
   DollarSign, Target, TrendingUp, MousePointerClick, Eye, Percent,
   RefreshCw, CheckCircle, XCircle, ShoppingCart, Globe,
+  PieChart, Megaphone, Layers, Clapperboard,
 } from 'lucide-react';
+import type { AttributionWindow } from '@/lib/marketing-constants';
+import type { AdsPayload } from '@/components/marketing/types';
+import { AccountsSummary } from '@/components/marketing/accounts-summary';
+import { CampaignsTab } from '@/components/marketing/campaigns-tab';
+import { AdsetsTab } from '@/components/marketing/adsets-tab';
+import { CreativesTab } from '@/components/marketing/creatives-tab';
 
 interface MetaMarketingData {
   kpis: {
@@ -87,10 +94,14 @@ interface GoogleAdsData {
   lastSync: { at: string; rows: number } | null;
 }
 
-type TabKey = 'meta' | 'google';
+type TabKey = 'meta' | 'google' | 'konta' | 'kampanie' | 'zestawy' | 'kreacje';
+type AdLevelView = Extract<TabKey, 'konta' | 'kampanie' | 'zestawy' | 'kreacje'>;
+
+const AD_LEVEL_TABS: ReadonlyArray<AdLevelView> = ['konta', 'kampanie', 'zestawy', 'kreacje'];
 
 export default function MarketingPage() {
   const [tab, setTab] = useState<TabKey>('meta');
+  const isAdLevel = (AD_LEVEL_TABS as readonly string[]).includes(tab);
 
   return (
     <div className="space-y-6">
@@ -99,16 +110,20 @@ export default function MarketingPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex items-center gap-1 border-b border-line">
+      <div className="flex items-center gap-1 border-b border-line overflow-x-auto">
         {([
           { key: 'meta' as const, label: 'Meta Ads', icon: <Target size={14} /> },
           { key: 'google' as const, label: 'Google Ads', icon: <Globe size={14} /> },
+          { key: 'konta' as const, label: 'Konta & KPI', icon: <PieChart size={14} /> },
+          { key: 'kampanie' as const, label: 'Kampanie', icon: <Megaphone size={14} /> },
+          { key: 'zestawy' as const, label: 'Zestawy reklam', icon: <Layers size={14} /> },
+          { key: 'kreacje' as const, label: 'Kreacje', icon: <Clapperboard size={14} /> },
         ]).map(t => (
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
             className={cn(
-              'flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors',
+              'flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap',
               tab === t.key
                 ? 'border-primary-500 text-fg'
                 : 'border-transparent text-muted hover:text-fg-soft',
@@ -119,7 +134,10 @@ export default function MarketingPage() {
         ))}
       </div>
 
-      {tab === 'meta' ? <MetaTab /> : <GoogleAdsTab />}
+      {tab === 'meta' ? <MetaTab />
+        : tab === 'google' ? <GoogleAdsTab />
+        : isAdLevel ? <AdLevelSection view={tab as AdLevelView} />
+        : null}
     </div>
   );
 }
@@ -519,6 +537,174 @@ function SyncMetaButton({ lastSync }: { lastSync: { at: string; rows: number } |
         className="flex items-center gap-2 px-3 py-2 bg-bg hover:bg-line text-fg text-sm rounded-lg transition-colors disabled:opacity-50">
         {syncing ? <RefreshCw size={14} className="animate-spin" /> : <RefreshCw size={14} />}
         {syncing ? 'Sync...' : 'Sync Meta'}
+      </button>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Zakładki ad-level: Konta & KPI / Kampanie / Zestawy / Kreacje
+// (fact_daily_ad_performance + dim_campaigns + dim_creatives)
+// ─────────────────────────────────────────────────────────────────
+function AdLevelSection({ view }: { view: 'konta' | 'kampanie' | 'zestawy' | 'kreacje' }) {
+  const { filters } = useDashboard();
+  const [data, setData] = useState<AdsPayload | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [reloadKey, setReloadKey] = useState(0);
+  const [attribution, setAttribution] = useState<AttributionWindow>('default');
+
+  useEffect(() => {
+    let cancelled = false;
+    async function fetchData() {
+      setLoading(true);
+      try {
+        const params = new URLSearchParams({
+          date_from: filters.dateFrom,
+          date_to: filters.dateTo,
+          shop: filters.shop,
+        });
+        const res = await fetch(`/api/dashboard/marketing/ads?${params}`);
+        const json = await res.json();
+        if (!cancelled) setData(json.error ? null : json);
+      } catch {
+        if (!cancelled) setData(null);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    fetchData();
+    return () => { cancelled = true; };
+  }, [filters, reloadKey]);
+
+  const handleCampaignMetaSaved = (
+    campaignId: string,
+    fields: { purpose: string | null; funnelStage: string | null; notes: string | null }
+  ) => {
+    setData(prev => prev
+      ? {
+          ...prev,
+          campaigns: prev.campaigns.map(c =>
+            c.campaignId === campaignId ? { ...c, ...fields } : c
+          ),
+        }
+      : prev);
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          {data?.coverage && (
+            <p className="text-xs text-muted">
+              Ad-level: <span className="text-fg-soft">{data.coverage.from}</span>
+              {' → '}
+              <span className="text-fg-soft">{data.coverage.to}</span>
+              {' · '}
+              {formatNumber(data.coverage.rows)} wierszy
+            </p>
+          )}
+        </div>
+        <SyncAdsButton onDone={() => setReloadKey(k => k + 1)} />
+      </div>
+
+      {loading ? (
+        <PanelLoading />
+      ) : !data || data.ads.length === 0 ? (
+        <div className="flex flex-col items-center justify-center h-96 gap-3">
+          <p className="text-muted">Brak danych ad-level w tym zakresie dat.</p>
+          <p className="text-xs text-muted">
+            Użyj przycisku „Sync ad-level” powyżej, żeby pobrać reklamy, kreacje i metryki z Meta API.
+          </p>
+        </div>
+      ) : view === 'konta' ? (
+        <AccountsSummary data={data} attribution={attribution} />
+      ) : view === 'kampanie' ? (
+        <CampaignsTab
+          campaigns={data.campaigns}
+          dateFrom={filters.dateFrom}
+          dateTo={filters.dateTo}
+          shop={filters.shop}
+          attribution={attribution}
+          onAttributionChange={setAttribution}
+          onMetaSaved={handleCampaignMetaSaved}
+        />
+      ) : view === 'zestawy' ? (
+        <AdsetsTab
+          adsets={data.adsets}
+          dateFrom={filters.dateFrom}
+          dateTo={filters.dateTo}
+          shop={filters.shop}
+          attribution={attribution}
+          onAttributionChange={setAttribution}
+        />
+      ) : (
+        <CreativesTab
+          data={data}
+          dateFrom={filters.dateFrom}
+          dateTo={filters.dateTo}
+          shop={filters.shop}
+          attribution={attribution}
+          onAttributionChange={setAttribution}
+        />
+      )}
+    </div>
+  );
+}
+
+// Sync ad-level (reklamy + kreacje + dim_campaigns) — POST /api/etl/meta-ad-sync
+// w chunkach ≤90 dni; po zakończeniu odświeża dane zakładek ad-level.
+function SyncAdsButton({ onDone }: { onDone: () => void }) {
+  const [syncing, setSyncing] = useState(false);
+  const [days, setDays] = useState(30);
+  const [progress, setProgress] = useState<{ current: number; total: number } | null>(null);
+  const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
+
+  async function handleSync() {
+    setSyncing(true); setResult(null); setProgress(null);
+    try {
+      const chunks = buildBackfillChunks(days);
+      let totalRows = 0;
+      for (let i = 0; i < chunks.length; i++) {
+        setProgress({ current: i + 1, total: chunks.length });
+        const { since, until } = chunks[i];
+        const res = await fetch(`/api/etl/meta-ad-sync?since=${since}&until=${until}`, { method: 'POST' });
+        const json = await parseJsonOrThrow(res);
+        if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
+        totalRows += json.totalRows || 0;
+      }
+      setResult({ ok: true, message: `Ad-level: pobrano ${totalRows} wierszy za ${days} dni` });
+      onDone();
+    } catch (err) {
+      setResult({ ok: false, message: err instanceof Error ? err.message : String(err) });
+    } finally {
+      setSyncing(false); setProgress(null);
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-3">
+      {progress ? (
+        <span className="text-xs text-fg-soft flex items-center gap-1">
+          Chunk {progress.current}/{progress.total}…
+        </span>
+      ) : result ? (
+        <span className={`text-xs flex items-center gap-1 ${result.ok ? 'text-emerald-600' : 'text-danger'}`}>
+          {result.ok ? <CheckCircle size={14} /> : <XCircle size={14} />}
+          {result.message}
+        </span>
+      ) : null}
+      <select
+        value={days}
+        onChange={e => setDays(parseInt(e.target.value, 10))}
+        disabled={syncing}
+        className="bg-bg text-fg text-sm rounded-lg px-2 py-2 border border-line disabled:opacity-50"
+      >
+        {BACKFILL_OPTIONS.map(o => (<option key={o.value} value={o.value}>{o.label}</option>))}
+      </select>
+      <button onClick={handleSync} disabled={syncing}
+        className="flex items-center gap-2 px-3 py-2 bg-bg hover:bg-line text-fg text-sm rounded-lg transition-colors disabled:opacity-50">
+        {syncing ? <RefreshCw size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+        {syncing ? 'Sync...' : 'Sync ad-level'}
       </button>
     </div>
   );

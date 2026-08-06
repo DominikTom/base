@@ -11,6 +11,9 @@
     },
     "src/app/api/etl/ga4-sync/route.ts": {
       "maxDuration": 300
+    },
+    "src/app/api/dashboard/meta/video/[videoId]/route.ts": {
+      "maxDuration": 300
     }
   },
   "crons": [
