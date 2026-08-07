@@ -346,7 +346,7 @@ export default function AdminPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-semibold text-fg">ETL Admin</h1>
+      <h1 className="text-xl font-semibold tracking-tight text-ink">ETL Admin</h1>
 
       {/* Data freshness */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -377,18 +377,18 @@ export default function AdminPage() {
             <button
               onClick={handleManualGdriveSync}
               disabled={gdriveSyncing}
-              className="flex items-center gap-2 px-4 py-2.5 btn-primary-gradient disabled:bg-blue-900/50 disabled:cursor-not-allowed text-white font-medium rounded-lg transition-colors text-sm"
+              className="btn-primary px-4 py-2.5 text-sm"
             >
               {gdriveSyncing ? <RefreshCw size={16} className="animate-spin" /> : <FolderSync size={16} />}
               {gdriveSyncing ? 'Synchronizacja...' : 'Pobierz z Google Drive teraz'}
             </button>
-            <span className="text-xs text-muted">To omija timeout requestu w UI — ciężki sync wykona się w tle przez cron.</span>
+            <span className="text-xs text-ink-faint">To omija timeout requestu w UI — ciężki sync wykona się w tle przez cron.</span>
           </div>
           {gdriveSyncResult && (
-            <div className={`rounded-lg border px-3 py-2 text-sm ${
+            <div className={`rounded-xl border px-3 py-2 text-sm ${
               gdriveSyncResult.ok
-                ? 'border-emerald-800 bg-emerald-900/20 text-emerald-400'
-                : 'border-red-200 bg-red-900/20 text-danger'
+                ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                : 'border-red-200 bg-red-50 text-red-700'
             }`}>
               {gdriveSyncResult.message}
             </div>
@@ -399,13 +399,13 @@ export default function AdminPage() {
       {/* EUR Backfill */}
       <ChartCard title="Przeliczenie EUR→PLN (kurs NBP)" subtitle="Pobiera średni kurs EUR/PLN z NBP per miesiąc i przelicza historyczne zamówienia">
         <div className="space-y-3">
-          <div id="eur-current-rate" className="text-sm text-fg-soft">
+          <div id="eur-current-rate" className="text-sm text-ink-soft">
             Ładowanie aktualnego kursu NBP...
           </div>
           <script dangerouslySetInnerHTML={{ __html: `
             fetch('/api/etl/backfill-eur').then(r=>r.json()).then(d=>{
               const el=document.getElementById('eur-current-rate');
-              if(el) el.innerHTML='Aktualny kurs NBP: <span class="text-amber-400 font-bold">'+d.rate+' PLN/EUR</span>'+(d.date?' ('+d.date+')':' (fallback)');
+              if(el) el.innerHTML='Aktualny kurs NBP: <span class="text-amber-600 font-bold">'+d.rate+' PLN/EUR</span>'+(d.date?' ('+d.date+')':' (fallback)');
             }).catch(()=>{});
           `}} />
           <div className="flex items-center gap-4">
@@ -425,12 +425,12 @@ export default function AdminPage() {
                 if (btn) btn.textContent = 'Przelicz EUR→PLN';
               }}
               id="eur-backfill-btn"
-              className="flex items-center gap-2 px-4 py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-medium rounded-lg transition-colors text-sm"
+              className="flex items-center gap-2 px-4 py-2.5 border border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 font-medium rounded-xl transition-colors text-sm"
             >
               <Euro size={16} />
               Przelicz EUR→PLN
             </button>
-            <span className="text-xs text-muted">Używa średniego kursu NBP per miesiąc. Nowe importy automatycznie używają kursu z dnia zamówienia.</span>
+            <span className="text-xs text-ink-faint">Używa średniego kursu NBP per miesiąc. Nowe importy automatycznie używają kursu z dnia zamówienia.</span>
           </div>
         </div>
       </ChartCard>
@@ -442,21 +442,21 @@ export default function AdminPage() {
             onDragOver={e => { e.preventDefault(); setDragOver(true); }}
             onDragLeave={() => setDragOver(false)}
             onDrop={handleDrop}
-            className={`relative flex flex-col items-center justify-center border-2 border-dashed rounded-xl p-10 transition-colors ${
+            className={`relative flex flex-col items-center justify-center border-2 border-dashed rounded-2xl p-10 transition-colors ${
               isUploading ? 'pointer-events-none opacity-50' : 'cursor-pointer'
             } ${
               dragOver
-                ? 'border-primary-500 bg-blue-500/10'
-                : 'border-line hover:border-line bg-bg'
+                ? 'border-primary/50 bg-primary-soft'
+                : 'border-line bg-surface-2'
             }`}
             onClick={() => !isUploading && document.getElementById('csv-input')?.click()}
           >
-            <Upload size={40} className="text-muted mb-3" />
-            <p className="text-sm text-fg-soft">
+            <Upload size={40} className="text-ink-faint mb-3" />
+            <p className="text-sm text-ink-soft">
               {file ? file.name : 'Upuść plik CSV lub kliknij, aby wybrać'}
             </p>
             {file && (
-              <p className="text-xs text-muted mt-1">
+              <p className="text-xs text-ink-faint mt-1">
                 {(file.size / 1024 / 1024).toFixed(1)} MB
               </p>
             )}
@@ -478,23 +478,23 @@ export default function AdminPage() {
           {isUploading && (
             <div className="space-y-2">
               <div className="flex items-center justify-between text-sm">
-                <span className="text-fg-soft flex items-center gap-2">
+                <span className="text-ink-soft flex items-center gap-2">
                   <RefreshCw size={14} className="animate-spin" />
                   {progress.label}
                 </span>
                 {progress.total > 0 && (
-                  <span className="text-muted">{progressPct}%</span>
+                  <span className="font-mono text-ink-muted">{progressPct}%</span>
                 )}
               </div>
-              <div className="w-full bg-bg rounded-full h-2">
+              <div className="w-full bg-surface-2 rounded-full h-2">
                 <div
-                  className="bg-primary-600 h-2 rounded-full transition-all duration-300"
+                  className="bg-primary h-2 rounded-full transition-all duration-300"
                   style={{ width: `${progress.total > 0 ? progressPct : 100}%` }}
                 />
               </div>
               {progress.total === 0 && (
-                <div className="w-full bg-bg rounded-full h-2 overflow-hidden">
-                  <div className="bg-primary-600 h-2 rounded-full animate-pulse w-full" />
+                <div className="w-full bg-surface-2 rounded-full h-2 overflow-hidden">
+                  <div className="bg-primary h-2 rounded-full animate-pulse w-full" />
                 </div>
               )}
             </div>
@@ -504,7 +504,7 @@ export default function AdminPage() {
           {file && !isUploading && phase !== 'done' && (
             <button
               onClick={handleUpload}
-              className="w-full px-5 py-3 btn-primary-gradient font-medium rounded-lg transition-colors flex items-center justify-center gap-2"
+              className="btn-primary w-full px-5 py-3"
             >
               <Upload size={18} />
               Importuj CSV
@@ -515,7 +515,7 @@ export default function AdminPage() {
           {isUploading && (
             <button
               onClick={() => { abortRef.current = true; }}
-              className="w-full px-5 py-3 bg-bg hover:bg-line text-fg-soft font-medium rounded-lg transition-colors"
+              className="btn-secondary w-full px-5 py-3"
             >
               Anuluj import
             </button>
@@ -523,33 +523,33 @@ export default function AdminPage() {
 
           {/* Success result */}
           {phase === 'done' && resultStats && (
-            <div className="rounded-lg border border-emerald-800 bg-emerald-900/20 p-4 space-y-2">
-              <div className="flex items-center gap-2 text-emerald-400">
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 space-y-2">
+              <div className="flex items-center gap-2 text-emerald-700">
                 <CheckCircle size={18} />
                 <span className="font-medium">Import zakończony pomyślnie</span>
               </div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
                 <div>
-                  <span className="text-muted">Wiersze CSV:</span>
-                  <span className="ml-2 text-fg">{formatNumber(resultStats.totalRows as number)}</span>
+                  <span className="text-ink-muted">Wiersze CSV:</span>
+                  <span className="ml-2 font-mono text-ink">{formatNumber(resultStats.totalRows as number)}</span>
                 </div>
                 <div>
-                  <span className="text-muted">Zamówienia:</span>
-                  <span className="ml-2 text-fg">{formatNumber(resultStats.ordersInserted as number)}</span>
+                  <span className="text-ink-muted">Zamówienia:</span>
+                  <span className="ml-2 font-mono text-ink">{formatNumber(resultStats.ordersInserted as number)}</span>
                 </div>
                 <div>
-                  <span className="text-muted">Pozycje:</span>
-                  <span className="ml-2 text-fg">{formatNumber(resultStats.itemsInserted as number)}</span>
+                  <span className="text-ink-muted">Pozycje:</span>
+                  <span className="ml-2 font-mono text-ink">{formatNumber(resultStats.itemsInserted as number)}</span>
                 </div>
                 <div>
-                  <span className="text-muted">Tag-only rows:</span>
-                  <span className="ml-2 text-fg">{formatNumber(resultStats.tagOnlyRows as number)}</span>
+                  <span className="text-ink-muted">Tag-only rows:</span>
+                  <span className="ml-2 font-mono text-ink">{formatNumber(resultStats.tagOnlyRows as number)}</span>
                 </div>
               </div>
               {resultStats.byShop ? (
                 <div className="text-sm">
-                  <span className="text-muted">Sklepy: </span>
-                  <span className="text-fg-soft">
+                  <span className="text-ink-muted">Sklepy: </span>
+                  <span className="text-ink-soft">
                     {Object.entries(resultStats.byShop as Record<string, number>)
                       .map(([shop, count]) => `${shop}: ${formatNumber(count)}`)
                       .join(', ')}
@@ -558,8 +558,8 @@ export default function AdminPage() {
               ) : null}
               {resultStats.dateRange ? (
                 <div className="text-sm">
-                  <span className="text-muted">Zakres dat: </span>
-                  <span className="text-fg-soft">
+                  <span className="text-ink-muted">Zakres dat: </span>
+                  <span className="font-mono text-ink-soft">
                     {(resultStats.dateRange as Record<string, string>).min} — {(resultStats.dateRange as Record<string, string>).max}
                   </span>
                 </div>
@@ -569,7 +569,7 @@ export default function AdminPage() {
 
           {/* Error */}
           {phase === 'error' && uploadError && (
-            <div className="rounded-lg border border-red-200 bg-red-900/20 p-4 flex items-start gap-2 text-danger">
+            <div className="rounded-xl border border-red-200 bg-red-50 p-4 flex items-start gap-2 text-red-700">
               <XCircle size={18} className="shrink-0 mt-0.5" />
               <span>{uploadError}</span>
             </div>
@@ -582,7 +582,7 @@ export default function AdminPage() {
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-line text-fg-soft">
+              <tr className="border-b border-line text-ink-muted">
                 <th className="px-4 py-3 text-left font-medium">Źródło</th>
                 <th className="px-4 py-3 text-left font-medium">Start</th>
                 <th className="px-4 py-3 text-left font-medium">Koniec</th>
@@ -593,33 +593,33 @@ export default function AdminPage() {
             </thead>
             <tbody>
               {logs.map(log => (
-                <tr key={log.id} className="border-b border-line hover:bg-bg">
-                  <td className="px-4 py-3 text-fg-soft">{log.source}</td>
-                  <td className="px-4 py-3 text-fg-soft text-xs">
+                <tr key={log.id} className="border-b border-line/60 hover:bg-surface-2/60 transition-colors">
+                  <td className="px-4 py-3 text-ink-soft">{log.source}</td>
+                  <td className="px-4 py-3 font-mono text-ink-soft text-xs">
                     {new Date(log.started_at).toLocaleString('pl-PL')}
                   </td>
-                  <td className="px-4 py-3 text-fg-soft text-xs">
+                  <td className="px-4 py-3 font-mono text-ink-soft text-xs">
                     {log.finished_at ? new Date(log.finished_at).toLocaleString('pl-PL') : '-'}
                   </td>
                   <td className="px-4 py-3">
-                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
+                    <span className={`chip ${
                       log.status === 'success'
-                        ? 'bg-emerald-900/50 text-emerald-400'
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                         : log.status === 'error'
-                        ? 'bg-red-900/50 text-danger'
-                        : 'bg-yellow-900/50 text-yellow-400'
+                        ? 'bg-red-50 text-red-700 border-red-200'
+                        : 'bg-amber-50 text-amber-700 border-amber-200'
                     }`}>
                       {log.status === 'success' ? <CheckCircle size={12} /> : log.status === 'error' ? <XCircle size={12} /> : <Clock size={12} />}
                       {log.status}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-fg-soft text-right">{formatNumber(log.rows_processed)}</td>
-                  <td className="px-4 py-3 text-muted text-xs max-w-[150px] truncate">{log.csv_filename || '-'}</td>
+                  <td className="px-4 py-3 font-mono text-ink-soft text-right">{formatNumber(log.rows_processed)}</td>
+                  <td className="px-4 py-3 text-ink-faint text-xs max-w-[150px] truncate">{log.csv_filename || '-'}</td>
                 </tr>
               ))}
               {logs.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-muted">
+                  <td colSpan={6} className="px-4 py-8 text-center text-ink-muted">
                     Brak wpisów ETL. Zaimportuj pierwszy plik CSV powyżej.
                   </td>
                 </tr>

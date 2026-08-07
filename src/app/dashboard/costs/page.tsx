@@ -93,15 +93,15 @@ export default function CostsPage() {
   const months = Object.keys(byMonth).sort().reverse();
   const totalAll = costs.reduce((s, c) => s + c.amount_pln, 0);
 
-  const inputClass = 'px-3 py-2 text-sm rounded-lg bg-surface border border-line text-fg focus:outline-none focus:ring-2 focus:ring-primary-400';
+  const inputClass = 'px-3 py-2 text-sm rounded-xl bg-surface border border-line text-ink placeholder:text-ink-faint focus:border-primary/50 focus:outline-none focus:ring-4 focus:ring-primary/10';
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-fg">Koszty marketingu — Agencje</h1>
-        <div className="flex items-center gap-2 text-sm text-fg-soft">
+        <h1 className="text-xl font-semibold tracking-tight text-ink">Koszty marketingu — Agencje</h1>
+        <div className="flex items-center gap-2 text-sm text-ink-soft">
           <DollarSign size={16} />
-          Total: <span className="text-fg font-medium">{formatCurrency(totalAll)}</span>
+          Total: <span className="font-mono font-medium text-ink">{formatCurrency(totalAll)}</span>
         </div>
       </div>
 
@@ -109,49 +109,49 @@ export default function CostsPage() {
       <ChartCard title="Dodaj koszt">
         <div className="flex flex-wrap items-end gap-3">
           <div className="flex flex-col gap-1">
-            <label className="text-xs text-muted">Miesiąc</label>
+            <label className="stat-label">Miesiąc</label>
             <input type="month" value={month} onChange={e => setMonth(e.target.value)} className={inputClass} />
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-xs text-muted">Agencja</label>
+            <label className="stat-label">Agencja</label>
             <input type="text" value={agency} onChange={e => setAgency(e.target.value)} placeholder="np. Gogini" className={inputClass} list="agencies" />
             <datalist id="agencies">
               {[...new Set(costs.map(c => c.agency_name))].map(a => <option key={a} value={a} />)}
             </datalist>
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-xs text-muted">Usługa</label>
+            <label className="stat-label">Usługa</label>
             <input type="text" value={service} onChange={e => setService(e.target.value)} placeholder="np. Google Ads" className={inputClass} list="services" />
             <datalist id="services">
               {[...new Set(costs.map(c => c.service_type))].map(s => <option key={s} value={s} />)}
             </datalist>
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-xs text-muted">Kwota (PLN)</label>
+            <label className="stat-label">Kwota (PLN)</label>
             <input type="number" value={amount} onChange={e => setAmount(e.target.value)} placeholder="10000" className={inputClass} />
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-xs text-muted">Sklep</label>
+            <label className="stat-label">Sklep</label>
             <select value={shop} onChange={e => setShop(e.target.value)} className={inputClass}>
               <option value="">Ogólne</option>
               {SHOPS.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-xs text-muted">Platforma</label>
+            <label className="stat-label">Platforma</label>
             <select value={platform} onChange={e => setPlatform(e.target.value)} className={inputClass}>
               <option value="">Inne</option>
               {PLATFORMS.map(p => <option key={p} value={p}>{p}</option>)}
             </select>
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-xs text-muted">Notatka</label>
+            <label className="stat-label">Notatka</label>
             <input type="text" value={notes} onChange={e => setNotes(e.target.value)} placeholder="opcjonalnie" className={inputClass} />
           </div>
           <button
             onClick={handleAdd}
             disabled={saving || !agency || !service || !amount}
-            className="px-4 py-2 btn-primary-gradient text-sm font-medium rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2"
+            className="btn-primary px-4 py-2 text-sm"
           >
             <Plus size={16} />
             Dodaj
@@ -161,9 +161,9 @@ export default function CostsPage() {
 
       {/* Costs by month */}
       {loading ? (
-        <div className="text-muted text-center py-8">Ładowanie...</div>
+        <div className="text-ink-faint text-center py-8">Ładowanie...</div>
       ) : months.length === 0 ? (
-        <div className="text-muted text-center py-8">Brak kosztów. Dodaj pierwszy koszt powyżej.</div>
+        <div className="text-ink-muted text-center py-8">Brak kosztów. Dodaj pierwszy koszt powyżej.</div>
       ) : (
         months.map(m => {
           const items = byMonth[m];
@@ -173,7 +173,7 @@ export default function CostsPage() {
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="border-b border-line text-fg-soft">
+                    <tr className="border-b border-line text-ink-muted">
                       <th className="px-3 py-2 text-left font-medium">Agencja</th>
                       <th className="px-3 py-2 text-left font-medium">Usługa</th>
                       <th className="px-3 py-2 text-left font-medium">Sklep</th>
@@ -185,15 +185,15 @@ export default function CostsPage() {
                   </thead>
                   <tbody>
                     {items.map(c => (
-                      <tr key={c.id} className="border-b border-line hover:bg-bg">
-                        <td className="px-3 py-2 text-fg-soft">{c.agency_name}</td>
-                        <td className="px-3 py-2 text-fg-soft">{c.service_type}</td>
-                        <td className="px-3 py-2 text-fg-soft text-xs">{c.source_shop || '—'}</td>
-                        <td className="px-3 py-2 text-fg-soft text-xs">{c.platform || '—'}</td>
-                        <td className="px-3 py-2 text-right text-fg">{formatCurrency(c.amount_pln)}</td>
-                        <td className="px-3 py-2 text-muted text-xs">{c.notes || '—'}</td>
+                      <tr key={c.id} className="border-b border-line/60 hover:bg-surface-2/60 transition-colors">
+                        <td className="px-3 py-2 text-ink-soft">{c.agency_name}</td>
+                        <td className="px-3 py-2 text-ink-soft">{c.service_type}</td>
+                        <td className="px-3 py-2 text-ink-soft text-xs">{c.source_shop || '—'}</td>
+                        <td className="px-3 py-2 text-ink-soft text-xs">{c.platform || '—'}</td>
+                        <td className="px-3 py-2 text-right font-mono text-ink">{formatCurrency(c.amount_pln)}</td>
+                        <td className="px-3 py-2 text-ink-faint text-xs">{c.notes || '—'}</td>
                         <td className="px-3 py-2">
-                          <button onClick={() => handleDelete(c.id)} className="text-muted hover:text-danger">
+                          <button onClick={() => handleDelete(c.id)} className="text-ink-faint hover:text-red-600 transition-colors">
                             <Trash2 size={14} />
                           </button>
                         </td>
