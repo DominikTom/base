@@ -229,23 +229,30 @@ function extractVideoMetric(arr: Array<{ action_type: string; value?: string }> 
   return arr?.[0]?.value ? parseFloat(arr[0].value) : 0;
 }
 
-async function fetchAdCreativeMap(
+// Mapa ad_id → creative_id dla KONKRETNYCH reklam przez batch endpoint
+// `?ids=` (50 na call). Zastępuje paginowanie całej listy /ads konta przy
+// każdym chunku — to pożerało budżet rate limitu (Meta "insights call load").
+// Wołać tylko dla ad_id, których mapowania nie znamy jeszcze z bazy.
+export async function fetchCreativeIdsForAds(
   accountId: string,
-  token: string
+  adIds: string[]
 ): Promise<Map<string, string>> {
+  const token = getAccessTokenFor(accountId);
   const map = new Map<string, string>();
-  let url: string | null = `${META_BASE_URL}/${accountId}/ads?fields=id,creative{id}&limit=500&access_token=${token}` as string | null;
-  while (url) {
-    const res: Response = await fetch(url);
+  for (let i = 0; i < adIds.length; i += 50) {
+    const batch = adIds.slice(i, i + 50);
+    const res = await fetch(
+      `${META_BASE_URL}/?ids=${batch.join(',')}&fields=creative%7Bid%7D&access_token=${token}`
+    );
     if (!res.ok) {
-      const text = await res.text();
-      throw new Error(`Meta /ads list error for ${accountId}: ${text}`);
+      // non-fatal: brak creative_id nie blokuje zapisu metryk
+      console.warn(`fetchCreativeIdsForAds batch failed for ${accountId}: ${(await res.text()).slice(0, 200)}`);
+      continue;
     }
     const json = await res.json();
-    for (const ad of json.data || []) {
-      if (ad.id && ad.creative?.id) map.set(ad.id, ad.creative.id);
+    for (const [adId, ad] of Object.entries(json as Record<string, { creative?: { id?: string } }>)) {
+      if (ad?.creative?.id) map.set(adId, ad.creative.id);
     }
-    url = json.paging?.next || null;
   }
   return map;
 }
@@ -258,9 +265,9 @@ export async function fetchAdInsights(
   const token = getAccessTokenFor(accountId);
   const currency = await fetchAccountCurrency(accountId);
 
-  // Meta Insights API nie akceptuje `creative{id}` w fields — `creative` jest polem
-  // na /ads, nie na /insights. Pobieramy więc mapę ad_id → creative_id osobnym callem.
-  const creativeMap = await fetchAdCreativeMap(accountId, token);
+  // Meta Insights API nie akceptuje `creative{id}` w fields — creative_id
+  // uzupełnia wołający (ETL): najpierw z bazy (mapowanie ad→creative jest
+  // stałe), a tylko brakujące przez fetchCreativeIdsForAds. Tu zostaje null.
 
   // Uwaga: fields z wideo breakdownami są drogie pod kątem CPU weighted rate limit,
   // ale Meta w jednym call'u potrafi je zwrócić razem z insights — bez dodatkowych tripów.
@@ -306,7 +313,7 @@ export async function fetchAdInsights(
         adsetName: row.adset_name || '',
         adId: row.ad_id || '',
         adName: row.ad_name || '',
-        creativeId: creativeMap.get(row.ad_id) || null,
+        creativeId: null,
         impressions: parseInt(row.impressions || '0'),
         reach: parseInt(row.reach || '0'),
         clicks: parseInt(row.clicks || '0'),

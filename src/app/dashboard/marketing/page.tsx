@@ -674,10 +674,27 @@ function AdLevelSection({ view }: { view: 'konta' | 'kampanie' | 'kreacje' }) {
 
 // Sync ad-level (reklamy + kreacje + dim_campaigns) — POST /api/etl/meta-ad-sync.
 // Orkiestracja per KONTO × chunk ≤30 dni: każdy call robi jedno konto w małym
-// zakresie, więc mieści się w limicie czasu funkcji (wcześniej jeden ciężki
-// call na 3 konta z oknami atrybucji potrafił się wywalić timeoutem).
-// Błąd jednego konta nie przerywa syncu pozostałych.
+// zakresie, więc mieści się w limicie czasu funkcji. Rate limit Mety
+// ("Application request limit reached", code 4) jest przejściowy — chunk
+// dostaje pauzę i do 2 ponowień zamiast ubijać całe konto; między chunkami
+// krótka przerwa, żeby nie strzelać seriami. Błąd jednego konta nie
+// przerywa syncu pozostałych.
 const AD_SYNC_CHUNK_DAYS = 30;
+const RATE_LIMIT_PAUSE_MS = 60_000;
+const INTER_CHUNK_PAUSE_MS = 1_500;
+
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+
+function isMetaRateLimit(message: string): boolean {
+  return /request limit|zbyt wiele|"code"\s*:\s*4|is_transient/i.test(message);
+}
+
+// Skraca surowy JSON błędu Mety do czytelnego komunikatu
+function humanizeSyncError(message: string): string {
+  if (isMetaRateLimit(message)) return 'limit API Meta — spróbuj ponownie za ~godzinę';
+  return message.length > 140 ? `${message.slice(0, 140)}…` : message;
+}
+
 function SyncAdsButton({ onDone }: { onDone: () => void }) {
   const [syncing, setSyncing] = useState(false);
   const [days, setDays] = useState(90);
@@ -694,27 +711,45 @@ function SyncAdsButton({ onDone }: { onDone: () => void }) {
     const errors: string[] = [];
 
     for (const [shopLabel, accountId] of accounts) {
+      let firstChunk = true;
+      accountLoop:
       for (const { since, until } of chunks) {
         step += 1;
-        setProgress({ label: shopLabel, current: step, total });
-        try {
-          const res = await fetch(
-            `/api/etl/meta-ad-sync?since=${since}&until=${until}&account=${encodeURIComponent(accountId)}`,
-            { method: 'POST' }
-          );
-          const json = await parseJsonOrThrow(res);
-          if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
-          totalRows += json.totalRows || 0;
-        } catch (err) {
-          errors.push(`${shopLabel} (${since}→${until}): ${err instanceof Error ? err.message : String(err)}`);
-          break; // kolejne chunki tego konta pewnie też padną — idź do następnego konta
+        // dim_campaigns tylko przy pierwszym chunku konta — mniej calli do Mety
+        const url = `/api/etl/meta-ad-sync?since=${since}&until=${until}`
+          + `&account=${encodeURIComponent(accountId)}${firstChunk ? '' : '&campaigns=0'}`;
+        firstChunk = false;
+
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          setProgress({
+            label: attempt === 1 ? shopLabel : `${shopLabel} · ponawiam (${attempt}/3)`,
+            current: step, total,
+          });
+          try {
+            const res = await fetch(url, { method: 'POST' });
+            const json = await parseJsonOrThrow(res);
+            if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
+            totalRows += json.totalRows || 0;
+            await sleep(INTER_CHUNK_PAUSE_MS);
+            break; // chunk OK → następny
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            if (isMetaRateLimit(msg) && attempt < 3) {
+              // przejściowy limit — odczekaj i ponów ten sam chunk
+              setProgress({ label: `${shopLabel} · limit API, pauza 60 s`, current: step, total });
+              await sleep(RATE_LIMIT_PAUSE_MS);
+              continue;
+            }
+            errors.push(`${shopLabel}: ${humanizeSyncError(msg)}`);
+            break accountLoop; // kolejne chunki tego konta też padną — następne konto
+          }
         }
       }
     }
 
     setResult(errors.length === 0
       ? { ok: true, message: `Ad-level: pobrano ${totalRows} wierszy za ${days} dni` }
-      : { ok: false, message: `Pobrano ${totalRows} wierszy, błędy: ${errors[0]}${errors.length > 1 ? ` (+${errors.length - 1})` : ''}` });
+      : { ok: false, message: `Pobrano ${totalRows} wierszy · ${errors.join(' · ')}` });
     if (totalRows > 0) onDone();
     setSyncing(false); setProgress(null);
   }

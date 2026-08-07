@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAdmin } from '@/lib/auth';
 import { getSupabaseAdmin } from '@/lib/supabase';
-import { fetchAdInsights, fetchCampaigns, fetchCreativeMeta, getAdAccountIds } from '@/lib/meta-ads';
+import { fetchAdInsights, fetchCampaigns, fetchCreativeIdsForAds, fetchCreativeMeta, getAdAccountIds } from '@/lib/meta-ads';
 import { getEurPlnRates } from '@/lib/nbp';
 
 export const maxDuration = 300;
@@ -18,14 +18,17 @@ export async function POST(request: NextRequest) {
   const since = searchParams.get('since');
   const until = searchParams.get('until');
   const accountFilter = searchParams.get('account');
+  // ?campaigns=0 — pomiń sync dim_campaigns (frontend robi go tylko przy
+  // pierwszym chunku konta; kolejne chunki nie palą limitu API na to samo)
+  const syncCampaigns = searchParams.get('campaigns') !== '0';
 
   if (since && until && /^\d{4}-\d{2}-\d{2}$/.test(since) && /^\d{4}-\d{2}-\d{2}$/.test(until)) {
-    return syncAdsRange(since, until, accountFilter);
+    return syncAdsRange(since, until, accountFilter, syncCampaigns);
   }
 
   const daysParam = parseInt(searchParams.get('days') || '14', 10);
   const days = Number.isFinite(daysParam) && daysParam > 0 && daysParam <= 400 ? daysParam : 14;
-  return syncAdsDays(days, accountFilter);
+  return syncAdsDays(days, accountFilter, syncCampaigns);
 }
 
 // GET — Vercel Cron daily at 7:00 UTC
@@ -38,20 +41,20 @@ export async function GET(request: NextRequest) {
   if (!isVercelCron && cronSecret && authHeader !== `Bearer ${cronSecret}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
-  return syncAdsDays(7, null);
+  return syncAdsDays(7, null, true);
 }
 
-async function syncAdsDays(daysBack: number, accountFilter: string | null) {
+async function syncAdsDays(daysBack: number, accountFilter: string | null, syncCampaigns: boolean) {
   const today = new Date();
   const dateTo = new Date(today);
   dateTo.setDate(dateTo.getDate() - 1);
   const dateFrom = new Date(today);
   dateFrom.setDate(dateFrom.getDate() - daysBack);
   const fmt = (d: Date) => d.toISOString().split('T')[0];
-  return syncAdsRange(fmt(dateFrom), fmt(dateTo), accountFilter);
+  return syncAdsRange(fmt(dateFrom), fmt(dateTo), accountFilter, syncCampaigns);
 }
 
-async function syncAdsRange(dateFromStr: string, dateToStr: string, accountFilter: string | null) {
+async function syncAdsRange(dateFromStr: string, dateToStr: string, accountFilter: string | null, syncCampaigns: boolean) {
   try {
     const db = getSupabaseAdmin();
     let accountIds = getAdAccountIds();
@@ -87,38 +90,73 @@ async function syncAdsRange(dateFromStr: string, dateToStr: string, accountFilte
       for (const accountId of accountIds) {
         // Wymiar kampanii (objective, status, budżety). Upsert TYLKO kolumn z API —
         // pola manualne (purpose, funnel_stage, notes) zostają nietknięte.
-        try {
-          const campaigns = await fetchCampaigns(accountId);
-          if (campaigns.length > 0) {
-            const campaignRows = campaigns.map(c => ({
-              campaign_id: c.campaignId,
-              account_id: c.accountId,
-              name: c.name,
-              objective: c.objective,
-              status: c.status,
-              effective_status: c.effectiveStatus,
-              buying_type: c.buyingType,
-              daily_budget: c.dailyBudget,
-              lifetime_budget: c.lifetimeBudget,
-              start_time: c.startTime,
-              stop_time: c.stopTime,
-              last_seen_at: new Date().toISOString(),
-            }));
-            for (let i = 0; i < campaignRows.length; i += 500) {
-              const { error } = await db.from('dim_campaigns').upsert(
-                campaignRows.slice(i, i + 500),
-                { onConflict: 'campaign_id' }
-              );
-              if (error) throw new Error(error.message);
+        // Pomijany przy ?campaigns=0 (kolejne chunki tego samego konta).
+        if (syncCampaigns) {
+          try {
+            const campaigns = await fetchCampaigns(accountId);
+            if (campaigns.length > 0) {
+              const campaignRows = campaigns.map(c => ({
+                campaign_id: c.campaignId,
+                account_id: c.accountId,
+                name: c.name,
+                objective: c.objective,
+                status: c.status,
+                effective_status: c.effectiveStatus,
+                buying_type: c.buyingType,
+                daily_budget: c.dailyBudget,
+                lifetime_budget: c.lifetimeBudget,
+                start_time: c.startTime,
+                stop_time: c.stopTime,
+                last_seen_at: new Date().toISOString(),
+              }));
+              for (let i = 0; i < campaignRows.length; i += 500) {
+                const { error } = await db.from('dim_campaigns').upsert(
+                  campaignRows.slice(i, i + 500),
+                  { onConflict: 'campaign_id' }
+                );
+                if (error) throw new Error(error.message);
+              }
+              campaignsSynced += campaigns.length;
             }
-            campaignsSynced += campaigns.length;
+          } catch (err) {
+            // Non-fatal: brak dim_campaigns nie blokuje syncu metryk
+            console.warn(`dim_campaigns sync failed for ${accountId}:`, err);
           }
-        } catch (err) {
-          // Non-fatal: brak dim_campaigns nie blokuje syncu metryk
-          console.warn(`dim_campaigns sync failed for ${accountId}:`, err);
         }
 
         const rows = await fetchAdInsights(accountId, dateFromStr, dateToStr);
+
+        // creative_id: mapowanie ad→creative jest stałe, więc najpierw
+        // odzyskujemy znane pary z bazy (0 calli do Mety), a tylko brakujące
+        // dociągamy batchem ?ids= (50/call). Wcześniejsze paginowanie CAŁEJ
+        // listy /ads konta przy każdym chunku wyżerało rate limit.
+        const uniqueAdIds = Array.from(new Set(rows.map(r => r.adId).filter(Boolean)));
+        const creativeByAd = new Map<string, string>();
+        // Batch 50 id + sort po dacie malejąco: PostgREST i tak tnie wynik do
+        // 1000 wierszy, a najnowsze daty zawierają komplet aktywnych reklam.
+        for (let i = 0; i < uniqueAdIds.length; i += 50) {
+          const { data: known } = await db
+            .from('fact_daily_ad_performance')
+            .select('ad_id, creative_id')
+            .eq('account_id', accountId)
+            .not('creative_id', 'is', null)
+            .in('ad_id', uniqueAdIds.slice(i, i + 50))
+            .order('date', { ascending: false })
+            .limit(1000);
+          for (const k of known || []) {
+            if (k.creative_id) creativeByAd.set(k.ad_id as string, k.creative_id as string);
+          }
+        }
+        const missingAdIds = uniqueAdIds.filter(id => !creativeByAd.has(id));
+        if (missingAdIds.length > 0) {
+          try {
+            const fetched = await fetchCreativeIdsForAds(accountId, missingAdIds);
+            for (const [adId, creativeId] of fetched) creativeByAd.set(adId, creativeId);
+          } catch (err) {
+            console.warn(`fetchCreativeIdsForAds failed for ${accountId}:`, err);
+          }
+        }
+        for (const r of rows) r.creativeId = creativeByAd.get(r.adId) || null;
         const isEurAccount = rows[0]?.currency === 'EUR';
         const rateByDate = isEurAccount
           ? await getEurPlnRates(rows.map(r => r.date))
