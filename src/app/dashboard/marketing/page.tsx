@@ -8,6 +8,7 @@ import { SimpleBarChart } from '@/components/charts/bar-chart';
 import { SimplePieChart } from '@/components/charts/pie-chart';
 import { DataTable, type Column } from '@/components/ui/data-table';
 import { formatCurrency, formatNumber, cn } from '@/lib/utils';
+import { useChartTheme, CHART_PRIMARY, CHART_ACCENT } from '@/lib/chart-theme';
 import { previousPeriod, pctChange, COMPARE_LABEL } from '@/lib/period-compare';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import {
@@ -102,7 +103,7 @@ export default function MarketingPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-fg">Marketing Performance</h1>
+        <h1 className="text-xl font-semibold tracking-tight text-ink">Marketing Performance</h1>
       </div>
 
       {/* Tabs — platformy */}
@@ -117,8 +118,8 @@ export default function MarketingPage() {
             className={cn(
               'flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors',
               tab === t.key
-                ? 'border-primary-500 text-fg'
-                : 'border-transparent text-muted hover:text-fg-soft',
+                ? 'border-primary text-ink'
+                : 'border-transparent text-ink-muted hover:text-ink-soft',
             )}
           >
             {t.icon}{t.label}
@@ -151,10 +152,10 @@ function MetaSection() {
             key={t.key}
             onClick={() => setSubTab(t.key)}
             className={cn(
-              'flex items-center gap-1.5 px-3 py-1.5 rounded-pill text-xs font-medium transition-colors border',
+              'flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium transition-colors border',
               subTab === t.key
-                ? 'bg-primary-100 text-primary-800 border-primary-200'
-                : 'bg-surface text-muted border-line hover:text-fg hover:bg-bg',
+                ? 'bg-primary-soft text-primary-ink border-primary/20'
+                : 'bg-surface text-ink-muted border-line hover:text-ink hover:bg-surface-2',
             )}
           >
             {t.icon}{t.label}
@@ -216,10 +217,10 @@ function MetaTab() {
       <div className="flex items-start justify-between gap-4">
         <div>
           {data.coverage.meta && (
-            <p className="text-xs text-muted">
-              Meta: <span className="text-fg-soft">{data.coverage.meta.from}</span>
+            <p className="text-xs text-ink-muted">
+              Meta: <span className="font-mono text-ink-soft">{data.coverage.meta.from}</span>
               {' → '}
-              <span className="text-fg-soft">{data.coverage.meta.to}</span>
+              <span className="font-mono text-ink-soft">{data.coverage.meta.to}</span>
               {' · '}
               {daysBetween(data.coverage.meta.from, data.coverage.meta.to)} dni
               {' · '}
@@ -267,7 +268,7 @@ function MetaTab() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <ChartCard title="ROAS Trend">
-          <SimpleBarChart data={data.charts.roasTrend} barColor="#9333EA" valueFormatter={v => `${v}x`} />
+          <SimpleBarChart data={data.charts.roasTrend} valueFormatter={v => `${v}x`} />
         </ChartCard>
         <ChartCard title="Spend wg platformy">
           <SimplePieChart data={data.charts.spendByPlatform} />
@@ -275,7 +276,7 @@ function MetaTab() {
       </div>
 
       <ChartCard title="Top 10 kampanii wg ROAS" subtitle="Min. spend 100 PLN">
-        <SimpleBarChart data={data.charts.topByRoas} layout="horizontal" barColor="#16A34A" valueFormatter={v => `${v}x`} height={360} />
+        <SimpleBarChart data={data.charts.topByRoas} layout="horizontal" barColor={CHART_ACCENT} valueFormatter={v => `${v}x`} height={360} />
       </ChartCard>
 
       <ChartCard title="Tabela kampanii">
@@ -339,17 +340,17 @@ function GoogleAdsTab() {
       <div className="flex items-start justify-between gap-4">
         <div>
           {data.coverage && (
-            <p className="text-xs text-muted">
-              Google Ads (GA4 per-kampania): <span className="text-fg-soft">{data.coverage.from}</span>
+            <p className="text-xs text-ink-muted">
+              Google Ads (GA4 per-kampania): <span className="font-mono text-ink-soft">{data.coverage.from}</span>
               {' → '}
-              <span className="text-fg-soft">{data.coverage.to}</span>
+              <span className="font-mono text-ink-soft">{data.coverage.to}</span>
               {' · '}
               {daysBetween(data.coverage.from, data.coverage.to)} dni
               {' · '}
               {formatNumber(data.coverage.rows)} wierszy
             </p>
           )}
-          <p className="text-[11px] text-muted mt-0.5">
+          <p className="text-[11px] text-ink-faint mt-0.5">
             Spend/clicks/impressions z GA4 __total__ (zgodne z widgetem „Google Ads Spend”;
             advertiserAdCost atrybutywne sesyjnie — typowo 1-3% mniej niż Google Ads UI).
             Revenue/transakcje/sesje z atrybucji source=google/medium=cpc. Dla mybed.de
@@ -357,7 +358,7 @@ function GoogleAdsTab() {
           </p>
         </div>
         {data.lastSync && (
-          <span className="text-xs text-muted">
+          <span className="text-xs text-ink-faint">
             GA4: {formatRelativeTime(data.lastSync.at)}
           </span>
         )}
@@ -392,7 +393,7 @@ function GoogleAdsTab() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <ChartCard title="ROAS Trend">
-          <SimpleBarChart data={data.charts.roasTrend} barColor="#9333EA" valueFormatter={v => `${v}x`} />
+          <SimpleBarChart data={data.charts.roasTrend} valueFormatter={v => `${v}x`} />
         </ChartCard>
         <ChartCard title="Spend wg sklepu">
           <SimplePieChart data={data.charts.spendByShop} />
@@ -400,7 +401,7 @@ function GoogleAdsTab() {
       </div>
 
       <ChartCard title="Top 10 kampanii wg ROAS" subtitle="Min. spend 100 PLN">
-        <SimpleBarChart data={data.charts.topByRoas} layout="horizontal" barColor="#16A34A" valueFormatter={v => `${v}x`} height={360} />
+        <SimpleBarChart data={data.charts.topByRoas} layout="horizontal" barColor={CHART_ACCENT} valueFormatter={v => `${v}x`} height={360} />
       </ChartCard>
 
       <ChartCard
@@ -424,7 +425,7 @@ function GoogleAdsTab() {
 function PanelLoading() {
   return (
     <div className="flex items-center justify-center h-96">
-      <div className="animate-pulse text-muted">Ładowanie danych...</div>
+      <div className="animate-pulse text-ink-faint">Ładowanie danych...</div>
     </div>
   );
 }
@@ -432,23 +433,24 @@ function PanelLoading() {
 function PanelEmpty({ hint }: { hint: string }) {
   return (
     <div className="flex flex-col items-center justify-center h-96 gap-4">
-      <p className="text-muted">{hint}</p>
+      <p className="text-ink-muted">{hint}</p>
     </div>
   );
 }
 
 function SpendRevenueChart({ data }: { data: Array<{ date: string; spend: number; revenue: number }> }) {
+  const chart = useChartTheme();
   return (
     <ResponsiveContainer width="100%" height={320}>
       <LineChart data={data} margin={{ top: 5, right: 20, bottom: 5, left: 5 }}>
-        <CartesianGrid strokeDasharray="3 3" stroke="#EAEBE8" />
-        <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#8B908C' }} tickLine={false} />
-        <YAxis yAxisId="left" tick={{ fontSize: 11, fill: '#8B908C' }} tickLine={false} axisLine={false} />
-        <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11, fill: '#8B908C' }} tickLine={false} axisLine={false} />
-        <Tooltip contentStyle={{ backgroundColor: '#FFFFFF', border: '1px solid #ECEDEB', borderRadius: '8px', fontSize: '12px' }} />
+        <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
+        <XAxis dataKey="date" tick={{ fontSize: 11, fill: chart.tick }} tickLine={false} />
+        <YAxis yAxisId="left" tick={{ fontSize: 11, fill: chart.tickFaint }} tickLine={false} axisLine={false} />
+        <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11, fill: chart.tickFaint }} tickLine={false} axisLine={false} />
+        <Tooltip contentStyle={chart.tooltip} labelStyle={chart.tooltipLabel} />
         <Legend />
-        <Line yAxisId="left" type="monotone" dataKey="spend" name="Spend" stroke="#ef4444" strokeWidth={2} dot={false} />
-        <Line yAxisId="right" type="monotone" dataKey="revenue" name="Revenue" stroke="#10b981" strokeWidth={2} dot={false} />
+        <Line yAxisId="left" type="monotone" dataKey="spend" name="Spend" stroke={CHART_ACCENT} strokeWidth={2} dot={false} />
+        <Line yAxisId="right" type="monotone" dataKey="revenue" name="Revenue" stroke={CHART_PRIMARY} strokeWidth={2} dot={false} />
       </LineChart>
     </ResponsiveContainer>
   );
@@ -539,27 +541,27 @@ function SyncMetaButton({ lastSync }: { lastSync: { at: string; rows: number } |
   return (
     <div className="flex items-center gap-3">
       {progress ? (
-        <span className="text-xs text-fg-soft flex items-center gap-1">
+        <span className="text-xs text-ink-soft flex items-center gap-1">
           Chunk {progress.current}/{progress.total}…
         </span>
       ) : result ? (
-        <span className={`text-xs flex items-center gap-1 ${result.ok ? 'text-emerald-400' : 'text-danger'}`}>
+        <span className={`text-xs flex items-center gap-1 ${result.ok ? 'text-emerald-600' : 'text-red-600'}`}>
           {result.ok ? <CheckCircle size={14} /> : <XCircle size={14} />}
           {result.message}
         </span>
       ) : lastSync ? (
-        <span className="text-xs text-muted">Meta: {formatRelativeTime(lastSync.at)}</span>
+        <span className="text-xs text-ink-faint">Meta: {formatRelativeTime(lastSync.at)}</span>
       ) : null}
       <select
         value={days}
         onChange={e => setDays(parseInt(e.target.value, 10))}
         disabled={syncing}
-        className="bg-bg text-fg text-sm rounded-lg px-2 py-2 border border-line disabled:opacity-50"
+        className="rounded-xl border border-line bg-surface px-2 py-2 text-sm text-ink-soft focus:border-primary/50 focus:outline-none focus:ring-4 focus:ring-primary/10 disabled:opacity-50"
       >
         {BACKFILL_OPTIONS.map(o => (<option key={o.value} value={o.value}>{o.label}</option>))}
       </select>
       <button onClick={handleSync} disabled={syncing}
-        className="flex items-center gap-2 px-3 py-2 bg-bg hover:bg-line text-fg text-sm rounded-lg transition-colors disabled:opacity-50">
+        className="btn-secondary px-3 py-2">
         {syncing ? <RefreshCw size={14} className="animate-spin" /> : <RefreshCw size={14} />}
         {syncing ? 'Sync...' : 'Sync Meta'}
       </button>
@@ -645,15 +647,15 @@ function AdLevelSection({ view }: { view: 'konta' | 'kampanie' | 'kreacje' }) {
       <div className="flex items-start justify-between gap-4">
         <div>
           {data?.coverage && (
-            <p className="text-xs text-muted">
-              Ad-level: <span className="text-fg-soft">{data.coverage.from}</span>
+            <p className="text-xs text-ink-muted">
+              Ad-level: <span className="font-mono text-ink-soft">{data.coverage.from}</span>
               {' → '}
-              <span className="text-fg-soft">{data.coverage.to}</span>
+              <span className="font-mono text-ink-soft">{data.coverage.to}</span>
               {' · '}
               {formatNumber(data.coverage.rows)} wierszy
             </p>
           )}
-          <p className="text-[11px] text-muted mt-0.5 max-w-2xl">
+          <p className="text-[11px] text-ink-faint mt-0.5 max-w-2xl">
             Źródło: dzienne dane na poziomie pojedynczych reklam (sync 7:00). Wartości mogą
             minimalnie różnić się od Przeglądu — tam Meta raportuje na poziomie kampanii
             (sync 5:00), a restatement świeżych konwersji trwa do 72 h.
@@ -665,8 +667,8 @@ function AdLevelSection({ view }: { view: 'konta' | 'kampanie' | 'kreacje' }) {
       {/* Ostrzeżenie o niepełnych danych — bez tego dziura po rate limicie
           wygląda jak "te same liczby dla 7 i 30 dni" i podważa zaufanie */}
       {!loading && data && data.dataQuality?.some(dq => !dq.complete) && (
-        <div className="rounded-card border border-amber-300 bg-amber-50 px-4 py-3">
-          <p className="text-sm font-medium text-amber-800">Niekompletne dane ad-level w wybranym zakresie</p>
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
+          <p className="text-sm font-medium text-amber-700">Niekompletne dane ad-level w wybranym zakresie</p>
           <ul className="mt-1 space-y-0.5">
             {data.dataQuality.filter(dq => !dq.complete).map(dq => (
               <li key={dq.accountId} className="text-xs text-amber-700">
@@ -686,8 +688,8 @@ function AdLevelSection({ view }: { view: 'konta' | 'kampanie' | 'kreacje' }) {
         <PanelLoading />
       ) : !data || data.ads.length === 0 ? (
         <div className="flex flex-col items-center justify-center h-96 gap-3">
-          <p className="text-muted">Brak danych ad-level w tym zakresie dat.</p>
-          <p className="text-xs text-muted">
+          <p className="text-ink-muted">Brak danych ad-level w tym zakresie dat.</p>
+          <p className="text-xs text-ink-faint">
             Użyj przycisku „Sync ad-level” powyżej, żeby pobrać reklamy, kreacje i metryki z Meta API.
           </p>
         </div>
@@ -847,17 +849,17 @@ function SyncAdsButton({ onDone }: { onDone: () => void }) {
   return (
     <div className="flex items-center gap-3">
       {progress ? (
-        <span className="text-xs text-fg-soft flex items-center gap-1">
+        <span className="text-xs text-ink-soft flex items-center gap-1">
           {progress.label} · {progress.current}/{progress.total}…
         </span>
       ) : result ? (
-        <span className={`text-xs flex items-center gap-1 max-w-md ${result.ok ? 'text-emerald-600' : 'text-danger'}`}>
+        <span className={`text-xs flex items-center gap-1 max-w-md ${result.ok ? 'text-emerald-600' : 'text-red-600'}`}>
           {result.ok ? <CheckCircle size={14} className="shrink-0" /> : <XCircle size={14} className="shrink-0" />}
           {result.message}
         </span>
       ) : null}
       <label
-        className="flex items-center gap-1.5 text-xs text-muted cursor-pointer select-none"
+        className="flex items-center gap-1.5 text-xs text-ink-muted cursor-pointer select-none"
         title="Domyślnie sync pobiera tylko brakujące dni + ostatnie 3 dni (oszczędza limit API Meta). Zaznacz, żeby nadpisać cały zakres — np. po zmianie sposobu liczenia."
       >
         <input
@@ -865,7 +867,7 @@ function SyncAdsButton({ onDone }: { onDone: () => void }) {
           checked={fullResync}
           onChange={e => setFullResync(e.target.checked)}
           disabled={syncing}
-          className="accent-primary-500"
+          className="accent-primary"
         />
         nadpisz wszystko
       </label>
@@ -873,12 +875,12 @@ function SyncAdsButton({ onDone }: { onDone: () => void }) {
         value={days}
         onChange={e => setDays(parseInt(e.target.value, 10))}
         disabled={syncing}
-        className="bg-bg text-fg text-sm rounded-lg px-2 py-2 border border-line disabled:opacity-50"
+        className="rounded-xl border border-line bg-surface px-2 py-2 text-sm text-ink-soft focus:border-primary/50 focus:outline-none focus:ring-4 focus:ring-primary/10 disabled:opacity-50"
       >
         {BACKFILL_OPTIONS.map(o => (<option key={o.value} value={o.value}>{o.label}</option>))}
       </select>
       <button onClick={handleSync} disabled={syncing}
-        className="flex items-center gap-2 px-3 py-2 bg-bg hover:bg-line text-fg text-sm rounded-lg transition-colors disabled:opacity-50 whitespace-nowrap">
+        className="btn-secondary px-3 py-2 whitespace-nowrap">
         {syncing ? <RefreshCw size={14} className="animate-spin" /> : <RefreshCw size={14} />}
         {syncing ? 'Sync...' : 'Sync ad-level'}
       </button>

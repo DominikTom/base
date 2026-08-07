@@ -302,7 +302,7 @@ export default function MyDashboardPage() {
   if (!dashData || !mounted) {
     return (
       <div className="flex items-center justify-center h-96">
-        <div className="animate-pulse text-muted">Ładowanie dashboardu...</div>
+        <div className="animate-pulse text-ink-faint">Ładowanie dashboardu...</div>
       </div>
     );
   }
@@ -335,10 +335,10 @@ export default function MyDashboardPage() {
           <button
             key={l.id}
             onClick={() => setActiveLayoutId(l.id)}
-            className={`group relative flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium rounded-t-lg transition-colors ${
+            className={`group relative flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium rounded-t-xl transition-colors ${
               l.id === activeLayoutId
-                ? 'bg-bg text-fg border border-line border-b-zinc-800 -mb-px'
-                : 'text-muted hover:text-fg-soft hover:bg-bg'
+                ? 'bg-surface-2 text-ink border border-line border-b-surface-2 -mb-px'
+                : 'text-ink-muted hover:text-ink-soft hover:bg-surface-2'
             }`}
           >
             {dashData.defaultLayoutId === l.id && (
@@ -349,7 +349,7 @@ export default function MyDashboardPage() {
               <span className="flex items-center gap-0.5 ml-1 opacity-0 group-hover:opacity-100 transition-opacity">
                 <button
                   onClick={(e) => { e.stopPropagation(); setRenameId(l.id); setRenameName(l.name); }}
-                  className="p-0.5 text-muted hover:text-fg-soft"
+                  className="p-0.5 text-ink-faint hover:text-ink"
                   title="Zmień nazwę"
                 >
                   <Pencil size={10} />
@@ -357,7 +357,7 @@ export default function MyDashboardPage() {
                 {dashData.defaultLayoutId !== l.id && (
                   <button
                     onClick={(e) => { e.stopPropagation(); handleSetDefault(l.id); }}
-                    className="p-0.5 text-muted hover:text-amber-400"
+                    className="p-0.5 text-ink-faint hover:text-amber-600"
                     title="Ustaw jako domyślny"
                   >
                     <Star size={10} />
@@ -365,7 +365,7 @@ export default function MyDashboardPage() {
                 )}
                 <button
                   onClick={(e) => { e.stopPropagation(); handleDeleteLayout(l.id); }}
-                  className="p-0.5 text-muted hover:text-danger"
+                  className="p-0.5 text-ink-faint hover:text-red-600"
                   title="Usuń"
                 >
                   <Trash2 size={10} />
@@ -377,7 +377,7 @@ export default function MyDashboardPage() {
         {dashData.layouts.length < MAX_LAYOUTS && (
           <button
             onClick={() => { setSaveDialogOpen(true); setNewLayoutName(''); }}
-            className="flex items-center gap-1 px-3 py-2.5 text-xs text-muted hover:text-fg-soft transition-colors"
+            className="flex items-center gap-1 px-3 py-2.5 text-xs text-ink-faint hover:text-ink-muted transition-colors"
             title="Zapisz jako nowy dashboard"
           >
             <Plus size={14} />
@@ -392,20 +392,20 @@ export default function MyDashboardPage() {
 
       {/* Rename dialog */}
       {renameId && (
-        <div className="flex items-center gap-2 p-3 rounded-lg bg-bg border border-line">
-          <span className="text-xs text-fg-soft">Nowa nazwa:</span>
+        <div className="card flex items-center gap-2 p-3">
+          <span className="text-xs text-ink-muted">Nowa nazwa:</span>
           <input
             type="text"
             value={renameName}
             onChange={e => setRenameName(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && handleRename()}
-            className="px-3 py-1.5 rounded bg-surface border border-line text-sm text-fg focus:outline-none focus:ring-2 focus:ring-primary-400"
+            className="rounded-xl border border-line bg-surface px-3 py-1.5 text-sm text-ink focus:border-primary/50 focus:outline-none focus:ring-4 focus:ring-primary/10"
             autoFocus
           />
-          <button onClick={handleRename} className="px-3 py-1.5 btn-primary-gradient text-xs rounded transition-colors">
+          <button onClick={handleRename} className="btn-primary px-3 py-1.5 text-xs">
             Zapisz
           </button>
-          <button onClick={() => setRenameId(null)} className="px-3 py-1.5 text-muted hover:text-fg-soft text-xs">
+          <button onClick={() => setRenameId(null)} className="btn-ghost px-3 py-1.5 text-xs">
             Anuluj
           </button>
         </div>
@@ -413,26 +413,26 @@ export default function MyDashboardPage() {
 
       {/* Save as dialog */}
       {saveDialogOpen && (
-        <div className="flex items-center gap-2 p-3 rounded-lg bg-bg border border-line">
-          <Save size={16} className="text-fg-soft" />
-          <span className="text-xs text-fg-soft">Nazwa dashboardu:</span>
+        <div className="card flex items-center gap-2 p-3">
+          <Save size={16} className="text-ink-muted" />
+          <span className="text-xs text-ink-muted">Nazwa dashboardu:</span>
           <input
             type="text"
             value={newLayoutName}
             onChange={e => setNewLayoutName(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && handleSaveAs()}
             placeholder="np. Marketing, Finanse..."
-            className="flex-1 px-3 py-1.5 rounded bg-surface border border-line text-sm text-fg placeholder-zinc-600 focus:outline-none focus:ring-2 focus:ring-primary-400"
+            className="flex-1 rounded-xl border border-line bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-ink-faint focus:border-primary/50 focus:outline-none focus:ring-4 focus:ring-primary/10"
             autoFocus
           />
           <button
             onClick={handleSaveAs}
             disabled={!newLayoutName.trim()}
-            className="px-3 py-1.5 btn-primary-gradient text-xs rounded transition-colors disabled:opacity-50"
+            className="btn-primary px-3 py-1.5 text-xs"
           >
             Zapisz
           </button>
-          <button onClick={() => setSaveDialogOpen(false)} className="px-3 py-1.5 text-muted hover:text-fg-soft text-xs">
+          <button onClick={() => setSaveDialogOpen(false)} className="btn-ghost px-3 py-1.5 text-xs">
             Anuluj
           </button>
         </div>
@@ -440,40 +440,40 @@ export default function MyDashboardPage() {
 
       {/* Header */}
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-fg">
+        <h1 className="text-xl font-semibold tracking-tight text-ink">
           {activeLayout?.name || 'Dashboard'}
-          {hasUnsavedChanges && <span className="ml-2 text-xs text-amber-500 font-normal">(niezapisane)</span>}
+          {hasUnsavedChanges && <span className="ml-2 text-xs text-amber-600 font-normal">(niezapisane)</span>}
         </h1>
         <div className="flex items-center gap-2">
           <button
             onClick={handleExplicitSave}
             disabled={saveStatus === 'saving'}
-            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-xl transition-colors ${
               saveStatus === 'saved'
-                ? 'bg-emerald-600 text-white'
+                ? 'bg-emerald-100 text-emerald-700'
                 : saveStatus === 'error'
-                ? 'bg-red-600 text-white'
+                ? 'bg-red-100 text-red-700'
                 : hasUnsavedChanges
-                ? 'btn-primary-gradient'
-                : 'text-fg-soft hover:text-fg hover:bg-bg'
+                ? 'bg-primary hover:bg-primary-ink text-white'
+                : 'text-ink-muted hover:text-ink hover:bg-surface-2'
             }`}
           >
             {saveStatus === 'saved' ? <Check size={16} /> : <Save size={16} />}
             {saveStatus === 'saving' ? 'Zapisywanie...' : saveStatus === 'saved' ? 'Zapisano!' : saveStatus === 'error' ? 'Błąd zapisu' : 'Zapisz'}
           </button>
           {saveError && (
-            <span className="text-[10px] text-danger max-w-48 truncate" title={saveError}>{saveError}</span>
+            <span className="text-[10px] text-red-600 max-w-48 truncate" title={saveError}>{saveError}</span>
           )}
           <button
             onClick={handleReset}
-            className="flex items-center gap-2 px-3 py-2 text-sm text-fg-soft hover:text-fg hover:bg-bg rounded-lg transition-colors"
+            className="flex items-center gap-2 px-3 py-2 text-sm text-ink-muted hover:text-ink hover:bg-surface-2 rounded-xl transition-colors"
           >
             <RotateCcw size={16} />
             Reset
           </button>
           <button
             onClick={() => setLibraryOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 btn-primary-gradient text-sm font-medium rounded-lg transition-colors"
+            className="btn-primary px-4 py-2"
           >
             <Plus size={16} />
             Dodaj widget
@@ -483,13 +483,13 @@ export default function MyDashboardPage() {
 
       {/* Active cross-filters */}
       {crossFilters.length > 0 && (
-        <div className="flex items-center gap-2 flex-wrap p-3 rounded-lg bg-primary-50 border border-primary-200">
-          <span className="text-xs text-primary-700 font-medium">Filtry:</span>
+        <div className="flex items-center gap-2 flex-wrap p-3 rounded-xl bg-primary-soft border border-primary/20">
+          <span className="text-xs text-primary-ink font-medium">Filtry:</span>
           {crossFilters.map(cf => (
             <button
               key={`${cf.field}|${cf.value}`}
               onClick={() => removeCrossFilter(cf.field, cf.value)}
-              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-primary-600/20 text-primary-700 text-xs hover:bg-primary-600/40 transition-colors"
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-primary/15 text-primary-ink text-xs hover:bg-primary/25 transition-colors"
             >
               {cf.label}
               <X size={12} />
@@ -497,7 +497,7 @@ export default function MyDashboardPage() {
           ))}
           <button
             onClick={clearCrossFilters}
-            className="text-xs text-muted hover:text-fg-soft ml-2"
+            className="text-xs text-ink-muted hover:text-ink-soft ml-2"
           >
             Wyczyść wszystkie
           </button>
@@ -506,11 +506,11 @@ export default function MyDashboardPage() {
 
       {/* Grid */}
       {!activeLayout || activeLayout.widgets.length === 0 ? (
-        <div className="flex flex-col items-center justify-center h-96 gap-4 border-2 border-dashed border-line rounded-xl">
-          <p className="text-muted">Twój dashboard jest pusty</p>
+        <div className="flex flex-col items-center justify-center h-96 gap-4 border-2 border-dashed border-line rounded-2xl">
+          <p className="text-ink-muted">Twój dashboard jest pusty</p>
           <button
             onClick={() => setLibraryOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 btn-primary-gradient text-sm font-medium rounded-lg transition-colors"
+            className="btn-primary px-4 py-2"
           >
             <Plus size={16} />
             Dodaj widgety

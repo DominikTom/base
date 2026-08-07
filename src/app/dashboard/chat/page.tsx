@@ -78,7 +78,7 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="flex h-[calc(100vh-8rem)] rounded-xl border border-line overflow-hidden bg-bg">
+    <div className="card flex h-[calc(100vh-8rem)] overflow-hidden">
       <aside className="w-60 border-r border-line shrink-0">
         <ConversationList
           conversations={conversations}
