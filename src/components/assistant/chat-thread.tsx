@@ -35,22 +35,22 @@ function mdTag(tag: string, className: string) {
 
 const MD: Components = {
   p: mdTag('p', 'my-1.5 first:mt-0 last:mb-0 leading-relaxed'),
-  h1: mdTag('h1', 'text-base font-semibold text-fg mt-3 mb-1.5 first:mt-0'),
-  h2: mdTag('h2', 'text-sm font-semibold text-fg mt-3 mb-1.5 first:mt-0'),
-  h3: mdTag('h3', 'text-sm font-semibold text-fg mt-2.5 mb-1 first:mt-0'),
+  h1: mdTag('h1', 'text-base font-semibold text-ink mt-3 mb-1.5 first:mt-0'),
+  h2: mdTag('h2', 'text-sm font-semibold text-ink mt-3 mb-1.5 first:mt-0'),
+  h3: mdTag('h3', 'text-sm font-semibold text-ink mt-2.5 mb-1 first:mt-0'),
   ul: mdTag('ul', 'list-disc ml-4 my-1.5 space-y-0.5'),
   ol: mdTag('ol', 'list-decimal ml-4 my-1.5 space-y-0.5'),
   li: mdTag('li', 'leading-relaxed'),
-  strong: mdTag('strong', 'font-semibold text-fg'),
-  code: mdTag('code', 'bg-surface/80 rounded px-1 py-0.5 text-[0.85em] font-mono text-fg'),
-  pre: mdTag('pre', 'bg-bg border border-line rounded-lg p-2.5 my-2 overflow-x-auto text-[12px]'),
-  thead: mdTag('thead', 'bg-bg/60'),
-  th: mdTag('th', 'text-left font-medium text-fg-soft px-2.5 py-1.5 border-b border-line'),
-  td: mdTag('td', 'px-2.5 py-1.5 border-b border-line/60 text-fg-soft'),
+  strong: mdTag('strong', 'font-semibold text-ink'),
+  code: mdTag('code', 'bg-surface-2 rounded px-1 py-0.5 text-[0.85em] font-mono text-ink'),
+  pre: mdTag('pre', 'bg-surface-2 border border-line rounded-lg p-2.5 my-2 overflow-x-auto text-[12px]'),
+  thead: mdTag('thead', 'bg-surface-2/60'),
+  th: mdTag('th', 'text-left font-medium text-ink-soft px-2.5 py-1.5 border-b border-line'),
+  td: mdTag('td', 'px-2.5 py-1.5 border-b border-line/60 text-ink-soft'),
   hr: () => <hr className="my-3 border-line/60" />,
   a: ({ node, ...rest }: MdProps) => {
     void node;
-    return <a className="text-primary-700 hover:underline" target="_blank" rel="noreferrer" {...rest} />;
+    return <a className="text-primary-ink hover:underline" target="_blank" rel="noreferrer" {...rest} />;
   },
   table: ({ node, ...rest }: MdProps) => {
     void node;
@@ -86,12 +86,12 @@ export function ChatThread({ messages, loading, onSend }: ChatThreadProps) {
       <div className="flex-1 overflow-y-auto px-4 py-6 space-y-5">
         {messages.length === 0 && !loading && (
           <div className="flex flex-col items-center justify-center h-full gap-4 text-center">
-            <div className="w-12 h-12 rounded-xl bg-primary-600/20 flex items-center justify-center">
-              <Sparkles size={24} className="text-primary-700" />
+            <div className="w-12 h-12 rounded-xl bg-primary-soft flex items-center justify-center">
+              <Sparkles size={24} className="text-primary-ink" />
             </div>
             <div>
-              <h2 className="text-lg font-semibold text-fg">Asystent AI</h2>
-              <p className="text-sm text-muted mt-1 max-w-md">
+              <h2 className="text-lg font-semibold text-ink">Asystent AI</h2>
+              <p className="text-sm text-ink-muted mt-1 max-w-md">
                 Zadaj pytanie o dane sprzedażowe, marketingowe lub ruch. Mogę też dodać widget na dashboardzie albo KPI.
               </p>
             </div>
@@ -100,7 +100,7 @@ export function ChatThread({ messages, loading, onSend }: ChatThreadProps) {
                 <button
                   key={s}
                   onClick={() => onSend(s)}
-                  className="text-left text-sm px-3 py-2 rounded-lg border border-line text-fg-soft hover:bg-bg hover:text-fg transition-colors"
+                  className="text-left text-sm px-3 py-2 rounded-xl border border-line text-ink-soft hover:bg-surface-2 hover:text-ink transition-colors"
                 >
                   {s}
                 </button>
@@ -113,7 +113,7 @@ export function ChatThread({ messages, loading, onSend }: ChatThreadProps) {
           if (m.role === 'user') {
             return (
               <div key={i} className="flex justify-end">
-                <div className="max-w-[80%] rounded-2xl rounded-br-sm bg-primary-600 text-white px-4 py-2.5 text-sm whitespace-pre-wrap">
+                <div className="max-w-[80%] rounded-2xl rounded-br-sm bg-primary text-white px-4 py-2.5 text-sm whitespace-pre-wrap">
                   {m.content}
                 </div>
               </div>
@@ -124,7 +124,7 @@ export function ChatThread({ messages, loading, onSend }: ChatThreadProps) {
             <div key={i} className="flex justify-start">
               <div className="max-w-[92%] w-full space-y-2">
                 {m.content && (
-                  <div className="rounded-2xl rounded-tl-sm bg-bg border border-line px-4 py-3 text-sm text-fg">
+                  <div className="rounded-2xl rounded-tl-sm bg-surface border border-line shadow-card px-4 py-3 text-sm text-ink">
                     <ReactMarkdown remarkPlugins={[remarkGfm]} components={MD}>
                       {m.content}
                     </ReactMarkdown>
@@ -134,7 +134,7 @@ export function ChatThread({ messages, loading, onSend }: ChatThreadProps) {
                 {m.meta && m.meta.steps.length > 0 && (
                   <button
                     onClick={() => setDetailsIdx(i)}
-                    className="inline-flex items-center gap-1.5 text-[11px] text-muted hover:text-primary-700 transition-colors"
+                    className="inline-flex items-center gap-1.5 text-[11px] text-ink-muted hover:text-primary-ink transition-colors"
                   >
                     <Info size={12} />
                     Jak to policzono{sqlCount > 0 ? ` · ${sqlCount} zapytań SQL` : ''}
@@ -147,11 +147,11 @@ export function ChatThread({ messages, loading, onSend }: ChatThreadProps) {
 
         {loading && (
           <div className="flex justify-start">
-            <div className="rounded-2xl rounded-tl-sm bg-bg border border-line px-4 py-3 text-sm text-fg-soft flex items-center gap-2">
+            <div className="rounded-2xl rounded-tl-sm bg-surface border border-line shadow-card px-4 py-3 text-sm text-ink-faint flex items-center gap-2">
               <span className="flex gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-zinc-500 animate-bounce [animation-delay:-0.3s]" />
-                <span className="w-1.5 h-1.5 rounded-full bg-zinc-500 animate-bounce [animation-delay:-0.15s]" />
-                <span className="w-1.5 h-1.5 rounded-full bg-zinc-500 animate-bounce" />
+                <span className="w-1.5 h-1.5 rounded-full bg-ink-faint animate-bounce [animation-delay:-0.3s]" />
+                <span className="w-1.5 h-1.5 rounded-full bg-ink-faint animate-bounce [animation-delay:-0.15s]" />
+                <span className="w-1.5 h-1.5 rounded-full bg-ink-faint animate-bounce" />
               </span>
               Analizuję dane…
             </div>
@@ -162,7 +162,7 @@ export function ChatThread({ messages, loading, onSend }: ChatThreadProps) {
 
       {/* Kompozytor */}
       <div className="border-t border-line p-3">
-        <div className="flex items-end gap-2 rounded-xl border border-line bg-surface px-3 py-2 focus-within:ring-1 focus-within:ring-blue-500">
+        <div className="flex items-end gap-2 rounded-xl border border-line bg-surface px-3 py-2 focus-within:border-primary/50 focus-within:ring-4 focus-within:ring-primary/10">
           <textarea
             value={input}
             onChange={e => setInput(e.target.value)}
@@ -174,18 +174,18 @@ export function ChatThread({ messages, loading, onSend }: ChatThreadProps) {
             }}
             rows={1}
             placeholder="Zapytaj o dane albo poproś o widget…"
-            className="flex-1 resize-none bg-transparent text-sm text-fg placeholder-zinc-600 focus:outline-none max-h-32"
+            className="flex-1 resize-none bg-transparent text-sm text-ink placeholder:text-ink-faint focus:outline-none max-h-32"
           />
           <button
             onClick={submit}
             disabled={loading || !input.trim()}
-            className="p-1.5 rounded-lg btn-primary-gradient disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            className="btn-primary p-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
             title="Wyślij"
           >
             <Send size={16} />
           </button>
         </div>
-        <p className="text-[11px] text-muted mt-1.5 px-1">
+        <p className="text-[11px] text-ink-faint mt-1.5 px-1">
           Asystent ma dostęp tylko do odczytu danych analitycznych. Enter wysyła, Shift+Enter — nowa linia.
         </p>
       </div>

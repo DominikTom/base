@@ -25,10 +25,10 @@ interface InsightsResponse {
 }
 
 const KIND_STYLE: Record<InsightKind, { dot: string; badge: string; icon: React.ReactNode }> = {
-  positive: { dot: 'bg-success', badge: 'bg-green-100 text-success', icon: <TrendingUp size={12} /> },
-  negative: { dot: 'bg-danger',  badge: 'bg-rose-100 text-danger',   icon: <TrendingDown size={12} /> },
-  alert:    { dot: 'bg-amber-500', badge: 'bg-amber-100 text-amber-700', icon: <AlertTriangle size={12} /> },
-  neutral:  { dot: 'bg-primary-500', badge: 'bg-primary-100 text-primary-700', icon: <ArrowUpRight size={12} /> },
+  positive: { dot: 'bg-emerald-500', badge: 'bg-emerald-50 text-emerald-700 border-emerald-200', icon: <TrendingUp size={12} /> },
+  negative: { dot: 'bg-red-500',  badge: 'bg-red-50 text-red-700 border-red-200',   icon: <TrendingDown size={12} /> },
+  alert:    { dot: 'bg-amber-500', badge: 'bg-amber-50 text-amber-700 border-amber-200', icon: <AlertTriangle size={12} /> },
+  neutral:  { dot: 'bg-primary', badge: 'bg-primary-soft text-primary-ink border-primary/20', icon: <ArrowUpRight size={12} /> },
 };
 
 export function InsightsCard() {
@@ -61,39 +61,36 @@ export function InsightsCard() {
   const insights = data?.insights || [];
 
   return (
-    <div className="relative overflow-hidden rounded-card border border-line bg-surface shadow-card p-6">
+    <div className="card relative overflow-hidden p-6">
       {/* Subtle gradient blob */}
       <div
         aria-hidden
-        className="pointer-events-none absolute -top-24 -right-24 w-96 h-96 rounded-full opacity-60"
-        style={{
-          background: 'radial-gradient(circle at center, #E9D5FF 0%, #FAF5FF 50%, transparent 75%)',
-        }}
+        className="pointer-events-none absolute -top-24 -right-24 w-96 h-96 rounded-full bg-primary-soft opacity-60 blur-3xl"
       />
 
       <div className="relative flex items-start justify-between gap-4 mb-5">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-2xl bg-accent-bg text-accent-fg flex items-center justify-center shrink-0">
+          <div className="w-10 h-10 rounded-2xl bg-primary-soft text-primary-ink flex items-center justify-center shrink-0">
             <Sparkles size={18} />
           </div>
           <div>
-            <h2 className="text-lg font-semibold text-fg">Wskazówki AI</h2>
-            <p className="text-xs text-muted mt-0.5">
+            <h2 className="text-lg font-semibold text-ink">Wskazówki AI</h2>
+            <p className="text-xs text-ink-muted mt-0.5">
               Sklep:{' '}
-              <span className="font-medium text-fg-soft">
+              <span className="font-medium text-ink-soft">
                 {shopFilterLabel(filters.shop)}
               </span>
               {' · '}
               {range === 'quarter' ? 'ostatni kwartał (90 dni)' : `ostatnie ${range === '30d' ? '30' : '7'} dni`}
               {' vs poprzedni okres'}
               {data?.cached && data.age_minutes != null && (
-                <span className="ml-2 text-muted/70">· cache {data.age_minutes}m</span>
+                <span className="ml-2 text-ink-faint">· cache {data.age_minutes}m</span>
               )}
             </p>
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <div className="inline-flex items-center bg-bg border border-line rounded-pill p-1">
+          <div className="inline-flex items-center bg-surface-2 rounded-xl p-1">
             {([
               { key: '7d', label: '7 dni' },
               { key: '30d', label: '30 dni' },
@@ -103,8 +100,8 @@ export function InsightsCard() {
                 key={opt.key}
                 onClick={() => setRange(opt.key)}
                 className={cn(
-                  'px-3 py-1 text-xs font-medium rounded-pill transition-colors',
-                  range === opt.key ? 'bg-accent-bg text-accent-fg' : 'text-fg-soft hover:text-fg',
+                  'px-3 py-1 text-xs font-medium rounded-lg transition-colors',
+                  range === opt.key ? 'bg-primary text-white' : 'text-ink-muted hover:text-ink hover:bg-surface',
                 )}
               >
                 {opt.label}
@@ -114,7 +111,7 @@ export function InsightsCard() {
           <button
             onClick={() => load(true)}
             disabled={refreshing}
-            className="p-2 rounded-pill text-fg-soft hover:text-fg hover:bg-bg transition-colors disabled:opacity-50"
+            className="p-2 rounded-lg text-ink-faint hover:text-ink hover:bg-surface-2 transition-colors disabled:opacity-50"
             title="Odśwież"
           >
             <RefreshCw size={14} className={refreshing ? 'animate-spin' : ''} />
@@ -124,13 +121,13 @@ export function InsightsCard() {
 
       <div className="relative">
         {loading && !data && (
-          <div className="text-sm text-muted py-6">Ładowanie wskazówek…</div>
+          <div className="text-sm text-ink-faint py-6">Ładowanie wskazówek…</div>
         )}
         {!loading && data?.error && (
-          <div className="text-sm text-danger py-3">Błąd: {data.error}</div>
+          <div className="text-sm text-red-600 py-3">Błąd: {data.error}</div>
         )}
         {!loading && insights.length === 0 && !data?.error && (
-          <div className="text-sm text-muted py-3">Brak istotnych zmian do raportowania.</div>
+          <div className="text-sm text-ink-muted py-3">Brak istotnych zmian do raportowania.</div>
         )}
         {insights.length > 0 && (
           <ul className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -139,21 +136,21 @@ export function InsightsCard() {
               return (
                 <li
                   key={i}
-                  className="group relative rounded-2xl border border-line bg-bg/40 hover:bg-bg p-4 transition-colors"
+                  className="group relative rounded-2xl border border-line bg-surface-2/40 hover:bg-surface-2 p-4 transition-colors"
                 >
                   <div className="flex items-start gap-3">
                     <span className={cn('w-1.5 h-1.5 rounded-full mt-2 shrink-0', style.dot)} aria-hidden />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start gap-2 flex-wrap mb-1">
-                        <h3 className="text-sm font-semibold text-fg">{ins.title}</h3>
+                        <h3 className="text-sm font-semibold text-ink">{ins.title}</h3>
                         {ins.badge && (
-                          <span className={cn('inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-pill', style.badge)}>
+                          <span className={cn('chip gap-1', style.badge)}>
                             {style.icon}
                             {ins.badge}
                           </span>
                         )}
                       </div>
-                      <p className="text-sm text-fg-soft leading-relaxed">{ins.body}</p>
+                      <p className="text-sm text-ink-soft leading-relaxed">{ins.body}</p>
                     </div>
                   </div>
                 </li>

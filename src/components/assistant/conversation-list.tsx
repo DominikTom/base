@@ -17,7 +17,7 @@ export function ConversationList({ conversations, activeId, onSelect, onNew, onD
       <div className="p-3">
         <button
           onClick={onNew}
-          className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg btn-primary-gradient text-sm font-medium transition-colors"
+          className="btn-primary w-full gap-2 px-3 py-2 text-sm"
         >
           <Plus size={16} />
           Nowa rozmowa
@@ -25,21 +25,21 @@ export function ConversationList({ conversations, activeId, onSelect, onNew, onD
       </div>
       <div className="flex-1 overflow-y-auto px-2 pb-3 space-y-0.5">
         {conversations.length === 0 && (
-          <p className="text-xs text-muted px-2 py-3">Brak rozmów. Zacznij nową.</p>
+          <p className="text-xs text-ink-muted px-2 py-3">Brak rozmów. Zacznij nową.</p>
         )}
         {conversations.map(c => (
           <div
             key={c.id}
             className={`group flex items-center gap-2 px-2 py-2 rounded-lg cursor-pointer transition-colors ${
-              c.id === activeId ? 'bg-bg text-fg' : 'text-fg-soft hover:bg-bg'
+              c.id === activeId ? 'bg-surface-2 text-ink' : 'text-ink-soft hover:bg-surface-2'
             }`}
             onClick={() => onSelect(c.id)}
           >
-            <MessageSquare size={14} className="shrink-0 text-muted" />
+            <MessageSquare size={14} className="shrink-0 text-ink-faint" />
             <span className="flex-1 text-xs truncate">{c.title || 'Rozmowa'}</span>
             <button
               onClick={e => { e.stopPropagation(); onDelete(c.id); }}
-              className="p-0.5 text-muted hover:text-danger opacity-0 group-hover:opacity-100 transition-opacity"
+              className="p-0.5 text-ink-faint hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity"
               title="Usuń rozmowę"
             >
               <Trash2 size={13} />

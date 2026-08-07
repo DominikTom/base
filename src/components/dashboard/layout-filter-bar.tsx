@@ -62,22 +62,22 @@ export function LayoutFilterBar() {
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-3 p-3 rounded-card border border-line bg-surface shadow-card">
-      <span className="text-[11px] uppercase tracking-wider font-semibold text-muted shrink-0">
+    <div className="card flex flex-wrap items-center gap-3 p-3">
+      <span className="stat-label shrink-0">
         Filtry zakładki
       </span>
 
       {/* Date presets — pillowy switcher */}
-      <div className="flex items-center gap-1 bg-bg border border-line rounded-pill p-1">
+      <div className="flex items-center gap-1 bg-surface-2 rounded-xl p-1">
         {PRESETS.map(p => (
           <button
             key={p.value}
             onClick={() => applyPreset(p.value)}
             className={cn(
-              'px-3 py-1 text-xs font-medium rounded-pill transition-colors',
+              'px-3 py-1 text-xs font-medium rounded-lg transition-colors',
               active === p.value
-                ? 'bg-accent-bg text-accent-fg'
-                : 'text-fg-soft hover:text-fg hover:bg-surface',
+                ? 'bg-primary text-white'
+                : 'text-ink-muted hover:text-ink hover:bg-surface',
             )}
           >
             {p.label}
@@ -87,31 +87,31 @@ export function LayoutFilterBar() {
 
       {/* Custom date range */}
       <div className="flex items-center gap-2">
-        <Calendar size={14} className="text-muted" />
+        <Calendar size={14} className="text-ink-faint" />
         <input
           type="date"
           value={filters.dateFrom}
           onChange={e => setDateRange(e.target.value, filters.dateTo)}
-          className="px-3 py-1.5 text-sm rounded-pill bg-bg border border-line text-fg focus:outline-none focus:ring-2 focus:ring-primary-300"
+          className="rounded-xl border border-line bg-surface px-2.5 py-1.5 font-mono text-xs text-ink-soft focus:border-primary/50 focus:outline-none focus:ring-4 focus:ring-primary/10"
         />
-        <span className="text-muted text-sm">—</span>
+        <span className="text-ink-faint text-sm">—</span>
         <input
           type="date"
           value={filters.dateTo}
           onChange={e => setDateRange(filters.dateFrom, e.target.value)}
-          className="px-3 py-1.5 text-sm rounded-pill bg-bg border border-line text-fg focus:outline-none focus:ring-2 focus:ring-primary-300"
+          className="rounded-xl border border-line bg-surface px-2.5 py-1.5 font-mono text-xs text-ink-soft focus:border-primary/50 focus:outline-none focus:ring-4 focus:ring-primary/10"
         />
       </div>
 
       {/* Shop multi-select — pillowe checkboxy */}
       <div className="flex items-center gap-2">
-        <Store size={14} className="text-muted" />
-        <div className="flex items-center gap-1 bg-bg border border-line rounded-pill p-1">
+        <Store size={14} className="text-ink-faint" />
+        <div className="flex items-center gap-1 bg-surface-2 rounded-xl p-1">
           <button
             onClick={() => setShop('all')}
             className={cn(
-              'px-3 py-1 text-xs font-medium rounded-pill transition-colors',
-              allShops ? 'bg-primary-600 text-white' : 'text-fg-soft hover:text-fg hover:bg-surface',
+              'px-3 py-1 text-xs font-medium rounded-lg transition-colors',
+              allShops ? 'bg-primary text-white' : 'text-ink-muted hover:text-ink hover:bg-surface',
             )}
           >
             Wszystkie
@@ -123,8 +123,8 @@ export function LayoutFilterBar() {
                 key={s.value}
                 onClick={() => toggleShop(s.value)}
                 className={cn(
-                  'inline-flex items-center gap-1 px-3 py-1 text-xs font-medium rounded-pill transition-colors',
-                  isActive ? 'bg-primary-600 text-white' : 'text-fg-soft hover:text-fg hover:bg-surface',
+                  'inline-flex items-center gap-1 px-3 py-1 text-xs font-medium rounded-lg transition-colors',
+                  isActive ? 'bg-primary text-white' : 'text-ink-muted hover:text-ink hover:bg-surface',
                 )}
               >
                 {isActive && <Check size={11} />}

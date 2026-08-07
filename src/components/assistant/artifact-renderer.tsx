@@ -8,18 +8,17 @@ import {
 } from 'recharts';
 import { LayoutDashboard, BarChart3, AlertTriangle, Check } from 'lucide-react';
 import { formatNumber } from '@/lib/utils';
+import { useChartTheme, CHART_SERIES } from '@/lib/chart-theme';
 import type { Artifact } from '@/lib/assistant/types';
 
-const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#f97316', '#06b6d4', '#ec4899', '#84cc16', '#14b8a6'];
-const AXIS = { fontSize: 11, fill: '#71717a' };
-const TOOLTIP = { backgroundColor: '#FFFFFF', border: '1px solid #ECEDEB', borderRadius: '8px', fontSize: '12px' };
+const COLORS = CHART_SERIES;
 
 const TABLE_PREVIEW_ROWS = 50;
 
 export function ArtifactRenderer({ artifact }: { artifact: Artifact }) {
   if (artifact.type === 'error') {
     return (
-      <div className="flex items-start gap-2 rounded-lg border border-red-900/50 bg-red-950/30 px-3 py-2 text-xs text-danger">
+      <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
         <AlertTriangle size={14} className="mt-0.5 shrink-0" />
         <span>{artifact.message}</span>
       </div>
@@ -33,7 +32,7 @@ export function ArtifactRenderer({ artifact }: { artifact: Artifact }) {
     return (
       <Link
         href="/dashboard/kpi"
-        className="flex items-center gap-2 rounded-lg border border-line bg-primary-50 px-3 py-2 text-xs text-primary-700 hover:bg-primary-100 transition-colors"
+        className="flex items-center gap-2 rounded-xl border border-primary/20 bg-primary-soft px-3 py-2 text-xs text-primary-ink hover:bg-primary/10 transition-colors"
       >
         <LayoutDashboard size={14} className="shrink-0" />
         <span>Zapisano widget <strong>{artifact.title}</strong>. Otwórz „KPI", żeby podejrzeć i dodać na dashboard.</span>
@@ -45,7 +44,7 @@ export function ArtifactRenderer({ artifact }: { artifact: Artifact }) {
     return (
       <Link
         href="/dashboard/kpi"
-        className="flex items-center gap-2 rounded-lg border border-emerald-900/50 bg-emerald-950/30 px-3 py-2 text-xs text-emerald-300 hover:bg-emerald-950/50 transition-colors"
+        className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700 hover:bg-emerald-100 transition-colors"
       >
         <BarChart3 size={14} className="shrink-0" />
         <span>Dodano KPI <strong>{artifact.name}</strong> (kategoria: {artifact.category}). Otwórz stronę „KPI”.</span>
@@ -56,25 +55,25 @@ export function ArtifactRenderer({ artifact }: { artifact: Artifact }) {
   if (artifact.type === 'table') {
     const rows = artifact.rows.slice(0, TABLE_PREVIEW_ROWS);
     if (!artifact.columns.length) {
-      return <div className="rounded-lg border border-line bg-surface px-3 py-2 text-xs text-muted">Zapytanie nie zwróciło wierszy.</div>;
+      return <div className="rounded-xl border border-line bg-surface px-3 py-2 text-xs text-ink-muted">Zapytanie nie zwróciło wierszy.</div>;
     }
     return (
-      <div className="rounded-lg border border-line bg-surface overflow-auto max-h-80">
+      <div className="card overflow-auto max-h-80">
         <table className="w-full text-xs">
           <thead className="sticky top-0 bg-surface">
             <tr className="border-b border-line">
               {artifact.columns.map(c => (
-                <th key={c} className="py-1.5 px-2 text-left text-fg-soft font-medium whitespace-nowrap">{c}</th>
+                <th key={c} className="py-1.5 px-2 text-left text-ink-soft font-medium whitespace-nowrap">{c}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {rows.map((row, i) => (
-              <tr key={i} className="border-b border-line">
+              <tr key={i} className="border-b border-line hover:bg-surface-2/60">
                 {artifact.columns.map(c => {
                   const v = row[c];
                   return (
-                    <td key={c} className="py-1.5 px-2 text-fg-soft whitespace-nowrap">
+                    <td key={c} className={`py-1.5 px-2 text-ink-soft whitespace-nowrap${typeof v === 'number' ? ' font-mono' : ''}`}>
                       {typeof v === 'number' ? formatNumber(v) : v == null ? '—' : String(v)}
                     </td>
                   );
@@ -84,7 +83,7 @@ export function ArtifactRenderer({ artifact }: { artifact: Artifact }) {
           </tbody>
         </table>
         {(artifact.rows.length > TABLE_PREVIEW_ROWS || artifact.truncated) && (
-          <div className="px-3 py-1.5 text-[11px] text-muted border-t border-line">
+          <div className="px-3 py-1.5 text-[11px] text-ink-faint border-t border-line">
             Pokazano {rows.length} z {artifact.rows.length}{artifact.truncated ? '+ (wynik ucięty do 1000)' : ''} wierszy.
           </div>
         )}
@@ -97,6 +96,9 @@ export function ArtifactRenderer({ artifact }: { artifact: Artifact }) {
 
 function ChartArtifact({ artifact }: { artifact: Extract<Artifact, { type: 'chart' }> }) {
   const { chart_type, x_key, series, data, title, query_spec } = artifact;
+  const chart = useChartTheme();
+  const xTick = { fontSize: 11, fill: chart.tick };
+  const yTick = { fontSize: 11, fill: chart.tickFaint };
   const [mode, setMode] = useState<'idle' | 'form' | 'saving' | 'saved'>('idle');
   const [name, setName] = useState(title);
   const [category, setCategory] = useState('Ogólne');
@@ -127,31 +129,31 @@ function ChartArtifact({ artifact }: { artifact: Extract<Artifact, { type: 'char
     }
   }
 
-  const fieldCls = 'px-2.5 py-1.5 rounded bg-bg border border-line text-xs text-fg';
+  const fieldCls = 'px-2.5 py-1.5 rounded-xl border border-line bg-surface text-xs text-ink-soft focus:border-primary/50 focus:outline-none focus:ring-4 focus:ring-primary/10';
 
   const tableColumns = chart_type === 'table' ? [x_key, ...series] : [];
   const tableRows = chart_type === 'table' ? data.slice(0, 100) : [];
 
   return (
-    <div className="rounded-lg border border-line bg-surface p-3">
-      <div className="text-xs font-medium text-fg-soft mb-2">{title}</div>
+    <div className="card p-3">
+      <div className="text-xs font-medium text-ink-soft mb-2">{title}</div>
       {chart_type === 'table' ? (
-        <div className="overflow-auto max-h-80 rounded-md border border-line">
+        <div className="overflow-auto max-h-80 rounded-lg border border-line">
           <table className="w-full text-xs">
             <thead className="sticky top-0 bg-surface">
               <tr className="border-b border-line">
                 {tableColumns.map(c => (
-                  <th key={c} className="py-1.5 px-2 text-left text-fg-soft font-medium whitespace-nowrap">{c}</th>
+                  <th key={c} className="py-1.5 px-2 text-left text-ink-soft font-medium whitespace-nowrap">{c}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {tableRows.map((row, i) => (
-                <tr key={i} className="border-b border-line">
+                <tr key={i} className="border-b border-line hover:bg-surface-2/60">
                   {tableColumns.map(c => {
                     const v = row[c];
                     return (
-                      <td key={c} className="py-1.5 px-2 text-fg-soft whitespace-nowrap">
+                      <td key={c} className={`py-1.5 px-2 text-ink-soft whitespace-nowrap${typeof v === 'number' ? ' font-mono' : ''}`}>
                         {typeof v === 'number' ? formatNumber(v) : v == null ? '—' : String(v)}
                       </td>
                     );
@@ -161,7 +163,7 @@ function ChartArtifact({ artifact }: { artifact: Extract<Artifact, { type: 'char
             </tbody>
           </table>
           {data.length > tableRows.length && (
-            <div className="px-3 py-1.5 text-[11px] text-muted border-t border-line">
+            <div className="px-3 py-1.5 text-[11px] text-ink-faint border-t border-line">
               Pokazano {tableRows.length} z {data.length} wierszy.
             </div>
           )}
@@ -179,15 +181,15 @@ function ChartArtifact({ artifact }: { artifact: Extract<Artifact, { type: 'char
             >
               {data.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
             </Pie>
-            <Tooltip contentStyle={TOOLTIP} />
+            <Tooltip contentStyle={chart.tooltip} labelStyle={chart.tooltipLabel} />
             <Legend wrapperStyle={{ fontSize: 11 }} />
           </PieChart>
         ) : chart_type === 'line' ? (
           <LineChart data={data} margin={{ top: 5, right: 20, bottom: 5, left: 5 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#EAEBE8" />
-            <XAxis dataKey={x_key} tick={AXIS} tickLine={false} />
-            <YAxis tick={AXIS} tickLine={false} axisLine={false} />
-            <Tooltip contentStyle={TOOLTIP} />
+            <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
+            <XAxis dataKey={x_key} tick={xTick} tickLine={false} axisLine={{ stroke: chart.axis }} />
+            <YAxis tick={yTick} tickLine={false} axisLine={false} />
+            <Tooltip contentStyle={chart.tooltip} labelStyle={chart.tooltipLabel} />
             <Legend wrapperStyle={{ fontSize: 11 }} />
             {series.map((s, i) => (
               <Line key={s} type="monotone" dataKey={s} stroke={COLORS[i % COLORS.length]} strokeWidth={2} dot={false} />
@@ -195,10 +197,10 @@ function ChartArtifact({ artifact }: { artifact: Extract<Artifact, { type: 'char
           </LineChart>
         ) : chart_type === 'area' ? (
           <AreaChart data={data} margin={{ top: 5, right: 20, bottom: 5, left: 5 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#EAEBE8" />
-            <XAxis dataKey={x_key} tick={AXIS} tickLine={false} />
-            <YAxis tick={AXIS} tickLine={false} axisLine={false} />
-            <Tooltip contentStyle={TOOLTIP} />
+            <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
+            <XAxis dataKey={x_key} tick={xTick} tickLine={false} axisLine={{ stroke: chart.axis }} />
+            <YAxis tick={yTick} tickLine={false} axisLine={false} />
+            <Tooltip contentStyle={chart.tooltip} labelStyle={chart.tooltipLabel} />
             <Legend wrapperStyle={{ fontSize: 11 }} />
             {series.map((s, i) => (
               <Area key={s} type="monotone" dataKey={s} stackId="s" stroke={COLORS[i % COLORS.length]} fill={COLORS[i % COLORS.length]} fillOpacity={0.5} strokeWidth={2} />
@@ -206,10 +208,10 @@ function ChartArtifact({ artifact }: { artifact: Extract<Artifact, { type: 'char
           </AreaChart>
         ) : (
           <BarChart data={data} margin={{ top: 5, right: 20, bottom: 5, left: 5 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#EAEBE8" />
-            <XAxis dataKey={x_key} tick={AXIS} tickLine={false} />
-            <YAxis tick={AXIS} tickLine={false} axisLine={false} />
-            <Tooltip contentStyle={TOOLTIP} />
+            <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
+            <XAxis dataKey={x_key} tick={xTick} tickLine={false} axisLine={{ stroke: chart.axis }} />
+            <YAxis tick={yTick} tickLine={false} axisLine={false} />
+            <Tooltip contentStyle={chart.tooltip} labelStyle={chart.tooltipLabel} />
             <Legend wrapperStyle={{ fontSize: 11 }} />
             {series.map((s, i) => (
               <Bar key={s} dataKey={s} fill={COLORS[i % COLORS.length]} radius={[2, 2, 0, 0]} />
@@ -223,10 +225,10 @@ function ChartArtifact({ artifact }: { artifact: Extract<Artifact, { type: 'char
         <div className="mt-2 pt-2 border-t border-line">
           {mode === 'saved' ? (
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-              <span className="inline-flex items-center gap-1.5 text-[11px] text-emerald-400">
+              <span className="inline-flex items-center gap-1.5 text-[11px] text-emerald-600">
                 <Check size={13} /> Zapisano jako KPI „{name}”.
               </span>
-              <Link href="/dashboard/kpi" className="text-[11px] text-primary-700 hover:underline font-medium">
+              <Link href="/dashboard/kpi" className="text-[11px] text-primary-ink hover:underline font-medium">
                 → Otwórz w zakładce KPI (edytuj, dodaj na dashboard)
               </Link>
             </div>
@@ -237,19 +239,19 @@ function ChartArtifact({ artifact }: { artifact: Extract<Artifact, { type: 'char
               <button
                 onClick={saveAsKpi}
                 disabled={mode === 'saving' || !name.trim()}
-                className="px-3 py-1.5 rounded btn-primary-gradient text-xs font-medium disabled:opacity-50"
+                className="btn-primary px-3 py-1.5 text-xs"
               >
                 {mode === 'saving' ? 'Zapisywanie…' : 'Zapisz'}
               </button>
-              <button onClick={() => setMode('idle')} className="px-2 py-1.5 text-xs text-muted hover:text-fg-soft">
+              <button onClick={() => setMode('idle')} className="px-2 py-1.5 text-xs text-ink-muted hover:text-ink transition-colors">
                 Anuluj
               </button>
-              {error && <span className="text-[11px] text-danger w-full">{error}</span>}
+              {error && <span className="text-[11px] text-red-600 w-full">{error}</span>}
             </div>
           ) : (
             <button
               onClick={() => setMode('form')}
-              className="inline-flex items-center gap-1.5 text-[11px] text-fg-soft hover:text-primary-700 transition-colors"
+              className="inline-flex items-center gap-1.5 text-[11px] text-ink-soft hover:text-primary-ink transition-colors"
             >
               <BarChart3 size={12} /> Zapisz jako KPI
             </button>

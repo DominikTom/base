@@ -69,7 +69,7 @@ interface TemplateInfo {
   expr: string;
 }
 
-const SELECT_BASE = 'px-3 py-2 rounded bg-surface border border-line text-sm text-fg';
+const SELECT_BASE = 'px-3 py-2 rounded-xl border border-line bg-surface text-sm text-ink-soft focus:border-primary/50 focus:outline-none focus:ring-4 focus:ring-primary/10';
 
 export function PivotBuilder({ value, onChange }: Props) {
   const [templates, setTemplates] = useState<TemplateInfo[]>([]);
@@ -157,7 +157,7 @@ export function PivotBuilder({ value, onChange }: Props) {
     <div className="space-y-5">
       {/* Granularity (gdy 'date' jest w wymiarach) */}
       <div className="flex items-center gap-3">
-        <label className="text-xs text-muted">Granulacja daty</label>
+        <label className="text-xs text-ink-muted">Granulacja daty</label>
         <select value={value.granularity} onChange={e => patch({ granularity: e.target.value })} className={SELECT_BASE}>
           <option value="day">Dzień</option>
           <option value="week">Tydzień</option>
@@ -165,19 +165,19 @@ export function PivotBuilder({ value, onChange }: Props) {
           <option value="quarter">Kwartał</option>
         </select>
         {!rowDims.includes('date') && (
-          <span className="text-[11px] text-muted">(używana tylko gdy „Data” jest wymiarem)</span>
+          <span className="text-[11px] text-ink-faint">(używana tylko gdy „Data” jest wymiarem)</span>
         )}
       </div>
 
       {/* Wymiary (wiersze) */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <div className="text-xs font-medium text-fg-soft">Wymiary (wiersze)</div>
+          <div className="stat-label">Wymiary (wiersze)</div>
           <button
             type="button"
             onClick={addDim}
             disabled={rowDims.length >= ROW_DIMS.length}
-            className="text-xs px-2 py-1 rounded bg-line hover:bg-zinc-600 text-fg disabled:opacity-40"
+            className="btn-secondary px-2 py-1 text-xs font-medium"
           >
             + dodaj wymiar
           </button>
@@ -187,9 +187,9 @@ export function PivotBuilder({ value, onChange }: Props) {
             <select value={d} onChange={e => updateDim(idx, e.target.value)} className={`col-span-8 ${SELECT_BASE}`}>
               {ROW_DIMS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
-            <button type="button" onClick={() => moveDim(idx, -1)} disabled={idx === 0} className="col-span-1 p-2 text-muted hover:text-fg disabled:opacity-30"><ArrowUp size={14} /></button>
-            <button type="button" onClick={() => moveDim(idx, 1)} disabled={idx === rowDims.length - 1} className="col-span-1 p-2 text-muted hover:text-fg disabled:opacity-30"><ArrowDown size={14} /></button>
-            <button type="button" onClick={() => removeDim(idx)} disabled={rowDims.length <= 1} className="col-span-2 px-3 py-2 rounded bg-red-50 border border-red-200 text-xs text-danger disabled:opacity-30">Usuń</button>
+            <button type="button" onClick={() => moveDim(idx, -1)} disabled={idx === 0} className="col-span-1 p-2 rounded-lg text-ink-faint hover:bg-surface-2 hover:text-ink transition-colors disabled:opacity-30"><ArrowUp size={14} /></button>
+            <button type="button" onClick={() => moveDim(idx, 1)} disabled={idx === rowDims.length - 1} className="col-span-1 p-2 rounded-lg text-ink-faint hover:bg-surface-2 hover:text-ink transition-colors disabled:opacity-30"><ArrowDown size={14} /></button>
+            <button type="button" onClick={() => removeDim(idx)} disabled={rowDims.length <= 1} className="col-span-2 px-3 py-2 rounded-xl bg-red-50 border border-red-200 text-xs text-red-700 disabled:opacity-30">Usuń</button>
           </div>
         ))}
       </div>
@@ -197,16 +197,16 @@ export function PivotBuilder({ value, onChange }: Props) {
       {/* Metryki (kolumny) */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <div className="text-xs font-medium text-fg-soft">Kolumny (metryki)</div>
+          <div className="stat-label">Kolumny (metryki)</div>
           <div className="flex gap-1">
-            <button type="button" onClick={() => addMetric('raw')} className="text-xs px-2 py-1 rounded bg-line hover:bg-zinc-600 text-fg">+ metryka</button>
-            <button type="button" onClick={() => addMetric('template')} className="text-xs px-2 py-1 rounded bg-primary-100 hover:bg-primary-700/50 text-primary-700 border border-primary-300">+ szablon</button>
-            <button type="button" onClick={() => addMetric('computed')} className="text-xs px-2 py-1 rounded bg-primary-100 hover:bg-primary-200 text-primary-700 border border-primary-300">+ formuła</button>
+            <button type="button" onClick={() => addMetric('raw')} className="btn-secondary px-2 py-1 text-xs font-medium">+ metryka</button>
+            <button type="button" onClick={() => addMetric('template')} className="text-xs font-medium px-2 py-1 rounded-lg bg-primary-soft hover:bg-primary/10 text-primary-ink border border-primary/20 transition-colors">+ szablon</button>
+            <button type="button" onClick={() => addMetric('computed')} className="text-xs font-medium px-2 py-1 rounded-lg bg-primary-soft hover:bg-primary/10 text-primary-ink border border-primary/20 transition-colors">+ formuła</button>
           </div>
         </div>
 
         {metrics.length === 0 && (
-          <div className="text-xs text-muted italic px-2 py-3">
+          <div className="text-xs text-ink-muted italic px-2 py-3">
             Dodaj przynajmniej jedną metrykę. „Metryka” = surowa kolumna z bazy. „Szablon” = gotowa formuła (ROAS, Profit, itd.). „Formuła” = własne wyrażenie po nazwach kolumn.
           </div>
         )}
@@ -231,8 +231,8 @@ export function PivotBuilder({ value, onChange }: Props) {
       {/* Filtry (uproszczone — jeden field/op/value) */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <div className="text-xs font-medium text-fg-soft">Filtry</div>
-          <button type="button" onClick={addFilter} className="text-xs px-2 py-1 rounded bg-line hover:bg-zinc-600 text-fg">+ filtr</button>
+          <div className="stat-label">Filtry</div>
+          <button type="button" onClick={addFilter} className="btn-secondary px-2 py-1 text-xs font-medium">+ filtr</button>
         </div>
         {filters.map((f, idx) => (
           <div key={idx} className="grid grid-cols-12 gap-2">
@@ -258,7 +258,7 @@ export function PivotBuilder({ value, onChange }: Props) {
               placeholder={f.operator === 'in' ? 'np. mybed.pl, mybed.de' : 'wartość'}
               className={`col-span-4 ${SELECT_BASE} text-xs`}
             />
-            <button type="button" onClick={() => removeFilter(idx)} className="col-span-2 px-3 py-2 rounded bg-red-50 border border-red-200 text-xs text-danger">Usuń</button>
+            <button type="button" onClick={() => removeFilter(idx)} className="col-span-2 px-3 py-2 rounded-xl bg-red-50 border border-red-200 text-xs text-red-700">Usuń</button>
           </div>
         ))}
       </div>
@@ -288,18 +288,18 @@ function MetricRow({
   const kindLabel = metric.kind === 'raw' ? 'metryka'
     : metric.kind === 'template' ? 'szablon'
     : 'formuła';
-  const kindColor = metric.kind === 'raw' ? 'bg-bg text-fg-soft'
-    : metric.kind === 'template' ? 'bg-primary-100 text-primary-700 border border-primary-300'
-    : 'bg-primary-100 text-primary-700 border border-primary-300';
+  const kindColor = metric.kind === 'raw' ? 'bg-surface-2 text-ink-soft'
+    : metric.kind === 'template' ? 'bg-primary-soft text-primary-ink border border-primary/20'
+    : 'bg-primary-soft text-primary-ink border border-primary/20';
 
   return (
-    <div className="rounded-lg border border-line bg-surface p-3 space-y-2">
+    <div className="rounded-xl border border-line bg-surface p-3 space-y-2">
       <div className="flex items-center gap-2">
-        <span className={`px-2 py-0.5 rounded text-[10px] font-medium uppercase ${kindColor}`}>{kindLabel}</span>
+        <span className={`px-2 py-0.5 rounded-lg text-[10px] font-medium ${kindColor}`}>{kindLabel}</span>
         <div className="flex-1" />
-        <button type="button" onClick={onMoveUp} disabled={!canMoveUp} className="p-1 text-muted hover:text-fg disabled:opacity-30"><ArrowUp size={14} /></button>
-        <button type="button" onClick={onMoveDown} disabled={!canMoveDown} className="p-1 text-muted hover:text-fg disabled:opacity-30"><ArrowDown size={14} /></button>
-        <button type="button" onClick={onRemove} className="p-1 text-muted hover:text-danger"><X size={14} /></button>
+        <button type="button" onClick={onMoveUp} disabled={!canMoveUp} className="p-1 rounded-lg text-ink-faint hover:bg-surface-2 hover:text-ink transition-colors disabled:opacity-30"><ArrowUp size={14} /></button>
+        <button type="button" onClick={onMoveDown} disabled={!canMoveDown} className="p-1 rounded-lg text-ink-faint hover:bg-surface-2 hover:text-ink transition-colors disabled:opacity-30"><ArrowDown size={14} /></button>
+        <button type="button" onClick={onRemove} className="p-1 rounded-lg text-ink-faint hover:bg-surface-2 hover:text-red-600 transition-colors"><X size={14} /></button>
       </div>
 
       {metric.kind === 'raw' && (
@@ -337,7 +337,7 @@ function MetricRow({
             {ALLOWED_PIVOT_FORMATS.map(f => <option key={f} value={f}>{FORMAT_LABELS[f as PivotFormat]}</option>)}
           </select>
           {templates.find(t => t.key === metric.template) && (
-            <div className="col-span-12 text-[11px] text-muted font-mono px-1">
+            <div className="col-span-12 text-[11px] text-ink-faint font-mono px-1">
               {templates.find(t => t.key === metric.template)?.expr}
             </div>
           )}
@@ -377,16 +377,16 @@ function ComputedRow({
         onChange={e => onChange({ expr: e.target.value })}
         placeholder="np. revenue_gross - meta_spend - google_spend - agency_cost"
         rows={2}
-        className="w-full px-3 py-2 rounded bg-surface border border-line text-xs text-fg font-mono"
+        className="w-full px-3 py-2 rounded-xl border border-line bg-surface text-xs text-ink-soft font-mono focus:border-primary/50 focus:outline-none focus:ring-4 focus:ring-primary/10"
       />
       {errors.length > 0 && (
-        <div className="flex items-start gap-1.5 text-[11px] text-danger">
+        <div className="flex items-start gap-1.5 text-[11px] text-red-600">
           <AlertCircle size={12} className="mt-0.5 shrink-0" />
           <span>{errors.join('; ')}</span>
         </div>
       )}
-      <details className="text-[11px] text-muted">
-        <summary className="cursor-pointer hover:text-fg-soft">Dostępne nazwy</summary>
+      <details className="text-[11px] text-ink-faint">
+        <summary className="cursor-pointer hover:text-ink-soft">Dostępne nazwy</summary>
         <div className="mt-1 font-mono leading-relaxed">{allowedScope.join(', ')}</div>
       </details>
     </div>
