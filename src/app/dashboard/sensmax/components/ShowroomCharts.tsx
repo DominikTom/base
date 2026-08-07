@@ -14,6 +14,7 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import { useDashboard } from '@/lib/dashboard-context';
+import { useChartTheme, CHART_PRIMARY, CHART_SERIES } from '@/lib/chart-theme';
 import { ChartCard } from '@/components/charts/chart-card';
 import { KpiCard } from '@/components/ui/kpi-card';
 import { DataTable, type Column } from '@/components/ui/data-table';
@@ -49,8 +50,6 @@ interface SingleResponse {
   error?: string;
 }
 
-const tooltipStyle = { backgroundColor: '#FFFFFF', border: '1px solid #ECEDEB', borderRadius: 8, fontSize: 12 } as const;
-const axisTick = { fontSize: 10, fill: '#71717a' } as const;
 const plNum = (n: number) => n.toLocaleString('pl-PL');
 const plMoney = (n: number) => `${Math.round(n).toLocaleString('pl-PL')} zł`;
 const warsawDay = (ms: number) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Warsaw' }).format(new Date(ms));
@@ -83,6 +82,9 @@ interface SummaryRow {
 export function ShowroomCharts() {
   const { filters } = useDashboard();
   const { dateFrom, dateTo } = filters;
+  // Chrome wykresów (siatka, osie, tooltip) reagujący na motyw light/dark.
+  const chart = useChartTheme();
+  const axisTick = { fontSize: 10, fill: chart.tick } as const;
 
   const todayIso = useMemo(() => warsawDay(Date.now()), []);
   const yesterdayIso = useMemo(() => warsawDay(Date.now() - 86_400_000), []);
@@ -360,9 +362,9 @@ export function ShowroomCharts() {
   const detailConv = detailVisits > 0 && detailMatchedOrders > 0 ? Math.round((detailMatchedOrders / detailVisits) * 1000) / 10 : null;
 
   const emptyNote = (
-    <div className="rounded-xl border border-line bg-surface p-6 text-sm text-fg-soft">
+    <div className="card p-6 text-sm text-ink-soft">
       Brak danych historycznych w tym zakresie. Zmień zakres dat u góry, uruchom synchronizację (
-      <code className="text-fg-soft">POST /api/sensmax/sync</code>) lub poczekaj na nocny cron.
+      <code className="text-ink-soft">POST /api/sensmax/sync</code>) lub poczekaj na nocny cron.
     </div>
   );
 
@@ -378,20 +380,20 @@ export function ShowroomCharts() {
 
       {/* sales basis toggle */}
       <div className="flex flex-wrap items-center gap-2 text-xs">
-        <span className="text-fg-soft">Zamówienia liczone jako:</span>
-        <div className="flex rounded-md border border-line">
+        <span className="text-ink-soft">Zamówienia liczone jako:</span>
+        <div className="flex items-center gap-0.5 bg-surface-2 rounded-xl p-1">
           {(['all', 'booked'] as const).map((b) => (
             <button
               key={b}
               type="button"
               onClick={() => setSalesBasis(b)}
-              className={`px-3 py-1 ${salesBasis === b ? 'bg-line text-fg' : 'text-fg-soft hover:text-fg'}`}
+              className={`px-3 py-1 font-medium rounded-lg transition-colors ${salesBasis === b ? 'bg-primary text-white' : 'text-ink-muted hover:text-ink hover:bg-surface'}`}
             >
               {b === 'all' ? 'wszystkie' : 'tylko zaksięgowane'}
             </button>
           ))}
         </div>
-        <span className="text-muted">konwersja = zamówienia ÷ wejścia (wejścia jak w panelu SensMax — odczyt czujnika ÷ 2)</span>
+        <span className="text-ink-faint">konwersja = zamówienia ÷ wejścia (wejścia jak w panelu SensMax — odczyt czujnika ÷ 2)</span>
       </div>
 
       {/* ── Porównanie wejść ──────────────────────────────────────────────── */}
@@ -399,13 +401,13 @@ export function ShowroomCharts() {
         title="Porównanie wejść"
         subtitle={all ? `${all.from} – ${all.to}` : undefined}
         action={
-          <div className="flex rounded-md border border-line text-xs">
+          <div className="flex items-center gap-0.5 bg-surface-2 rounded-xl p-1 text-xs">
             {(['daily', 'weekly'] as const).map((a) => (
               <button
                 key={a}
                 type="button"
                 onClick={() => setAgg(a)}
-                className={`px-3 py-1 ${agg === a ? 'bg-line text-fg' : 'text-fg-soft hover:text-fg'}`}
+                className={`px-3 py-1 font-medium rounded-lg transition-colors ${agg === a ? 'bg-primary text-white' : 'text-ink-muted hover:text-ink hover:bg-surface'}`}
               >
                 {a === 'daily' ? 'Dziennie' : 'Tygodniowo'}
               </button>
@@ -413,7 +415,7 @@ export function ShowroomCharts() {
           </div>
         }
       >
-        {loadingAll && <div className="text-sm text-muted">Ładowanie…</div>}
+        {loadingAll && <div className="text-sm text-ink-faint">Ładowanie…</div>}
         {!loadingAll && !allHasData && emptyNote}
         {!loadingAll && allHasData && (
           <>
@@ -425,11 +427,11 @@ export function ShowroomCharts() {
                     key={s}
                     type="button"
                     onClick={() => toggleShowroom(s)}
-                    className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors ${
-                      off ? 'border-line text-muted' : 'border-line text-fg hover:bg-bg'
+                    className={`chip transition-colors ${
+                      off ? 'border-line text-ink-faint' : 'border-line text-ink hover:bg-surface-2'
                     }`}
                   >
-                    <span className="h-2 w-2 rounded-full" style={{ backgroundColor: off ? '#52525b' : SHOWROOM_COLORS[s] }} />
+                    <span className="h-2 w-2 rounded-full" style={{ backgroundColor: off ? chart.tickFaint : SHOWROOM_COLORS[s] }} />
                     <span className={off ? 'line-through' : ''}>{SHOWROOM_LABELS[s]}</span>
                   </button>
                 );
@@ -437,10 +439,10 @@ export function ShowroomCharts() {
             </div>
             <ResponsiveContainer width="100%" height={300}>
               <LineChart data={compareData} margin={{ top: 5, right: 8, bottom: 5, left: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#EAEBE8" />
-                <XAxis dataKey="name" tick={axisTick} tickLine={false} axisLine={{ stroke: '#3f3f46' }} interval="preserveStartEnd" minTickGap={24} />
-                <YAxis tick={{ fontSize: 11, fill: '#8B908C' }} tickLine={false} axisLine={false} allowDecimals={false} />
-                <Tooltip contentStyle={tooltipStyle} />
+                <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
+                <XAxis dataKey="name" tick={axisTick} tickLine={false} axisLine={{ stroke: chart.axis }} interval="preserveStartEnd" minTickGap={24} />
+                <YAxis tick={{ fontSize: 11, fill: chart.tickFaint }} tickLine={false} axisLine={false} allowDecimals={false} />
+                <Tooltip contentStyle={chart.tooltip} labelStyle={chart.tooltipLabel} />
                 {activeShowrooms.map((s) => (
                   <Line key={s} type="monotone" dataKey={s} name={SHOWROOM_LABELS[s]} stroke={SHOWROOM_COLORS[s]} strokeWidth={2} dot={compareData.length <= 1} hide={hidden.has(s)} connectNulls />
                 ))}
@@ -461,11 +463,11 @@ export function ShowroomCharts() {
                   key={s}
                   type="button"
                   onClick={() => toggleShowroom(s)}
-                  className={`flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors ${
-                    off ? 'border-line text-muted' : 'border-line text-fg hover:bg-bg'
+                  className={`chip transition-colors ${
+                    off ? 'border-line text-ink-faint' : 'border-line text-ink hover:bg-surface-2'
                   }`}
                 >
-                  <span className="h-2 w-2 rounded-full" style={{ backgroundColor: off ? '#52525b' : SHOWROOM_COLORS[s] }} />
+                  <span className="h-2 w-2 rounded-full" style={{ backgroundColor: off ? chart.tickFaint : SHOWROOM_COLORS[s] }} />
                   <span className={off ? 'line-through' : ''}>{SHOWROOM_LABELS[s]}</span>
                 </button>
               );
@@ -473,10 +475,10 @@ export function ShowroomCharts() {
           </div>
           <ResponsiveContainer width="100%" height={280}>
             <LineChart data={conversionData} margin={{ top: 5, right: 8, bottom: 5, left: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#EAEBE8" />
-              <XAxis dataKey="name" tick={axisTick} tickLine={false} axisLine={{ stroke: '#3f3f46' }} interval="preserveStartEnd" minTickGap={24} />
-              <YAxis tick={{ fontSize: 11, fill: '#8B908C' }} tickLine={false} axisLine={false} unit="%" />
-              <Tooltip contentStyle={tooltipStyle} formatter={(v) => [`${v}%`, '']} />
+              <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
+              <XAxis dataKey="name" tick={axisTick} tickLine={false} axisLine={{ stroke: chart.axis }} interval="preserveStartEnd" minTickGap={24} />
+              <YAxis tick={{ fontSize: 11, fill: chart.tickFaint }} tickLine={false} axisLine={false} unit="%" />
+              <Tooltip contentStyle={chart.tooltip} labelStyle={chart.tooltipLabel} formatter={(v) => [`${v}%`, '']} />
               {salesShowrooms.map((s) => (
                 <Line key={s} type="monotone" dataKey={s} name={SHOWROOM_LABELS[s]} stroke={SHOWROOM_COLORS[s]} strokeWidth={2} dot={conversionData.length <= 1} hide={hidden.has(s)} connectNulls />
               ))}
@@ -488,13 +490,13 @@ export function ShowroomCharts() {
       {/* ── Zestawienie ───────────────────────────────────────────────────── */}
       {allHasData && (
         <div>
-          <h3 className="mb-2 text-sm font-medium text-fg">
+          <h3 className="mb-2 section-title">
             Zestawienie ({all!.from} – {all!.to}) — zamówienia: {salesBasis === 'all' ? 'wszystkie' : 'tylko zaksięgowane'}
           </h3>
           <div className="overflow-x-auto">
             <DataTable data={summaryRows} columns={summaryColumns} onRowClick={(r) => setSelected(r.showroom)} />
           </div>
-          <p className="mt-1.5 text-xs text-muted">
+          <p className="mt-1.5 text-xs text-ink-faint">
             Myślnik w kolumnach sprzedażowych = brak arkusza dla danego showroomu. Konwersja liczona jest tylko z dni, dla których są też dane z czujników
             (arkusze mają zwykle dłuższą historię niż czujniki). Kliknij wiersz, aby zobaczyć szczegóły poniżej.
           </p>
@@ -504,11 +506,11 @@ export function ShowroomCharts() {
       {/* ── Szczegóły wybranego showroomu ─────────────────────────────────── */}
       <div className="space-y-4">
         <div className="flex flex-wrap items-center gap-3">
-          <span className="text-sm font-medium text-fg">Szczegóły:</span>
+          <span className="text-sm font-medium text-ink">Szczegóły:</span>
           <select
             value={selected}
             onChange={(e) => setSelected(e.target.value as Showroom)}
-            className="rounded-md border border-line bg-surface px-3 py-1.5 text-sm text-fg"
+            className="rounded-xl border border-line bg-surface px-2.5 py-1.5 text-sm text-ink-soft focus:border-primary/50 focus:outline-none focus:ring-4 focus:ring-primary/10"
           >
             {SHOWROOMS.map((s) => (
               <option key={s} value={s}>
@@ -517,7 +519,7 @@ export function ShowroomCharts() {
             ))}
           </select>
           {detailHasData && (
-            <span className="text-sm text-muted">
+            <span className="text-sm text-ink-muted">
               {plNum(detailVisits)} wejść · {plNum(detailMatchedOrders)} zam.{detailConv !== null ? ` · konw. ${detailConv}%` : ''} · {single!.from} – {single!.to}
             </span>
           )}
@@ -525,25 +527,25 @@ export function ShowroomCharts() {
             href={`/dashboard/showroomy/raport?showroom=${selected}&from=${dateFrom}&to=${dateTo}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="ml-auto rounded-md border border-line px-3 py-1.5 text-sm text-fg hover:bg-bg"
+            className="btn-secondary ml-auto px-3 py-1.5"
           >
             Raport PDF — {SHOWROOM_LABELS[selected]}
           </a>
         </div>
 
-        {loadingSingle && <div className="text-sm text-muted">Ładowanie…</div>}
+        {loadingSingle && <div className="text-sm text-ink-faint">Ładowanie…</div>}
         {!loadingSingle && !detailHasData && emptyNote}
         {!loadingSingle && detailHasData && (
           <div className="grid gap-4 lg:grid-cols-2">
             <ChartCard title="Wejścia i zamówienia dziennie" subtitle={`${single!.from} – ${single!.to}`}>
               <ResponsiveContainer width="100%" height={300}>
                 <BarChart data={detailDaily} margin={{ top: 5, right: 5, bottom: 5, left: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#EAEBE8" />
-                  <XAxis dataKey="name" tick={axisTick} tickLine={false} axisLine={{ stroke: '#3f3f46' }} interval="preserveStartEnd" minTickGap={20} />
-                  <YAxis tick={{ fontSize: 11, fill: '#8B908C' }} tickLine={false} axisLine={false} allowDecimals={false} />
-                  <Tooltip contentStyle={tooltipStyle} />
+                  <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
+                  <XAxis dataKey="name" tick={axisTick} tickLine={false} axisLine={{ stroke: chart.axis }} interval="preserveStartEnd" minTickGap={20} />
+                  <YAxis tick={{ fontSize: 11, fill: chart.tickFaint }} tickLine={false} axisLine={false} allowDecimals={false} />
+                  <Tooltip contentStyle={chart.tooltip} labelStyle={chart.tooltipLabel} />
                   <Bar dataKey="visits" name="wejścia" fill={SHOWROOM_COLORS[selected]} radius={[3, 3, 0, 0]} maxBarSize={28} />
-                  <Bar dataKey="orders" name="zamówienia" fill="#f59e0b" radius={[3, 3, 0, 0]} maxBarSize={14} />
+                  <Bar dataKey="orders" name="zamówienia" fill={CHART_SERIES[3]} radius={[3, 3, 0, 0]} maxBarSize={14} />
                 </BarChart>
               </ResponsiveContainer>
             </ChartCard>
@@ -551,11 +553,11 @@ export function ShowroomCharts() {
             <ChartCard title="Średni rozkład godzinowy" subtitle={`średnia z okresu ${single!.hourlyFrom} – ${single!.to}`}>
               <ResponsiveContainer width="100%" height={300}>
                 <BarChart data={detailHourlyAvg} margin={{ top: 5, right: 5, bottom: 5, left: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#EAEBE8" />
-                  <XAxis dataKey="name" tick={axisTick} tickLine={false} axisLine={{ stroke: '#3f3f46' }} interval={1} />
-                  <YAxis tick={{ fontSize: 11, fill: '#8B908C' }} tickLine={false} axisLine={false} />
-                  <Tooltip contentStyle={tooltipStyle} />
-                  <Bar dataKey="visits" fill="#10b981" radius={[3, 3, 0, 0]} maxBarSize={16} />
+                  <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
+                  <XAxis dataKey="name" tick={axisTick} tickLine={false} axisLine={{ stroke: chart.axis }} interval={1} />
+                  <YAxis tick={{ fontSize: 11, fill: chart.tickFaint }} tickLine={false} axisLine={false} />
+                  <Tooltip contentStyle={chart.tooltip} labelStyle={chart.tooltipLabel} />
+                  <Bar dataKey="visits" fill={CHART_SERIES[2]} radius={[3, 3, 0, 0]} maxBarSize={16} />
                 </BarChart>
               </ResponsiveContainer>
             </ChartCard>
@@ -565,12 +567,12 @@ export function ShowroomCharts() {
                 title="Heatmapa godzinowa"
                 subtitle={`${single!.hourlyFrom} – ${single!.to} (intensywność = liczba wejść)`}
                 action={
-                  <div className="flex items-center gap-1.5 text-[10px] text-muted">
+                  <div className="flex items-center gap-1.5 text-[10px] text-ink-faint">
                     <span>0</span>
-                    <span className="h-3 w-3 rounded-[2px]" style={{ backgroundColor: '#27272a' }} />
-                    <span className="h-3 w-3 rounded-[2px]" style={{ backgroundColor: 'rgba(59,130,246,0.4)' }} />
-                    <span className="h-3 w-3 rounded-[2px]" style={{ backgroundColor: 'rgba(59,130,246,0.7)' }} />
-                    <span className="h-3 w-3 rounded-[2px]" style={{ backgroundColor: 'rgba(59,130,246,1)' }} />
+                    <span className="h-3 w-3 rounded-[2px]" style={{ backgroundColor: chart.grid }} />
+                    <span className="h-3 w-3 rounded-[2px]" style={{ backgroundColor: `${CHART_PRIMARY}66` }} />
+                    <span className="h-3 w-3 rounded-[2px]" style={{ backgroundColor: `${CHART_PRIMARY}B3` }} />
+                    <span className="h-3 w-3 rounded-[2px]" style={{ backgroundColor: CHART_PRIMARY }} />
                     <span>{plNum(heat.max)}</span>
                   </div>
                 }
@@ -579,13 +581,13 @@ export function ShowroomCharts() {
                   <div className="inline-grid items-center gap-[2px]" style={{ gridTemplateColumns: 'auto repeat(24, 16px)' }}>
                     <div />
                     {Array.from({ length: 24 }, (_, h) => (
-                      <div key={`h${h}`} className="text-center text-[9px] text-muted">
+                      <div key={`h${h}`} className="text-center text-[9px] text-ink-faint">
                         {h}
                       </div>
                     ))}
                     {heat.dates.map((date) => (
                       <Fragment key={date}>
-                        <div className="whitespace-nowrap pr-2 text-right text-[9px] text-muted">{dayLabel(date)}</div>
+                        <div className="whitespace-nowrap pr-2 text-right text-[9px] text-ink-faint">{dayLabel(date)}</div>
                         {heat.byDate.get(date)!.map((v, h) => {
                           const intensity = v / heat.max;
                           return (
@@ -593,7 +595,7 @@ export function ShowroomCharts() {
                               key={`${date}-${h}`}
                               title={`${weekdayPl(date)} ${date} ${String(h).padStart(2, '0')}:00 — ${v} wejść`}
                               className="h-4 w-4 rounded-[2px]"
-                              style={{ backgroundColor: v === 0 ? '#27272a' : `rgba(59, 130, 246, ${0.15 + intensity * 0.85})` }}
+                              style={{ backgroundColor: v === 0 ? chart.grid : `${CHART_PRIMARY}${Math.round((0.15 + intensity * 0.85) * 255).toString(16).padStart(2, '0')}` }}
                             />
                           );
                         })}

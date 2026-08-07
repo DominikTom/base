@@ -7,6 +7,7 @@ import { RevenueChart } from '@/components/charts/revenue-chart';
 import { SimpleBarChart } from '@/components/charts/bar-chart';
 import { DataTable, type Column } from '@/components/ui/data-table';
 import { formatCurrency, formatNumber } from '@/lib/utils';
+import { CHART_ACCENT } from '@/lib/chart-theme';
 
 interface RevenueData {
   revenueByShopTimeSeries: Array<Record<string, string | number>>;
@@ -49,7 +50,7 @@ export default function RevenuePage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-96">
-        <div className="animate-pulse text-muted">Ładowanie danych...</div>
+        <div className="animate-pulse text-ink-faint">Ładowanie danych...</div>
       </div>
     );
   }
@@ -57,7 +58,7 @@ export default function RevenuePage() {
   if (!data) {
     return (
       <div className="flex flex-col items-center justify-center h-96 gap-4">
-        <p className="text-muted">Brak danych. Zaimportuj CSV w zakładce ETL Admin.</p>
+        <p className="text-ink-muted">Brak danych. Zaimportuj CSV w zakładce ETL Admin.</p>
       </div>
     );
   }
@@ -75,16 +76,16 @@ export default function RevenuePage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-fg">Revenue & Zamówienia</h1>
-        <div className="flex items-center gap-1 bg-surface rounded-lg p-1">
+        <h1 className="text-xl font-semibold tracking-tight text-ink">Revenue & Zamówienia</h1>
+        <div className="flex items-center gap-1 bg-surface-2 rounded-xl p-1">
           {(['day', 'week', 'month', 'quarter'] as const).map(g => (
             <button
               key={g}
               onClick={() => setGranularity(g)}
-              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+              className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
                 granularity === g
-                  ? 'bg-primary-600 text-white'
-                  : 'text-fg-soft hover:text-fg hover:bg-bg'
+                  ? 'bg-primary text-white'
+                  : 'text-ink-muted hover:text-ink hover:bg-surface'
               }`}
             >
               {g === 'day' ? 'Dzień' : g === 'week' ? 'Tydzień' : g === 'month' ? 'Miesiąc' : 'Kwartał'}
@@ -101,12 +102,12 @@ export default function RevenuePage() {
       {/* Status funnel + AOV trend */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <ChartCard title="Status zamówień" subtitle={`Wskaźnik płatności: ${data.paymentRate}%`}>
-          <SimpleBarChart data={statusData} barColor="#8b5cf6" />
+          <SimpleBarChart data={statusData} />
         </ChartCard>
         <ChartCard title="Trend AOV">
           <SimpleBarChart
             data={data.aovTrend}
-            barColor="#16A34A"
+            barColor={CHART_ACCENT}
             valueFormatter={v => formatCurrency(v)}
           />
         </ChartCard>
@@ -118,7 +119,6 @@ export default function RevenuePage() {
           data={data.supplierRanking.slice(0, 15)}
           layout="horizontal"
           height={400}
-          barColor="#9333EA"
           valueFormatter={v => formatCurrency(v)}
         />
       </ChartCard>

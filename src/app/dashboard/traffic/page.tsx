@@ -9,6 +9,7 @@ import { SimplePieChart } from '@/components/charts/pie-chart';
 import { SimpleBarChart } from '@/components/charts/bar-chart';
 import { DataTable, type Column } from '@/components/ui/data-table';
 import { formatNumber, formatCurrency, SHOP_COLORS } from '@/lib/utils';
+import { useChartTheme, CHART_ACCENT, CHART_SERIES } from '@/lib/chart-theme';
 import { previousPeriod, pctChange, COMPARE_LABEL } from '@/lib/period-compare';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { Users, Globe, MousePointerClick, ShoppingCart, Eye, TrendingUp, RefreshCw, CheckCircle, XCircle, DollarSign, MousePointer } from 'lucide-react';
@@ -50,6 +51,7 @@ interface TrafficData {
 
 export default function TrafficPage() {
   const { filters } = useDashboard();
+  const chart = useChartTheme();
   const [data, setData] = useState<TrafficData | null>(null);
   const [prevKpis, setPrevKpis] = useState<TrafficData['kpis'] | null>(null);
   const [loading, setLoading] = useState(true);
@@ -114,7 +116,7 @@ export default function TrafficPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-96">
-        <div className="animate-pulse text-muted">Ładowanie danych...</div>
+        <div className="animate-pulse text-ink-faint">Ładowanie danych...</div>
       </div>
     );
   }
@@ -123,21 +125,21 @@ export default function TrafficPage() {
     return (
       <div className="space-y-6">
         <div className="flex items-center justify-between">
-          <h1 className="text-xl font-semibold text-fg">Ruch (GA4)</h1>
+          <h1 className="text-xl font-semibold tracking-tight text-ink">Ruch (GA4)</h1>
           <button onClick={handleSync} disabled={syncing}
-            className="flex items-center gap-2 px-4 py-2 btn-primary-gradient text-sm font-medium rounded-lg transition-colors disabled:opacity-50">
+            className="btn-primary">
             {syncing ? <RefreshCw size={16} className="animate-spin" /> : <RefreshCw size={16} />}
             {syncing ? 'Synchronizacja...' : 'Sync GA4'}
           </button>
         </div>
         {syncResult && (
-          <div className={`rounded-lg p-3 flex items-center gap-2 text-sm ${syncResult.ok ? 'bg-emerald-900/20 border border-emerald-800 text-emerald-400' : 'bg-red-900/20 border border-red-200 text-danger'}`}>
+          <div className={`rounded-xl p-3 flex items-center gap-2 text-sm ${syncResult.ok ? 'bg-emerald-50 border border-emerald-200 text-emerald-700' : 'bg-red-50 border border-red-200 text-red-700'}`}>
             {syncResult.ok ? <CheckCircle size={16} /> : <XCircle size={16} />}
             {syncResult.message}
           </div>
         )}
-        <div className="flex flex-col items-center justify-center h-72 gap-4 border-2 border-dashed border-line rounded-xl">
-          <p className="text-muted">Brak danych GA4. Kliknij "Sync GA4" żeby pobrać dane z Google Analytics.</p>
+        <div className="flex flex-col items-center justify-center h-72 gap-4 border-2 border-dashed border-line rounded-2xl">
+          <p className="text-ink-muted">Brak danych GA4. Kliknij "Sync GA4" żeby pobrać dane z Google Analytics.</p>
         </div>
       </div>
     );
@@ -154,15 +156,15 @@ export default function TrafficPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-fg">Ruch (GA4)</h1>
+        <h1 className="text-xl font-semibold tracking-tight text-ink">Ruch (GA4)</h1>
         <button onClick={handleSync} disabled={syncing}
-          className="flex items-center gap-2 px-4 py-2 bg-bg hover:bg-line text-fg text-sm font-medium rounded-lg transition-colors disabled:opacity-50">
+          className="btn-secondary">
           {syncing ? <RefreshCw size={16} className="animate-spin" /> : <RefreshCw size={16} />}
           {syncing ? 'Synchronizacja...' : 'Sync GA4'}
         </button>
       </div>
       {syncResult && (
-        <div className={`rounded-lg p-3 flex items-center gap-2 text-sm ${syncResult.ok ? 'bg-emerald-900/20 border border-emerald-800 text-emerald-400' : 'bg-red-900/20 border border-red-200 text-danger'}`}>
+        <div className={`rounded-xl p-3 flex items-center gap-2 text-sm ${syncResult.ok ? 'bg-emerald-50 border border-emerald-200 text-emerald-700' : 'bg-red-50 border border-red-200 text-red-700'}`}>
           {syncResult.ok ? <CheckCircle size={16} /> : <XCircle size={16} />}
           {syncResult.message}
         </div>
@@ -170,20 +172,20 @@ export default function TrafficPage() {
 
       {/* Data range info */}
       {data.dataInfo?.oldestDate && (
-        <div className="text-xs text-muted flex items-center gap-4">
-          <span>Dane GA4 w bazie: <span className="text-fg-soft">{data.dataInfo.oldestDate}</span> — <span className="text-fg-soft">{data.dataInfo.newestDate}</span></span>
+        <div className="text-xs text-ink-faint flex items-center gap-4">
+          <span>Dane GA4 w bazie: <span className="font-mono text-ink-soft">{data.dataInfo.oldestDate}</span> — <span className="font-mono text-ink-soft">{data.dataInfo.newestDate}</span></span>
           <span>({data.dataInfo.totalRowsInDb} dni, {data.dataInfo.detailRowsInDb} wierszy detail)</span>
         </div>
       )}
 
       {/* Active filter label */}
       {hostnameFilter !== 'all' && hostnameFilter !== '__none__' && (
-        <div className="text-sm text-fg-soft">
-          Dane dla: <span className="text-fg font-medium">{hostnameFilter}</span>
+        <div className="text-sm text-ink-soft">
+          Dane dla: <span className="text-ink font-medium">{hostnameFilter}</span>
         </div>
       )}
       {hostnameFilter === '__none__' && (
-        <div className="text-sm text-amber-400">
+        <div className="text-sm text-amber-600">
           Brak mapowania sklepu <span className="font-medium">{shopFilterLabel(filters.shop)}</span> do GA4 hostname.
         </div>
       )}
@@ -220,20 +222,20 @@ export default function TrafficPage() {
       {/* Google Ads charts — like agency dashboard */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <ChartCard title="Google Ads — Koszt" subtitle={`Total: ${formatCurrency(data.kpis.adCost)}`}>
-          <SimpleBarChart data={data.charts.adCostDaily} barColor="#9333EA" valueFormatter={v => formatCurrency(v)} />
+          <SimpleBarChart data={data.charts.adCostDaily} valueFormatter={v => formatCurrency(v)} />
         </ChartCard>
         <ChartCard title="Revenue (GA4)" subtitle={`Total: ${formatCurrency(data.kpis.revenue)}`}>
-          <SimpleBarChart data={data.charts.revDaily} barColor="#16A34A" valueFormatter={v => formatCurrency(v)} />
+          <SimpleBarChart data={data.charts.revDaily} barColor={CHART_ACCENT} valueFormatter={v => formatCurrency(v)} />
         </ChartCard>
       </div>
 
       <ChartCard title="Sesje w czasie" subtitle="Podział na hostname">
         <ResponsiveContainer width="100%" height={320}>
           <AreaChart data={data.charts.sessionsTimeSeries} margin={{ top: 5, right: 5, bottom: 5, left: 5 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#EAEBE8" />
-            <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#8B908C' }} tickLine={false} />
-            <YAxis tick={{ fontSize: 11, fill: '#8B908C' }} tickLine={false} axisLine={false} />
-            <Tooltip contentStyle={{ backgroundColor: '#FFFFFF', border: '1px solid #ECEDEB', borderRadius: '8px', fontSize: '12px' }} />
+            <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
+            <XAxis dataKey="date" tick={{ fontSize: 11, fill: chart.tick }} tickLine={false} />
+            <YAxis tick={{ fontSize: 11, fill: chart.tickFaint }} tickLine={false} axisLine={false} />
+            <Tooltip contentStyle={chart.tooltip} labelStyle={chart.tooltipLabel} />
             <Legend />
             {data.hostnames.map((host, i) => (
               <Area
@@ -242,8 +244,8 @@ export default function TrafficPage() {
                 dataKey={host}
                 name={host}
                 stackId="stack"
-                stroke={Object.values(SHOP_COLORS)[i] || '#6b7280'}
-                fill={Object.values(SHOP_COLORS)[i] || '#6b7280'}
+                stroke={Object.values(SHOP_COLORS)[i] || CHART_SERIES[i % CHART_SERIES.length]}
+                fill={Object.values(SHOP_COLORS)[i] || CHART_SERIES[i % CHART_SERIES.length]}
                 fillOpacity={0.6}
                 strokeWidth={2}
               />

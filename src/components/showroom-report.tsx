@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { useChartTheme, CHART_SERIES } from '@/lib/chart-theme';
 import { SHOWROOM_LABELS, SHOWROOM_COLORS, type Showroom } from '@/lib/sensmax/types';
 
 interface Hist {
@@ -31,15 +32,27 @@ const PRINT_CSS = `
   #sm-report, #sm-report * { visibility: visible !important; }
   #sm-report { position: absolute !important; left: 0; top: 0; width: 100%; padding: 0 !important; }
   .no-print { display: none !important; }
+  /* Wydruk zawsze w jasnej palecie — nadpisuje tokeny motywu ciemnego
+     (triplety RGB jak w globals.css), żeby PDF był czytelny na białym. */
+  :root, :root.dark {
+    --canvas: 255 255 255;
+    --surface: 255 255 255;
+    --surface-2: 243 244 246;
+    --ink: 17 24 39;
+    --ink-soft: 55 65 81;
+    --ink-muted: 75 85 99;
+    --ink-faint: 156 163 175;
+    --line: 229 231 235;
+  }
 }
 `;
 
 function Kpi({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
-    <div className="rounded-lg border border-zinc-300 bg-white px-4 py-3">
-      <div className="text-[11px] uppercase tracking-wide text-zinc-500">{label}</div>
-      <div className="text-2xl font-semibold text-zinc-900">{value}</div>
-      {sub && <div className="text-[11px] text-zinc-500">{sub}</div>}
+    <div className="rounded-xl border border-line bg-surface px-4 py-3">
+      <div className="stat-label">{label}</div>
+      <div className="font-mono text-2xl font-semibold tracking-tight text-ink">{value}</div>
+      {sub && <div className="text-[11px] text-ink-faint">{sub}</div>}
     </div>
   );
 }
@@ -173,48 +186,48 @@ export function ReportView({
     [],
   );
   const color = SHOWROOM_COLORS[showroom];
-  const lightTooltip = { backgroundColor: '#ffffff', border: '1px solid #d4d4d8', borderRadius: 8, fontSize: 12, color: '#18181b' } as const;
-  const lightAxis = { fontSize: 10, fill: '#52525b' } as const;
+  const chart = useChartTheme();
+  const axisTick = { fontSize: 10, fill: chart.tick } as const;
 
   return (
-    <div className="fixed inset-0 z-50 overflow-auto bg-zinc-100 print:static print:overflow-visible print:bg-white">
+    <div className="fixed inset-0 z-50 overflow-auto bg-canvas print:static print:overflow-visible print:bg-white">
       <style dangerouslySetInnerHTML={{ __html: PRINT_CSS }} />
 
-      <div className="no-print sticky top-0 z-10 flex flex-wrap items-center gap-3 border-b border-zinc-300 bg-white px-6 py-3">
+      <div className="no-print sticky top-0 z-10 flex flex-wrap items-center gap-3 border-b border-line bg-surface px-6 py-3">
         {!publicMode && (
-          <button onClick={() => history.back()} className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm text-zinc-700 hover:bg-zinc-50">
+          <button onClick={() => history.back()} className="btn-secondary px-3 py-1.5">
             ← Wróć
           </button>
         )}
-        <button onClick={() => window.print()} className="rounded-md bg-zinc-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-zinc-700">
+        <button onClick={() => window.print()} className="btn-primary px-4 py-1.5">
           Pobierz PDF / drukuj
         </button>
         {sharePath && (
-          <button onClick={copyShareLink} className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm text-zinc-700 hover:bg-zinc-50">
+          <button onClick={copyShareLink} className="btn-secondary px-3 py-1.5">
             {copied ? 'Skopiowano link!' : 'Skopiuj link do wysłania'}
           </button>
         )}
-        <span className="text-sm text-zinc-500">
+        <span className="text-sm text-ink-muted">
           {sharePath ? 'Link można wysłać pracownikom — otwiera ten sam raport bez logowania.' : 'W oknie drukowania wybierz „Zapisz jako PDF".'}
         </span>
       </div>
 
-      <div id="sm-report" className="mx-auto max-w-[820px] bg-white p-8 text-zinc-900 print:p-0">
+      <div id="sm-report" className="mx-auto max-w-[820px] bg-surface p-8 text-ink print:p-0">
         {/* header */}
         <div className="mb-6 flex items-end justify-between border-b-2 pb-3" style={{ borderColor: color }}>
           <div>
-            <div className="text-xs font-semibold uppercase tracking-widest text-zinc-500">MyBed Group · Showroom</div>
-            <h1 className="text-3xl font-bold">{SHOWROOM_LABELS[showroom]}</h1>
-            <div className="text-sm text-zinc-600">
+            <div className="stat-label">MyBed Group · Showroom</div>
+            <h1 className="text-2xl font-semibold tracking-tight text-ink">{SHOWROOM_LABELS[showroom]}</h1>
+            <div className="text-sm text-ink-muted">
               Raport za okres {from} – {to}
             </div>
           </div>
-          <div className="text-right text-[11px] text-zinc-500">wygenerowano: {generatedAt}</div>
+          <div className="text-right text-[11px] text-ink-faint">wygenerowano: {generatedAt}</div>
         </div>
 
-        {loading && <div className="py-10 text-center text-zinc-500">Ładowanie danych…</div>}
+        {loading && <div className="py-10 text-center text-ink-faint">Ładowanie danych…</div>}
         {!loading && !m.hasData && (
-          <div className="rounded-md border border-zinc-300 bg-zinc-50 p-6 text-sm text-zinc-600">
+          <div className="rounded-lg border border-line bg-surface-2 p-6 text-sm text-ink-muted">
             Brak danych z czujników dla tego showroomu w wybranym okresie. Zmień zakres dat na zakładce Showroomy i wygeneruj raport ponownie.
           </div>
         )}
@@ -230,40 +243,40 @@ export function ReportView({
             </div>
 
             {/* daily chart */}
-            <h2 className="mt-7 mb-2 text-sm font-semibold text-zinc-700">Wejścia{m.hasSales ? ' i zamówienia' : ''} dziennie</h2>
+            <h2 className="mt-7 mb-2 section-title">Wejścia{m.hasSales ? ' i zamówienia' : ''} dziennie</h2>
             <ResponsiveContainer width="100%" height={230}>
               <BarChart data={m.dailyChart} margin={{ top: 4, right: 4, bottom: 4, left: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e4e4e7" />
-                <XAxis dataKey="name" tick={lightAxis} tickLine={false} axisLine={{ stroke: '#a1a1aa' }} interval="preserveStartEnd" minTickGap={18} />
-                <YAxis tick={{ fontSize: 11, fill: '#52525b' }} tickLine={false} axisLine={false} allowDecimals={false} />
-                <Tooltip contentStyle={lightTooltip} />
+                <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
+                <XAxis dataKey="name" tick={axisTick} tickLine={false} axisLine={{ stroke: chart.axis }} interval="preserveStartEnd" minTickGap={18} />
+                <YAxis tick={{ fontSize: 11, fill: chart.tickFaint }} tickLine={false} axisLine={false} allowDecimals={false} />
+                <Tooltip contentStyle={chart.tooltip} labelStyle={chart.tooltipLabel} />
                 <Bar dataKey="visits" name="wejścia" fill={color} radius={[3, 3, 0, 0]} maxBarSize={26} />
-                {m.hasSales && <Bar dataKey="orders" name="zamówienia" fill="#f59e0b" radius={[3, 3, 0, 0]} maxBarSize={12} />}
+                {m.hasSales && <Bar dataKey="orders" name="zamówienia" fill={CHART_SERIES[3]} radius={[3, 3, 0, 0]} maxBarSize={12} />}
               </BarChart>
             </ResponsiveContainer>
 
             {/* two small charts side by side */}
             <div className="mt-6 grid grid-cols-2 gap-6">
               <div>
-                <h2 className="mb-2 text-sm font-semibold text-zinc-700">Średni rozkład godzinowy</h2>
+                <h2 className="mb-2 section-title">Średni rozkład godzinowy</h2>
                 <ResponsiveContainer width="100%" height={180}>
                   <BarChart data={m.hourly} margin={{ top: 4, right: 4, bottom: 4, left: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e4e4e7" />
-                    <XAxis dataKey="name" tick={lightAxis} tickLine={false} axisLine={{ stroke: '#a1a1aa' }} interval={2} />
-                    <YAxis tick={{ fontSize: 10, fill: '#52525b' }} tickLine={false} axisLine={false} />
-                    <Tooltip contentStyle={lightTooltip} />
-                    <Bar dataKey="visits" fill="#10b981" radius={[3, 3, 0, 0]} maxBarSize={12} />
+                    <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
+                    <XAxis dataKey="name" tick={axisTick} tickLine={false} axisLine={{ stroke: chart.axis }} interval={2} />
+                    <YAxis tick={{ fontSize: 10, fill: chart.tickFaint }} tickLine={false} axisLine={false} />
+                    <Tooltip contentStyle={chart.tooltip} labelStyle={chart.tooltipLabel} />
+                    <Bar dataKey="visits" fill={CHART_SERIES[2]} radius={[3, 3, 0, 0]} maxBarSize={12} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
               <div>
-                <h2 className="mb-2 text-sm font-semibold text-zinc-700">Średnio wg dnia tygodnia</h2>
+                <h2 className="mb-2 section-title">Średnio wg dnia tygodnia</h2>
                 <ResponsiveContainer width="100%" height={180}>
                   <BarChart data={m.byWeekday} margin={{ top: 4, right: 4, bottom: 4, left: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e4e4e7" />
-                    <XAxis dataKey="name" tick={{ fontSize: 11, fill: '#52525b' }} tickLine={false} axisLine={{ stroke: '#a1a1aa' }} />
-                    <YAxis tick={{ fontSize: 10, fill: '#52525b' }} tickLine={false} axisLine={false} />
-                    <Tooltip contentStyle={lightTooltip} />
+                    <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
+                    <XAxis dataKey="name" tick={{ fontSize: 11, fill: chart.tick }} tickLine={false} axisLine={{ stroke: chart.axis }} />
+                    <YAxis tick={{ fontSize: 10, fill: chart.tickFaint }} tickLine={false} axisLine={false} />
+                    <Tooltip contentStyle={chart.tooltip} labelStyle={chart.tooltipLabel} />
                     <Bar dataKey="visits" fill={color} radius={[3, 3, 0, 0]} maxBarSize={28} />
                   </BarChart>
                 </ResponsiveContainer>
@@ -271,10 +284,10 @@ export function ReportView({
             </div>
 
             {/* best days table */}
-            <h2 className="mt-6 mb-2 text-sm font-semibold text-zinc-700">Najlepsze dni (wg wejść)</h2>
+            <h2 className="mt-6 mb-2 section-title">Najlepsze dni (wg wejść)</h2>
             <table className="w-full border-collapse text-sm">
               <thead>
-                <tr className="border-b border-zinc-300 text-left text-[11px] uppercase tracking-wide text-zinc-500">
+                <tr className="border-b border-line text-left text-[11px] font-medium text-ink-muted">
                   <th className="py-1.5">Dzień</th>
                   <th className="py-1.5 text-right">Wejścia</th>
                   {m.hasSales && <th className="py-1.5 text-right">Zamówienia</th>}
@@ -283,19 +296,19 @@ export function ReportView({
               </thead>
               <tbody>
                 {m.best.map((d) => (
-                  <tr key={d.date} className="border-b border-zinc-100">
+                  <tr key={d.date} className="border-b border-line/50">
                     <td className="py-1.5">
                       {WEEKDAY_PL[weekdayIdx(d.date)]} {d.date}
                     </td>
-                    <td className="py-1.5 text-right">{plNum(d.visits)}</td>
-                    {m.hasSales && <td className="py-1.5 text-right">{plNum(d.orders)}</td>}
-                    {m.hasSales && <td className="py-1.5 text-right">{d.visits > 0 ? `${Math.round((d.orders / d.visits) * 1000) / 10}%` : '—'}</td>}
+                    <td className="py-1.5 text-right font-mono">{plNum(d.visits)}</td>
+                    {m.hasSales && <td className="py-1.5 text-right font-mono">{plNum(d.orders)}</td>}
+                    {m.hasSales && <td className="py-1.5 text-right font-mono">{d.visits > 0 ? `${Math.round((d.orders / d.visits) * 1000) / 10}%` : '—'}</td>}
                   </tr>
                 ))}
               </tbody>
             </table>
 
-            <div className="mt-5 text-[10px] leading-relaxed text-zinc-400">
+            <div className="mt-5 text-[10px] leading-relaxed text-ink-faint">
               Wejścia: odczyt czujników SensMax ÷ 2 (czujniki dwukierunkowe — wartości jak w panelu SensMax). Zamówienia i przychód: arkusze sprzedażowe showroomu (kolumna „Data złożenia zamówienia").
               Konwersja liczona z dni, dla których są zarówno wejścia, jak i sprzedaż. Raport wygenerowany automatycznie z panelu MyBed Group.
             </div>

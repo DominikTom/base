@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useDashboard } from '@/lib/dashboard-context';
 import { ChartCard } from '@/components/charts/chart-card';
 import { formatCurrency, formatNumber } from '@/lib/utils';
+import { useChartTheme, CHART_PRIMARY, CHART_SERIES } from '@/lib/chart-theme';
 import { WEATHER_METRICS, type WeatherMetricKey } from '@/lib/weather';
 import { CloudRain, Sun, Thermometer, Wind, RefreshCw, Database, Sparkles } from 'lucide-react';
 import {
@@ -54,26 +55,27 @@ interface WeatherResponse {
 }
 
 // Nakładki pogodowe na główny wykres — każdą można włączyć/wyłączyć
-// niezależnie. Kolory celowo SPOZA fioletu (fiolet = sprzedaż/bary).
+// niezależnie. Kolory z palety serii, celowo SPOZA indygo (indygo = sprzedaż/bary).
 const OVERLAYS = [
-  { key: 'precip_mm',  label: 'Opady',           unit: 'mm',   color: '#2563EB' },  // niebieski — woda
-  { key: 'temp_max',   label: 'Temp. max',       unit: '°C',   color: '#E11D48' },  // czerwony — ciepło
-  { key: 'temp_mean',  label: 'Temp. średnia',   unit: '°C',   color: '#F97316' },  // pomarańcz
-  { key: 'sunshine_h', label: 'Nasłonecznienie', unit: 'h',    color: '#EAB308' },  // żółty — słońce
-  { key: 'wind_max',   label: 'Wiatr',           unit: 'km/h', color: '#64748B' },  // szary
+  { key: 'precip_mm',  label: 'Opady',           unit: 'mm',   color: CHART_SERIES[9] },  // niebieski — woda
+  { key: 'temp_max',   label: 'Temp. max',       unit: '°C',   color: CHART_SERIES[8] },  // czerwony — ciepło
+  { key: 'temp_mean',  label: 'Temp. średnia',   unit: '°C',   color: CHART_SERIES[5] },  // pomarańcz
+  { key: 'sunshine_h', label: 'Nasłonecznienie', unit: 'h',    color: CHART_SERIES[3] },  // bursztyn — słońce
+  { key: 'wind_max',   label: 'Wiatr',           unit: 'km/h', color: CHART_SERIES[7] },  // teal — wiatr
 ] as const;
 type OverlayKey = typeof OVERLAYS[number]['key'];
 
 function correlationLabel(r: number): { label: string; color: string } {
   const abs = Math.abs(r);
-  if (abs >= 0.7) return { label: 'silna', color: r > 0 ? 'text-success' : 'text-danger' };
-  if (abs >= 0.4) return { label: 'umiarkowana', color: r > 0 ? 'text-success' : 'text-danger' };
-  if (abs >= 0.2) return { label: 'słaba', color: 'text-amber-700' };
-  return { label: 'brak', color: 'text-muted' };
+  if (abs >= 0.7) return { label: 'silna', color: r > 0 ? 'text-emerald-600' : 'text-red-600' };
+  if (abs >= 0.4) return { label: 'umiarkowana', color: r > 0 ? 'text-emerald-600' : 'text-red-600' };
+  if (abs >= 0.2) return { label: 'słaba', color: 'text-amber-600' };
+  return { label: 'brak', color: 'text-ink-muted' };
 }
 
 export default function WeatherPage() {
   const { filters } = useDashboard();
+  const chart = useChartTheme();
   const [metric, setMetric] = useState<WeatherMetricKey>('temp_mean');
   const [yAxis, setYAxis] = useState<'revenue' | 'orders'>('revenue');
   // Aktywne nakładki na głównym wykresie (multi-select).
@@ -202,25 +204,25 @@ export default function WeatherPage() {
       {/* Nagłówek + sterowanie */}
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-semibold text-fg tracking-tight">Pogoda × Sprzedaż</h1>
-          <p className="text-sm text-muted mt-1">
+          <h1 className="text-2xl font-semibold tracking-tight text-ink">Pogoda × Sprzedaż</h1>
+          <p className="text-sm text-ink-muted mt-1">
             Korelacja dziennej sprzedaży z pogodą. Lokalizacje:
             {' '}{(data?.locationKeys || []).map(k => k === 'warsaw' ? 'Warszawa' : k === 'berlin' ? 'Berlin' : k).join(', ') || '—'}
             {' · '}Open-Meteo (cache 1×/dzień).
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <select value={metric} onChange={e => setMetric(e.target.value as WeatherMetricKey)} className="px-3 py-2 rounded-pill bg-surface border border-line text-sm shadow-card">
+          <select value={metric} onChange={e => setMetric(e.target.value as WeatherMetricKey)} className="rounded-xl border border-line bg-surface px-2.5 py-1.5 text-sm text-ink-soft focus:border-primary/50 focus:outline-none focus:ring-4 focus:ring-primary/10">
             {WEATHER_METRICS.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
           </select>
-          <select value={yAxis} onChange={e => setYAxis(e.target.value as 'revenue' | 'orders')} className="px-3 py-2 rounded-pill bg-surface border border-line text-sm shadow-card">
+          <select value={yAxis} onChange={e => setYAxis(e.target.value as 'revenue' | 'orders')} className="rounded-xl border border-line bg-surface px-2.5 py-1.5 text-sm text-ink-soft focus:border-primary/50 focus:outline-none focus:ring-4 focus:ring-primary/10">
             <option value="revenue">Przychód</option>
             <option value="orders">Zamówienia</option>
           </select>
           {isAdminUser && <button
             onClick={syncWeather}
             disabled={syncing}
-            className="flex items-center gap-2 px-3 py-2 rounded-pill bg-accent-bg text-accent-fg text-sm font-medium hover:opacity-90 disabled:opacity-50"
+            className="btn-primary px-3 py-1.5"
             title="Pobierz brakujące dni z Open-Meteo (tylko admin)"
           >
             <RefreshCw size={14} className={syncing ? 'animate-spin' : ''} />
@@ -228,10 +230,10 @@ export default function WeatherPage() {
           </button>}
         </div>
       </div>
-      {syncMsg && <div className="text-xs text-fg-soft bg-bg border border-line rounded-pill px-4 py-2 inline-flex">{syncMsg}</div>}
+      {syncMsg && <div className="text-xs text-ink-soft bg-surface-2 border border-line rounded-xl px-4 py-2 inline-flex">{syncMsg}</div>}
 
-      {loading && !data && <div className="text-muted">Ładowanie…</div>}
-      {data?.error && <div className="text-danger bg-rose-50 border border-rose-200 rounded-card p-4">Błąd: {data.error}</div>}
+      {loading && !data && <div className="text-ink-faint">Ładowanie…</div>}
+      {data?.error && <div className="text-red-700 bg-red-50 border border-red-200 rounded-2xl p-4">Błąd: {data.error}</div>}
       {data && !data.error && (
         <>
           {/* KPI */}
@@ -270,22 +272,22 @@ export default function WeatherPage() {
           {/* Podsumowanie AI — Claude formułuje wnioski z policzonych korelacji
               i kubełków. Subtelny fioletowy gradient jak Wskazówki AI. */}
           {(aiSummary || aiLoading) && (
-            <div className="relative overflow-hidden rounded-card border border-line bg-surface shadow-card p-5">
+            <div className="card relative overflow-hidden p-5">
               <div
                 aria-hidden
                 className="pointer-events-none absolute -top-20 -right-20 w-72 h-72 rounded-full opacity-50"
-                style={{ background: 'radial-gradient(circle at center, #E9D5FF 0%, #FAF5FF 50%, transparent 75%)' }}
+                style={{ background: 'radial-gradient(circle at center, rgb(var(--primary) / 0.14) 0%, rgb(var(--primary) / 0.05) 50%, transparent 75%)' }}
               />
               <div className="relative flex items-start gap-3">
-                <div className="w-8 h-8 rounded-xl bg-accent-bg text-accent-fg flex items-center justify-center shrink-0">
+                <div className="w-8 h-8 rounded-xl bg-primary text-white flex items-center justify-center shrink-0">
                   <Sparkles size={14} />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <h3 className="text-sm font-semibold text-fg mb-1">Podsumowanie AI</h3>
+                  <h3 className="section-title mb-1">Podsumowanie AI</h3>
                   {aiLoading && !aiSummary ? (
-                    <p className="text-sm text-muted animate-pulse">Analizuję korelacje…</p>
+                    <p className="text-sm text-ink-faint animate-pulse">Analizuję korelacje…</p>
                   ) : (
-                    <p className="text-sm text-fg-soft leading-relaxed">{aiSummary}</p>
+                    <p className="text-sm text-ink-soft leading-relaxed">{aiSummary}</p>
                   )}
                 </div>
               </div>
@@ -319,16 +321,16 @@ export default function WeatherPage() {
                     <button
                       key={o.key}
                       onClick={() => toggleOverlay(o.key)}
-                      className={`flex items-center gap-1.5 px-2.5 py-1 rounded-pill text-[11px] font-medium border transition-colors ${
+                      className={`chip transition-colors ${
                         active
                           ? 'border-transparent text-white'
-                          : 'border-line bg-bg text-muted hover:text-fg-soft'
+                          : 'border-line bg-surface-2 text-ink-muted hover:text-ink'
                       }`}
                       style={active ? { backgroundColor: o.color } : undefined}
                     >
                       <span
                         className="w-2 h-2 rounded-full shrink-0"
-                        style={{ backgroundColor: active ? '#ffffff' : o.color }}
+                        style={{ backgroundColor: active ? 'white' : o.color }}
                       />
                       {o.label}
                     </button>
@@ -339,17 +341,17 @@ export default function WeatherPage() {
           >
             <ResponsiveContainer width="100%" height={380}>
               <ComposedChart data={data.series} margin={{ top: 10, right: 10, bottom: 10, left: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#EAEBE8" />
-                <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#8B908C' }} tickLine={false} />
+                <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
+                <XAxis dataKey="date" tick={{ fontSize: 11, fill: chart.tick }} tickLine={false} />
                 {/* Lewa oś wspólna dla nakładek pogodowych — wielkości (°C, mm, h)
                     są w podobnym przedziale 0-30, więc jedna skala wystarcza. */}
-                <YAxis yAxisId="left" tick={{ fontSize: 11, fill: '#8B908C' }} tickLine={false} axisLine={false}
-                  label={{ value: 'Pogoda (°C / mm / h)', angle: -90, position: 'insideLeft', style: { fontSize: 11, fill: '#8B908C' } }} />
-                <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11, fill: '#8B908C' }} tickLine={false} axisLine={false}
-                  label={{ value: yLabel, angle: 90, position: 'insideRight', style: { fontSize: 11, fill: '#8B908C' } }} />
-                <Tooltip contentStyle={{ backgroundColor: '#FFFFFF', border: '1px solid #ECEDEB', borderRadius: '12px', fontSize: '12px', boxShadow: '0 4px 24px rgba(0,0,0,0.04)' }} />
+                <YAxis yAxisId="left" tick={{ fontSize: 11, fill: chart.tickFaint }} tickLine={false} axisLine={false}
+                  label={{ value: 'Pogoda (°C / mm / h)', angle: -90, position: 'insideLeft', style: { fontSize: 11, fill: chart.tickFaint } }} />
+                <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11, fill: chart.tickFaint }} tickLine={false} axisLine={false}
+                  label={{ value: yLabel, angle: 90, position: 'insideRight', style: { fontSize: 11, fill: chart.tickFaint } }} />
+                <Tooltip contentStyle={chart.tooltip} labelStyle={chart.tooltipLabel} />
                 <Legend wrapperStyle={{ fontSize: 12 }} iconType="circle" />
-                <Bar yAxisId="right" dataKey={yAxis} name={yLabel} fill="#9333EA" fillOpacity={0.55} radius={[4, 4, 0, 0]} />
+                <Bar yAxisId="right" dataKey={yAxis} name={yLabel} fill={CHART_PRIMARY} fillOpacity={0.55} radius={[4, 4, 0, 0]} />
                 {OVERLAYS.filter(o => overlays.has(o.key)).map(o => (
                   <Line
                     key={o.key}
@@ -370,12 +372,12 @@ export default function WeatherPage() {
           <ChartCard title={`Rozrzut: ${m.label} → ${yLabel}`} subtitle={`r = ${r.toFixed(3)} (${corrLbl.label})`}>
             <ResponsiveContainer width="100%" height={320}>
               <ScatterChart margin={{ top: 10, right: 10, bottom: 10, left: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#EAEBE8" />
-                <XAxis type="number" dataKey="x" name={m.label} tick={{ fontSize: 11, fill: '#8B908C' }}
-                  label={{ value: `${m.label} (${m.unit})`, position: 'insideBottom', offset: -5, style: { fontSize: 11, fill: '#8B908C' } }} />
-                <YAxis type="number" dataKey="y" name={yLabel} tick={{ fontSize: 11, fill: '#8B908C' }}
-                  label={{ value: yLabel, angle: -90, position: 'insideLeft', style: { fontSize: 11, fill: '#8B908C' } }} />
-                <Tooltip contentStyle={{ backgroundColor: '#FFFFFF', border: '1px solid #ECEDEB', borderRadius: '12px', fontSize: '12px', boxShadow: '0 4px 24px rgba(0,0,0,0.04)' }}
+                <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
+                <XAxis type="number" dataKey="x" name={m.label} tick={{ fontSize: 11, fill: chart.tickFaint }}
+                  label={{ value: `${m.label} (${m.unit})`, position: 'insideBottom', offset: -5, style: { fontSize: 11, fill: chart.tickFaint } }} />
+                <YAxis type="number" dataKey="y" name={yLabel} tick={{ fontSize: 11, fill: chart.tickFaint }}
+                  label={{ value: yLabel, angle: -90, position: 'insideLeft', style: { fontSize: 11, fill: chart.tickFaint } }} />
+                <Tooltip contentStyle={chart.tooltip} labelStyle={chart.tooltipLabel}
                   formatter={(value, name) => {
                     if (name === yLabel) return [yFormat(Number(value)), name];
                     if (name === m.label) return [wFormat(Number(value)), name];
@@ -383,7 +385,7 @@ export default function WeatherPage() {
                   }}
                   labelFormatter={() => ''}
                 />
-                <Scatter data={scatterData} fill="#9333EA" fillOpacity={0.55} />
+                <Scatter data={scatterData} fill={CHART_PRIMARY} fillOpacity={0.55} />
               </ScatterChart>
             </ResponsiveContainer>
           </ChartCard>
@@ -395,13 +397,13 @@ export default function WeatherPage() {
 
 function KpiTile({ label, value, sub, icon, valueClassName }: { label: string; value: string; sub?: string; icon?: React.ReactNode; valueClassName?: string }) {
   return (
-    <div className="rounded-card border border-line bg-surface shadow-card p-5 flex flex-col gap-2 hover:shadow-card-hover transition-shadow">
+    <div className="card p-5 flex flex-col gap-2 hover:shadow-soft transition-shadow">
       <div className="flex items-center justify-between">
-        <span className="text-[11px] font-medium text-muted uppercase tracking-wider">{label}</span>
-        {icon && <span className="text-muted">{icon}</span>}
+        <span className="stat-label">{label}</span>
+        {icon && <span className="text-ink-faint">{icon}</span>}
       </div>
-      <div className={`text-2xl font-bold text-fg tracking-tight ${valueClassName || ''}`}>{value}</div>
-      {sub && <div className="text-xs text-muted">{sub}</div>}
+      <div className={`font-mono text-2xl font-semibold tracking-tight ${valueClassName || 'text-ink'}`}>{value}</div>
+      {sub && <div className="text-xs text-ink-faint">{sub}</div>}
     </div>
   );
 }
@@ -420,7 +422,7 @@ function BucketGroup({ title, icon, buckets }: { title: string; icon: React.Reac
   const maxAbs = Math.max(10, ...buckets.map(b => Math.abs(b.pctVsAvg ?? 0)));
   return (
     <div>
-      <div className="flex items-center gap-1.5 mb-3 text-xs font-semibold text-fg-soft uppercase tracking-wider">
+      <div className="flex items-center gap-1.5 mb-3 stat-label">
         {icon} {title}
       </div>
       <div className="space-y-2.5">
@@ -432,24 +434,24 @@ function BucketGroup({ title, icon, buckets }: { title: string; icon: React.Reac
           return (
             <div key={b.label}>
               <div className="flex items-baseline justify-between gap-2 mb-1">
-                <span className="text-xs text-fg-soft truncate">{b.label}</span>
+                <span className="text-xs text-ink-soft truncate">{b.label}</span>
                 <span className={`text-xs font-semibold tabular-nums shrink-0 ${
-                  noData ? 'text-muted' : positive ? 'text-success' : 'text-danger'
+                  noData ? 'text-ink-faint' : positive ? 'text-emerald-600' : 'text-red-600'
                 }`}>
                   {noData ? 'brak dni' : `${positive ? '+' : ''}${pct!.toFixed(1)}%`}
-                  {!noData && <span className="font-normal text-muted ml-1">({b.n} dni)</span>}
+                  {!noData && <span className="font-normal text-ink-faint ml-1">({b.n} dni)</span>}
                 </span>
               </div>
-              <div className="h-2 bg-bg rounded-pill overflow-hidden">
+              <div className="h-2 bg-surface-2 rounded-full overflow-hidden">
                 {!noData && (
                   <div
-                    className={`h-full rounded-pill ${positive ? 'bg-green-400' : 'bg-rose-400'}`}
+                    className={`h-full rounded-full ${positive ? 'bg-emerald-500' : 'bg-red-500'}`}
                     style={{ width: `${widthPct}%` }}
                   />
                 )}
               </div>
               {!noData && (
-                <div className="text-[10px] text-muted mt-0.5">
+                <div className="text-[10px] text-ink-faint mt-0.5">
                   śr. {formatCurrency(b.avgRevenue)}/dzień
                 </div>
               )}
