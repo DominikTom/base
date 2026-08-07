@@ -15,11 +15,10 @@ import {
   RefreshCw, CheckCircle, XCircle, ShoppingCart, Globe,
   PieChart, Megaphone, Layers, Clapperboard,
 } from 'lucide-react';
-import type { AttributionWindow } from '@/lib/marketing-constants';
+import { SHOP_TO_META_ACCOUNT, type AttributionWindow } from '@/lib/marketing-constants';
 import type { AdsPayload } from '@/components/marketing/types';
 import { AccountsSummary } from '@/components/marketing/accounts-summary';
-import { CampaignsTab } from '@/components/marketing/campaigns-tab';
-import { AdsetsTab } from '@/components/marketing/adsets-tab';
+import { CampaignTree } from '@/components/marketing/campaign-tree';
 import { CreativesTab } from '@/components/marketing/creatives-tab';
 
 interface MetaMarketingData {
@@ -94,14 +93,11 @@ interface GoogleAdsData {
   lastSync: { at: string; rows: number } | null;
 }
 
-type TabKey = 'meta' | 'google' | 'konta' | 'kampanie' | 'zestawy' | 'kreacje';
-type AdLevelView = Extract<TabKey, 'konta' | 'kampanie' | 'zestawy' | 'kreacje'>;
-
-const AD_LEVEL_TABS: ReadonlyArray<AdLevelView> = ['konta', 'kampanie', 'zestawy', 'kreacje'];
+type TabKey = 'meta' | 'google';
+type MetaSubTab = 'przeglad' | 'konta' | 'kampanie' | 'kreacje';
 
 export default function MarketingPage() {
   const [tab, setTab] = useState<TabKey>('meta');
-  const isAdLevel = (AD_LEVEL_TABS as readonly string[]).includes(tab);
 
   return (
     <div className="space-y-6">
@@ -109,21 +105,17 @@ export default function MarketingPage() {
         <h1 className="text-xl font-semibold text-fg">Marketing Performance</h1>
       </div>
 
-      {/* Tabs */}
-      <div className="flex items-center gap-1 border-b border-line overflow-x-auto">
+      {/* Tabs — platformy */}
+      <div className="flex items-center gap-1 border-b border-line">
         {([
           { key: 'meta' as const, label: 'Meta Ads', icon: <Target size={14} /> },
           { key: 'google' as const, label: 'Google Ads', icon: <Globe size={14} /> },
-          { key: 'konta' as const, label: 'Konta & KPI', icon: <PieChart size={14} /> },
-          { key: 'kampanie' as const, label: 'Kampanie', icon: <Megaphone size={14} /> },
-          { key: 'zestawy' as const, label: 'Zestawy reklam', icon: <Layers size={14} /> },
-          { key: 'kreacje' as const, label: 'Kreacje', icon: <Clapperboard size={14} /> },
         ]).map(t => (
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
             className={cn(
-              'flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap',
+              'flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors',
               tab === t.key
                 ? 'border-primary-500 text-fg'
                 : 'border-transparent text-muted hover:text-fg-soft',
@@ -134,10 +126,43 @@ export default function MarketingPage() {
         ))}
       </div>
 
-      {tab === 'meta' ? <MetaTab />
-        : tab === 'google' ? <GoogleAdsTab />
-        : isAdLevel ? <AdLevelSection view={tab as AdLevelView} />
-        : null}
+      {tab === 'meta' ? <MetaSection /> : <GoogleAdsTab />}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Meta Ads — duża zakładka z pod-zakładkami
+// ─────────────────────────────────────────────────────────────────
+function MetaSection() {
+  const [subTab, setSubTab] = useState<MetaSubTab>('przeglad');
+
+  return (
+    <div className="space-y-5">
+      {/* Pod-zakładki (pills) */}
+      <div className="flex items-center gap-1.5 flex-wrap">
+        {([
+          { key: 'przeglad' as const, label: 'Przegląd', icon: <PieChart size={13} /> },
+          { key: 'konta' as const, label: 'Konta & KPI', icon: <Layers size={13} /> },
+          { key: 'kampanie' as const, label: 'Kampanie', icon: <Megaphone size={13} /> },
+          { key: 'kreacje' as const, label: 'Kreacje', icon: <Clapperboard size={13} /> },
+        ]).map(t => (
+          <button
+            key={t.key}
+            onClick={() => setSubTab(t.key)}
+            className={cn(
+              'flex items-center gap-1.5 px-3 py-1.5 rounded-pill text-xs font-medium transition-colors border',
+              subTab === t.key
+                ? 'bg-primary-100 text-primary-800 border-primary-200'
+                : 'bg-surface text-muted border-line hover:text-fg hover:bg-bg',
+            )}
+          >
+            {t.icon}{t.label}
+          </button>
+        ))}
+      </div>
+
+      {subTab === 'przeglad' ? <MetaTab /> : <AdLevelSection view={subTab} />}
     </div>
   );
 }
@@ -455,7 +480,7 @@ const BACKFILL_OPTIONS = [
 ];
 
 const CHUNK_DAYS = 90;
-function buildBackfillChunks(daysBack: number): Array<{ since: string; until: string }> {
+function buildBackfillChunks(daysBack: number, chunkDays: number = CHUNK_DAYS): Array<{ since: string; until: string }> {
   const fmt = (d: Date) => d.toISOString().split('T')[0];
   const chunks: Array<{ since: string; until: string }> = [];
   const end = new Date();
@@ -463,7 +488,7 @@ function buildBackfillChunks(daysBack: number): Array<{ since: string; until: st
   let remaining = daysBack;
   let until = new Date(end);
   while (remaining > 0) {
-    const size = Math.min(remaining, CHUNK_DAYS);
+    const size = Math.min(remaining, chunkDays);
     const since = new Date(until);
     since.setDate(since.getDate() - size + 1);
     chunks.push({ since: fmt(since), until: fmt(until) });
@@ -479,7 +504,7 @@ async function parseJsonOrThrow(res: Response): Promise<{ totalRows?: number; er
   try { return JSON.parse(text); }
   catch {
     throw new Error(res.status === 504 || text.startsWith('An error')
-      ? 'Timeout Vercela (60s) — spróbuj mniejszego zakresu'
+      ? 'Timeout Vercela — spróbuj mniejszego zakresu'
       : `Nieoczekiwana odpowiedź: ${text.slice(0, 80)}`);
   }
 }
@@ -543,10 +568,10 @@ function SyncMetaButton({ lastSync }: { lastSync: { at: string; rows: number } |
 }
 
 // ─────────────────────────────────────────────────────────────────
-// Zakładki ad-level: Konta & KPI / Kampanie / Zestawy / Kreacje
+// Pod-zakładki ad-level: Konta & KPI / Kampanie (drzewo) / Kreacje
 // (fact_daily_ad_performance + dim_campaigns + dim_creatives)
 // ─────────────────────────────────────────────────────────────────
-function AdLevelSection({ view }: { view: 'konta' | 'kampanie' | 'zestawy' | 'kreacje' }) {
+function AdLevelSection({ view }: { view: 'konta' | 'kampanie' | 'kreacje' }) {
   const { filters } = useDashboard();
   const [data, setData] = useState<AdsPayload | null>(null);
   const [loading, setLoading] = useState(true);
@@ -603,6 +628,11 @@ function AdLevelSection({ view }: { view: 'konta' | 'kampanie' | 'zestawy' | 'kr
               {formatNumber(data.coverage.rows)} wierszy
             </p>
           )}
+          <p className="text-[11px] text-muted mt-0.5 max-w-2xl">
+            Źródło: dzienne dane na poziomie pojedynczych reklam (sync 7:00). Wartości mogą
+            minimalnie różnić się od Przeglądu — tam Meta raportuje na poziomie kampanii
+            (sync 5:00), a restatement świeżych konwersji trwa do 72 h.
+          </p>
         </div>
         <SyncAdsButton onDone={() => setReloadKey(k => k + 1)} />
       </div>
@@ -619,23 +649,14 @@ function AdLevelSection({ view }: { view: 'konta' | 'kampanie' | 'zestawy' | 'kr
       ) : view === 'konta' ? (
         <AccountsSummary data={data} attribution={attribution} />
       ) : view === 'kampanie' ? (
-        <CampaignsTab
-          campaigns={data.campaigns}
+        <CampaignTree
+          data={data}
           dateFrom={filters.dateFrom}
           dateTo={filters.dateTo}
           shop={filters.shop}
           attribution={attribution}
           onAttributionChange={setAttribution}
           onMetaSaved={handleCampaignMetaSaved}
-        />
-      ) : view === 'zestawy' ? (
-        <AdsetsTab
-          adsets={data.adsets}
-          dateFrom={filters.dateFrom}
-          dateTo={filters.dateTo}
-          shop={filters.shop}
-          attribution={attribution}
-          onAttributionChange={setAttribution}
         />
       ) : (
         <CreativesTab
@@ -651,41 +672,58 @@ function AdLevelSection({ view }: { view: 'konta' | 'kampanie' | 'zestawy' | 'kr
   );
 }
 
-// Sync ad-level (reklamy + kreacje + dim_campaigns) — POST /api/etl/meta-ad-sync
-// w chunkach ≤90 dni; po zakończeniu odświeża dane zakładek ad-level.
+// Sync ad-level (reklamy + kreacje + dim_campaigns) — POST /api/etl/meta-ad-sync.
+// Orkiestracja per KONTO × chunk ≤30 dni: każdy call robi jedno konto w małym
+// zakresie, więc mieści się w limicie czasu funkcji (wcześniej jeden ciężki
+// call na 3 konta z oknami atrybucji potrafił się wywalić timeoutem).
+// Błąd jednego konta nie przerywa syncu pozostałych.
+const AD_SYNC_CHUNK_DAYS = 30;
 function SyncAdsButton({ onDone }: { onDone: () => void }) {
   const [syncing, setSyncing] = useState(false);
-  const [days, setDays] = useState(30);
-  const [progress, setProgress] = useState<{ current: number; total: number } | null>(null);
+  const [days, setDays] = useState(90);
+  const [progress, setProgress] = useState<{ label: string; current: number; total: number } | null>(null);
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
 
   async function handleSync() {
     setSyncing(true); setResult(null); setProgress(null);
-    try {
-      const chunks = buildBackfillChunks(days);
-      let totalRows = 0;
-      for (let i = 0; i < chunks.length; i++) {
-        setProgress({ current: i + 1, total: chunks.length });
-        const { since, until } = chunks[i];
-        const res = await fetch(`/api/etl/meta-ad-sync?since=${since}&until=${until}`, { method: 'POST' });
-        const json = await parseJsonOrThrow(res);
-        if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
-        totalRows += json.totalRows || 0;
+    const accounts = Object.entries(SHOP_TO_META_ACCOUNT);
+    const chunks = buildBackfillChunks(days, AD_SYNC_CHUNK_DAYS);
+    const total = accounts.length * chunks.length;
+    let totalRows = 0;
+    let step = 0;
+    const errors: string[] = [];
+
+    for (const [shopLabel, accountId] of accounts) {
+      for (const { since, until } of chunks) {
+        step += 1;
+        setProgress({ label: shopLabel, current: step, total });
+        try {
+          const res = await fetch(
+            `/api/etl/meta-ad-sync?since=${since}&until=${until}&account=${encodeURIComponent(accountId)}`,
+            { method: 'POST' }
+          );
+          const json = await parseJsonOrThrow(res);
+          if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
+          totalRows += json.totalRows || 0;
+        } catch (err) {
+          errors.push(`${shopLabel} (${since}→${until}): ${err instanceof Error ? err.message : String(err)}`);
+          break; // kolejne chunki tego konta pewnie też padną — idź do następnego konta
+        }
       }
-      setResult({ ok: true, message: `Ad-level: pobrano ${totalRows} wierszy za ${days} dni` });
-      onDone();
-    } catch (err) {
-      setResult({ ok: false, message: err instanceof Error ? err.message : String(err) });
-    } finally {
-      setSyncing(false); setProgress(null);
     }
+
+    setResult(errors.length === 0
+      ? { ok: true, message: `Ad-level: pobrano ${totalRows} wierszy za ${days} dni` }
+      : { ok: false, message: `Pobrano ${totalRows} wierszy, błędy: ${errors[0]}${errors.length > 1 ? ` (+${errors.length - 1})` : ''}` });
+    if (totalRows > 0) onDone();
+    setSyncing(false); setProgress(null);
   }
 
   return (
     <div className="flex items-center gap-3">
       {progress ? (
         <span className="text-xs text-fg-soft flex items-center gap-1">
-          Chunk {progress.current}/{progress.total}…
+          {progress.label} · {progress.current}/{progress.total}…
         </span>
       ) : result ? (
         <span className={`text-xs flex items-center gap-1 ${result.ok ? 'text-emerald-600' : 'text-danger'}`}>

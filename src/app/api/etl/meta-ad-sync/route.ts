@@ -4,7 +4,7 @@ import { getSupabaseAdmin } from '@/lib/supabase';
 import { fetchAdInsights, fetchCampaigns, fetchCreativeMeta, getAdAccountIds } from '@/lib/meta-ads';
 import { getEurPlnRates } from '@/lib/nbp';
 
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 // POST — manual trigger.
 // ?days=N (default 14) or ?since=YYYY-MM-DD&until=YYYY-MM-DD.
@@ -75,11 +75,10 @@ async function syncAdsRange(dateFromStr: string, dateToStr: string, accountFilte
     const etlLogId = etlLog?.id;
 
     try {
-      // Delete existing data in range — insert będzie świeży
-      await db.from('fact_daily_ad_performance').delete()
-        .gte('date', dateFromStr)
-        .lte('date', dateToStr);
-
+      // UWAGA: żadnego globalnego DELETE tutaj! Kasowanie całego zakresu
+      // przed pobraniem danych z Meta powodowało utratę danych przy timeout
+      // (delete przeszedł, insert już nie). Delete jest teraz per konto,
+      // scoped i wykonywany dopiero PO udanym fetchu z Meta API — patrz niżej.
       let totalRows = 0;
       let newCreatives = 0;
       let campaignsSynced = 0;
@@ -168,6 +167,17 @@ async function syncAdsRange(dateFromStr: string, dateToStr: string, accountFilte
           data_source: 'etl',
           };
         });
+
+        // Dane z Meta już pobrane — dopiero teraz czyścimy stare wiersze tego
+        // konta w zakresie (usuwa reklamy, które zniknęły z Meta) i wstawiamy
+        // świeże. Okno między delete a insertem jest minimalne, a timeout
+        // podczas fetchu niczego nie kasuje.
+        const { error: delErr } = await db.from('fact_daily_ad_performance').delete()
+          .eq('platform', 'meta')
+          .eq('account_id', accountId)
+          .gte('date', dateFromStr)
+          .lte('date', dateToStr);
+        if (delErr) throw new Error(`delete fact_daily_ad_performance: ${delErr.message}`);
 
         for (let i = 0; i < dbRows.length; i += 500) {
           const { error } = await db.from('fact_daily_ad_performance').upsert(

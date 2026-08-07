@@ -1,6 +1,15 @@
 // Stałe współdzielone między API a komponentami klienckimi zakładki Marketing.
 // Osobny plik (bez importów serwerowych), żeby nie wciągać supabase-js do bundla.
 
+// Mapowanie Shop label → Meta Ad Account ID. Client-safe (same ID kont są
+// publiczne w URL-ach Ads Managera); tokeny zostają wyłącznie w env serwera.
+// Przy dodaniu nowej marki: wpis tutaj + para act_id:token w META_AD_ACCOUNTS.
+export const SHOP_TO_META_ACCOUNT: Record<string, string> = {
+  'mybed.pl': 'act_1681802382204753',
+  'mybed.de': 'act_637792865917248',
+  'mittohome.pl': 'act_797212915921530',
+};
+
 export const FUNNEL_STAGES = ['TOFU', 'MOFU', 'BOFU', 'Retargeting', 'Retencja'] as const;
 export type FunnelStage = (typeof FUNNEL_STAGES)[number];
 

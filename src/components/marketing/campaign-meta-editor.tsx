@@ -1,89 +1,14 @@
 'use client';
 
 import { useState } from 'react';
-import { DataTable, type Column } from '@/components/ui/data-table';
-import { formatCurrency, formatNumber } from '@/lib/utils';
-import { FUNNEL_STAGES, OBJECTIVE_LABELS, type AttributionWindow } from '@/lib/marketing-constants';
 import { X, NotebookPen } from 'lucide-react';
-import { AttributionSelect, ExportCsvButton } from './controls';
-import { attributed, type CampaignRow } from './types';
+import { FUNNEL_STAGES } from '@/lib/marketing-constants';
+import type { CampaignRow } from './types';
 
-interface CampaignsTabProps {
-  campaigns: CampaignRow[];
-  dateFrom: string;
-  dateTo: string;
-  shop: string;
-  attribution: AttributionWindow;
-  onAttributionChange: (w: AttributionWindow) => void;
-  onMetaSaved: (campaignId: string, fields: { purpose: string | null; funnelStage: string | null; notes: string | null }) => void;
-}
-
-// Zakładka Kampanie: cel Meta (objective) + pola manualne Kamili (cel
-// wewnętrzny, etap lejka, notatka — klik w wiersz otwiera edytor),
-// metryki awareness/leads i przełącznik atrybucji dla Zakupy/Przychód/ROAS.
-export function CampaignsTab({
-  campaigns, dateFrom, dateTo, shop, attribution, onAttributionChange, onMetaSaved,
-}: CampaignsTabProps) {
-  const [editing, setEditing] = useState<CampaignRow | null>(null);
-
-  const columns: Column<CampaignRow>[] = [
-    { key: 'campaignName', header: 'Kampania', accessor: r => r.campaignName, className: 'max-w-[260px] truncate' },
-    { key: 'shop', header: 'Sklep', accessor: r => r.shop },
-    {
-      key: 'objective', header: 'Cel Meta',
-      accessor: r => r.objective ? (OBJECTIVE_LABELS[r.objective] || r.objective) : '—',
-    },
-    { key: 'funnelStage', header: 'Etap lejka', accessor: r => r.funnelStage || '—', align: 'center' },
-    { key: 'purpose', header: 'Cel wewnętrzny', accessor: r => r.purpose || '—', className: 'max-w-[160px] truncate' },
-    { key: 'notes', header: 'Notatka', accessor: r => r.notes || '', format: v => (v ? '📝' : ''), align: 'center', sortable: false },
-    { key: 'spend', header: 'Wydatki', accessor: r => r.spend, align: 'right', format: v => formatCurrency(v as number) },
-    { key: 'reach', header: 'Zasięg', accessor: r => r.reach, align: 'right', format: v => formatNumber(v as number) },
-    { key: 'frequency', header: 'Częst.', accessor: r => r.frequency, align: 'right', format: v => (v as number).toFixed(2) },
-    { key: 'cpm', header: 'CPM', accessor: r => r.cpm, align: 'right', format: v => `${(v as number).toFixed(2)} zł` },
-    { key: 'ctr', header: 'CTR', accessor: r => r.ctr, align: 'right', format: v => `${(v as number).toFixed(2)}%` },
-    { key: 'leads', header: 'Leady', accessor: r => r.leads, align: 'right' },
-    {
-      key: 'cpl', header: 'CPL', accessor: r => r.cpl, align: 'right',
-      format: v => (v as number) > 0 ? `${(v as number).toFixed(2)} zł` : '—',
-    },
-    { key: 'purchases', header: 'Zakupy', accessor: r => attributed(r, attribution).purchases, align: 'right' },
-    {
-      key: 'revenue', header: 'Przychód', accessor: r => attributed(r, attribution).revenue, align: 'right',
-      format: v => formatCurrency(v as number),
-    },
-    {
-      key: 'roas', header: 'ROAS', accessor: r => attributed(r, attribution).roas, align: 'right',
-      format: v => `${(v as number).toFixed(2)}×`,
-    },
-  ];
-
-  return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-xs text-muted">
-          Kliknij wiersz, aby uzupełnić cel wewnętrzny, etap lejka lub notatkę.
-        </p>
-        <div className="flex items-center gap-3">
-          <AttributionSelect value={attribution} onChange={onAttributionChange} />
-          <ExportCsvButton scope="campaigns" dateFrom={dateFrom} dateTo={dateTo} shop={shop} />
-        </div>
-      </div>
-      <DataTable data={campaigns} columns={columns} pageSize={15} onRowClick={setEditing} />
-      {editing && (
-        <CampaignMetaEditor
-          campaign={editing}
-          onClose={() => setEditing(null)}
-          onSaved={fields => {
-            onMetaSaved(editing.campaignId, fields);
-            setEditing(null);
-          }}
-        />
-      )}
-    </div>
-  );
-}
-
-function CampaignMetaEditor({
+// Edytor pól manualnych kampanii: cel wewnętrzny (np. „test kreacji",
+// „feedowanie bazy kontaktów"), etap lejka i krótka notatka.
+// Pola z Meta API (objective, status) nadpisuje wyłącznie ETL.
+export function CampaignMetaEditor({
   campaign, onClose, onSaved,
 }: {
   campaign: CampaignRow;
