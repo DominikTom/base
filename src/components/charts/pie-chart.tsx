@@ -2,6 +2,7 @@
 
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { SHOP_COLORS, CATEGORY_COLORS, formatCompact } from '@/lib/utils';
+import { useChartTheme, CHART_SERIES } from '@/lib/chart-theme';
 
 interface SimplePieChartProps {
   data: Array<{ name: string; value: number }>;
@@ -12,10 +13,7 @@ interface SimplePieChartProps {
   showLegend?: boolean;
 }
 
-const DEFAULT_COLORS = [
-  '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6',
-  '#f97316', '#06b6d4', '#ec4899', '#84cc16', '#14b8a6',
-];
+const DEFAULT_COLORS = CHART_SERIES;
 
 export function SimplePieChart({
   data,
@@ -25,6 +23,8 @@ export function SimplePieChart({
   innerRadius = 60,
   showLegend = true,
 }: SimplePieChartProps) {
+  const chart = useChartTheme();
+
   function getColor(name: string, index: number): string {
     if (colorMap === 'shop') return SHOP_COLORS[name] || DEFAULT_COLORS[index % DEFAULT_COLORS.length];
     if (colorMap === 'category') return CATEGORY_COLORS[name] || DEFAULT_COLORS[index % DEFAULT_COLORS.length];
@@ -51,12 +51,8 @@ export function SimplePieChart({
           ))}
         </Pie>
         <Tooltip
-          contentStyle={{
-            backgroundColor: '#FFFFFF',
-            border: '1px solid #ECEDEB',
-            borderRadius: '8px',
-            fontSize: '12px',
-          }}
+          contentStyle={chart.tooltip}
+          labelStyle={chart.tooltipLabel}
           formatter={(value) => [formatCompact(Number(value)) + ' PLN', '']}
         />
         {showLegend && (

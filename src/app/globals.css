@@ -262,6 +262,18 @@
   opacity: 0.85;
 }
 
+/* Leaflet popup — powierzchnie tokenowe zamiast domyślnej bieli */
+.leaflet-popup-content-wrapper,
+.leaflet-popup-tip {
+  background: rgb(var(--surface));
+  color: rgb(var(--ink-soft));
+}
+.leaflet-popup-content-wrapper {
+  border: 1px solid rgb(var(--line));
+  border-radius: 0.625rem;
+  box-shadow: 0 10px 40px -12px rgba(15, 23, 42, 0.22);
+}
+
 /* Wskaźnik kalendarza w polach daty — przygaszony, invert tylko w dark */
 input[type="date"]::-webkit-calendar-picker-indicator,
 input[type="month"]::-webkit-calendar-picker-indicator {

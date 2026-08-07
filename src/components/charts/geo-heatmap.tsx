@@ -6,6 +6,7 @@ import L from 'leaflet';
 import 'leaflet.heat';
 import 'leaflet/dist/leaflet.css';
 import { formatCurrency, formatNumber } from '@/lib/utils';
+import { CHART_PRIMARY, CHART_SERIES } from '@/lib/chart-theme';
 
 // Heatmapa sprzedaży po miastach (PL + DE). Renderuje:
 //   - tile layer OpenStreetMap (bez kluczy)
@@ -52,12 +53,13 @@ function HeatLayer({ points, metric }: { points: GeoPoint[]; metric: Metric }) {
       blur: 22,
       maxZoom: 11,
       max: 1.0,
+      // Gradient ciepła z palety serii design systemu (zimno → gorąco).
       gradient: {
-        0.0: '#3B82F6',  // niebieski (cold)
-        0.3: '#10B981',  // zielony
-        0.55: '#FACC15', // żółty
-        0.75: '#F97316', // pomarańczowy
-        1.0: '#DC2626',  // czerwony (hot)
+        0.0: CHART_SERIES[9],  // niebieski (cold)
+        0.3: CHART_SERIES[2],  // szmaragdowy
+        0.55: CHART_SERIES[3], // bursztynowy
+        0.75: CHART_SERIES[5], // pomarańczowy
+        1.0: CHART_SERIES[8],  // czerwony (hot)
       },
     });
     layer.addTo(map);
@@ -104,7 +106,7 @@ export function GeoHeatmap({ data, stats }: Props) {
 
   if (!data.length) {
     return (
-      <div className="h-full flex items-center justify-center text-xs text-muted">
+      <div className="h-full flex items-center justify-center text-xs text-ink-faint">
         Brak danych geograficznych w wybranym okresie.
       </div>
     );
@@ -114,29 +116,29 @@ export function GeoHeatmap({ data, stats }: Props) {
     <div className="h-full flex flex-col gap-2">
       {/* Toolbar */}
       <div className="flex items-center justify-between gap-2 flex-wrap shrink-0">
-        <div className="inline-flex rounded-pill border border-line bg-bg p-0.5">
+        <div className="inline-flex rounded-xl bg-surface-2 p-0.5">
           {(['orders', 'revenue'] as const).map(m => (
             <button
               key={m}
               onClick={() => setMetric(m)}
-              className={`px-3 py-1 text-[11px] font-medium rounded-pill transition-colors ${
-                metric === m ? 'bg-primary-600 text-white' : 'text-fg-soft hover:text-fg'
+              className={`px-3 py-1 text-[11px] font-medium rounded-lg transition-colors ${
+                metric === m ? 'bg-primary text-white' : 'text-ink-muted hover:text-ink'
               }`}
             >
               {m === 'orders' ? 'Zamówienia' : 'Revenue'}
             </button>
           ))}
         </div>
-        <div className="flex items-center gap-3 text-[10px] text-muted">
-          <span><b className="text-fg-soft">{formatNumber(totals.cities)}</b> miast</span>
-          <span><b className="text-fg-soft">{formatNumber(totals.orders)}</b> zam.</span>
-          <span><b className="text-fg-soft">{formatCurrency(totals.revenue, 'PLN')}</b></span>
+        <div className="flex items-center gap-3 text-[10px] text-ink-muted">
+          <span><b className="font-mono text-ink-soft">{formatNumber(totals.cities)}</b> miast</span>
+          <span><b className="font-mono text-ink-soft">{formatNumber(totals.orders)}</b> zam.</span>
+          <span><b className="font-mono text-ink-soft">{formatCurrency(totals.revenue, 'PLN')}</b></span>
           {stats && <span title={`Dopasowane: ${stats.matched} / niedopasowane: ${stats.unmatched}`}>pokrycie {stats.coverage}%</span>}
         </div>
       </div>
 
       {/* Mapa */}
-      <div className="flex-1 min-h-0 rounded-card overflow-hidden border border-line">
+      <div className="flex-1 min-h-0 rounded-2xl overflow-hidden border border-line">
         <MapContainer
           center={[52.0, 16.0]}
           zoom={6}
@@ -154,13 +156,17 @@ export function GeoHeatmap({ data, stats }: Props) {
               key={`${p.name}-${p.country}`}
               center={[p.lat, p.lon]}
               radius={3}
-              pathOptions={{ color: '#1f2937', fillColor: '#1f2937', fillOpacity: 0.5, weight: 1 }}
+              pathOptions={{ color: CHART_PRIMARY, fillColor: CHART_PRIMARY, fillOpacity: 0.5, weight: 1 }}
             >
               <Popup>
+                {/* Popup Leafleta ma zawsze jasne tło (leaflet.css) — kolory
+                    tekstu dziedziczymy z jego domyślnych stylów, drugorzędne
+                    przygaszamy opacity zamiast tokenami ink (te w dark mode
+                    jaśnieją i byłyby nieczytelne na białym). */}
                 <div className="text-xs">
-                  <div className="font-semibold">{p.name} <span className="text-muted">({p.country})</span></div>
-                  <div className="mt-1">Zamówienia: <b>{formatNumber(p.orders)}</b></div>
-                  <div>Revenue: <b>{formatCurrency(p.revenue, 'PLN')}</b></div>
+                  <div className="font-semibold">{p.name} <span className="opacity-60">({p.country})</span></div>
+                  <div className="mt-1">Zamówienia: <b className="font-mono">{formatNumber(p.orders)}</b></div>
+                  <div>Revenue: <b className="font-mono">{formatCurrency(p.revenue, 'PLN')}</b></div>
                 </div>
               </Popup>
             </CircleMarker>

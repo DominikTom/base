@@ -6,6 +6,7 @@ import { useDashboard } from '@/lib/dashboard-context';
 import { shopFilterToList } from '@/lib/shop-filter';
 import { getWidgetDef } from '@/lib/widget-definitions';
 import { formatCurrency, formatNumber, SHOP_COLORS } from '@/lib/utils';
+import { useChartTheme, CHART_PRIMARY } from '@/lib/chart-theme';
 import { SimpleBarChart } from '@/components/charts/bar-chart';
 import { SimplePieChart } from '@/components/charts/pie-chart';
 import { PivotRenderer } from '@/components/dashboard/pivot-renderer';
@@ -16,7 +17,7 @@ import { X, RefreshCw, ArrowUp, ArrowDown, Maximize2, Minimize2, HelpCircle, Tre
 const GeoHeatmap = dynamic(() => import('@/components/charts/geo-heatmap').then(m => m.GeoHeatmap), {
   ssr: false,
   loading: () => (
-    <div className="h-full flex items-center justify-center text-xs text-muted">
+    <div className="h-full flex items-center justify-center text-xs text-ink-faint">
       <RefreshCw size={18} className="animate-spin" />
     </div>
   ),
@@ -212,35 +213,35 @@ export function WidgetRenderer({ widgetType, widgetConfig, onRemove, onMoveUp, o
       .map(cf => cf.value.toLowerCase()),
   );
 
-  if (!def) return <div className="p-4 text-danger">Nieznany widget: {widgetType}</div>;
+  if (!def) return <div className="p-4 text-red-600">Nieznany widget: {widgetType}</div>;
 
   return (
-    <div className="h-full flex flex-col rounded-card border border-line bg-surface overflow-hidden shadow-card hover:shadow-card-hover transition-shadow">
+    <div className="h-full flex flex-col card overflow-hidden">
       {/* Header — drag handle dla react-grid-layout (selector `.widget-drag-handle`) */}
-      <div className="widget-drag-handle flex items-center justify-between px-3 py-2 border-b border-line shrink-0 cursor-move select-none">
-        <span className="text-xs font-medium text-fg-soft truncate">{String(widgetConfig?.title || def.name)}</span>
+      <div className="widget-drag-handle flex items-center justify-between px-3 py-2 border-b border-line/70 shrink-0 cursor-move select-none">
+        <span className="text-xs font-medium text-ink-muted truncate">{String(widgetConfig?.title || def.name)}</span>
         {/* Przyciski — `widget-no-drag` żeby klik w nie nie inicjował drag */}
         <div className="widget-no-drag flex items-center gap-0.5">
-          <button onClick={() => setShowDebug(d => !d)} className={`p-1 ${showDebug ? 'text-primary-700' : 'text-muted'} hover:text-primary-700`} title="Debug info"><HelpCircle size={12} /></button>
-          {onMoveUp && <button onClick={onMoveUp} className="p-1 text-muted hover:text-fg-soft"><ArrowUp size={12} /></button>}
-          {onMoveDown && <button onClick={onMoveDown} className="p-1 text-muted hover:text-fg-soft"><ArrowDown size={12} /></button>}
-          {onResize && <button onClick={() => onResize(3)} className="p-1 text-muted hover:text-fg-soft" title="Powiększ"><Maximize2 size={12} /></button>}
-          {onResize && <button onClick={() => onResize(-3)} className="p-1 text-muted hover:text-fg-soft" title="Zmniejsz"><Minimize2 size={12} /></button>}
-          <button onClick={onRemove} className="p-1 text-muted hover:text-danger"><X size={12} /></button>
+          <button onClick={() => setShowDebug(d => !d)} className={`p-1 ${showDebug ? 'text-primary-ink' : 'text-ink-faint'} hover:text-primary-ink transition-colors`} title="Debug info"><HelpCircle size={12} /></button>
+          {onMoveUp && <button onClick={onMoveUp} className="p-1 text-ink-faint hover:text-ink transition-colors"><ArrowUp size={12} /></button>}
+          {onMoveDown && <button onClick={onMoveDown} className="p-1 text-ink-faint hover:text-ink transition-colors"><ArrowDown size={12} /></button>}
+          {onResize && <button onClick={() => onResize(3)} className="p-1 text-ink-faint hover:text-ink transition-colors" title="Powiększ"><Maximize2 size={12} /></button>}
+          {onResize && <button onClick={() => onResize(-3)} className="p-1 text-ink-faint hover:text-ink transition-colors" title="Zmniejsz"><Minimize2 size={12} /></button>}
+          <button onClick={onRemove} className="p-1 text-ink-faint hover:text-red-600 transition-colors"><X size={12} /></button>
         </div>
       </div>
 
       {/* Debug panel */}
       {showDebug && data?.debug && (
-        <div className="px-3 py-2 border-b border-line bg-bg text-[10px] font-mono text-muted space-y-0.5 max-h-32 overflow-auto">
-          <div><span className="text-fg-soft">widget:</span> {widgetType}</div>
-          <div><span className="text-fg-soft">zakres:</span> {data.debug.dateFrom} — {data.debug.dateTo}</div>
-          <div><span className="text-fg-soft">sklep:</span> {data.debug.shop}</div>
-          {data.debug.ordersInRange != null && <div><span className="text-fg-soft">zamówień w zakresie:</span> {data.debug.ordersInRange}</div>}
-          {data.debug.itemsFound != null && <div><span className="text-fg-soft">pozycji znalezionych:</span> {data.debug.itemsFound}</div>}
-          {data.debug.debugQuery && <div><span className="text-fg-soft">zapytanie:</span> {data.debug.debugQuery}</div>}
-          {data.debug.query && <div><span className="text-fg-soft">zapytanie:</span> {data.debug.query}</div>}
-          {data.debug.crossFilters?.length > 0 && <div><span className="text-fg-soft">cross-filtry:</span> {data.debug.crossFilters.join(', ')}</div>}
+        <div className="px-3 py-2 border-b border-line/70 bg-surface-2/60 text-[10px] font-mono text-ink-faint space-y-0.5 max-h-32 overflow-auto">
+          <div><span className="text-ink-muted">widget:</span> {widgetType}</div>
+          <div><span className="text-ink-muted">zakres:</span> {data.debug.dateFrom} — {data.debug.dateTo}</div>
+          <div><span className="text-ink-muted">sklep:</span> {data.debug.shop}</div>
+          {data.debug.ordersInRange != null && <div><span className="text-ink-muted">zamówień w zakresie:</span> {data.debug.ordersInRange}</div>}
+          {data.debug.itemsFound != null && <div><span className="text-ink-muted">pozycji znalezionych:</span> {data.debug.itemsFound}</div>}
+          {data.debug.debugQuery && <div><span className="text-ink-muted">zapytanie:</span> {data.debug.debugQuery}</div>}
+          {data.debug.query && <div><span className="text-ink-muted">zapytanie:</span> {data.debug.query}</div>}
+          {data.debug.crossFilters?.length > 0 && <div><span className="text-ink-muted">cross-filtry:</span> {data.debug.crossFilters.join(', ')}</div>}
         </div>
       )}
 
@@ -248,10 +249,10 @@ export function WidgetRenderer({ widgetType, widgetConfig, onRemove, onMoveUp, o
       <div className="flex-1 min-h-0 p-3 overflow-auto">
         {loading ? (
           <div className="h-full flex items-center justify-center">
-            <RefreshCw size={18} className="animate-spin text-muted" />
+            <RefreshCw size={18} className="animate-spin text-ink-faint" />
           </div>
         ) : error ? (
-          <div className="h-full flex items-center justify-center text-xs text-danger">{error}</div>
+          <div className="h-full flex items-center justify-center text-xs text-red-600">{error}</div>
         ) : data ? (
           <WidgetContent type={widgetType} data={data} onItemClick={handleItemClick} activeValues={activeValues} prevValue={prevValue} />
         ) : null}
@@ -268,6 +269,7 @@ function WidgetContent({ type, data, onItemClick, activeValues, prevValue }: {
   activeValues: Set<string>;
   prevValue: number | null;
 }) {
+  const chart = useChartTheme();
   const clickable = !!WIDGET_CLICK_FIELD[type];
 
   // Pivot
@@ -290,14 +292,14 @@ function WidgetContent({ type, data, onItemClick, activeValues, prevValue }: {
     const positive = (change ?? 0) >= 0;
     return (
       <div className="h-full flex flex-col items-center justify-center gap-2">
-        <div className="text-3xl font-bold text-fg">{formatted}</div>
+        <div className="font-mono text-3xl font-semibold tracking-tight text-ink">{formatted}</div>
         {showChange && (
-          <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-pill ${
-            positive ? 'bg-green-100 text-success' : 'bg-rose-100 text-danger'
+          <span className={`inline-flex items-center gap-1 text-xs font-semibold font-mono ${
+            positive ? 'text-emerald-600' : 'text-red-600'
           }`}>
             {positive ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
             {positive ? '+' : ''}{change!.toFixed(1)}%
-            <span className="opacity-60 ml-0.5 font-normal">vs poprz.</span>
+            <span className="text-ink-faint ml-0.5 font-normal font-sans">vs poprz.</span>
           </span>
         )}
       </div>
@@ -319,17 +321,17 @@ function WidgetContent({ type, data, onItemClick, activeValues, prevValue }: {
               return (
               <tr
                 key={i}
-                className={`border-b border-line ${clickable ? 'cursor-pointer hover:bg-bg' : ''} ${isActive ? 'bg-primary-600/20 hover:bg-primary-600/30' : ''}`}
+                className={`border-b border-line/50 ${clickable ? 'cursor-pointer hover:bg-surface-2/60' : ''} ${isActive ? 'bg-primary/15 hover:bg-primary/25' : ''}`}
                 onClick={() => clickable && onItemClick(item.name)}
               >
-                <td className="py-1.5 pr-2 text-muted w-6">{i + 1}.</td>
-                <td className="py-1.5 text-fg-soft truncate max-w-[150px]">{item.name}</td>
-                <td className="py-1.5 px-2 text-right text-fg-soft w-16 whitespace-nowrap">
+                <td className="py-1.5 pr-2 text-ink-faint w-6 font-mono">{i + 1}.</td>
+                <td className="py-1.5 text-ink-soft truncate max-w-[150px]">{item.name}</td>
+                <td className="py-1.5 px-2 text-right text-ink-muted w-16 whitespace-nowrap font-mono">
                   {isCurrency ? formatCurrency(item.value, cur) : formatNumber(item.value)}
                 </td>
                 <td className="py-1.5 w-24">
-                  <div className="h-3 bg-bg rounded-full overflow-hidden">
-                    <div className="h-full bg-blue-500 rounded-full" style={{ width: `${(item.value / maxVal) * 100}%` }} />
+                  <div className="h-2 bg-surface-2 rounded-full overflow-hidden">
+                    <div className="h-full bg-primary rounded-full" style={{ width: `${(item.value / maxVal) * 100}%` }} />
                   </div>
                 </td>
               </tr>
@@ -338,7 +340,7 @@ function WidgetContent({ type, data, onItemClick, activeValues, prevValue }: {
           </tbody>
         </table>
         {data.total != null && (
-          <div className="text-xs text-muted mt-2 text-right">
+          <div className="text-xs text-ink-faint mt-2 text-right font-mono">
             Suma: {isCurrency ? formatCurrency(data.total, cur) : formatNumber(data.total)}
           </div>
         )}
@@ -348,7 +350,7 @@ function WidgetContent({ type, data, onItemClick, activeValues, prevValue }: {
 
   // Bar chart
   if (data.type === 'bar') {
-    return <SimpleBarChart data={data.data || []} barColor="#9333EA" height={200} />;
+    return <SimpleBarChart data={data.data || []} height={200} />;
   }
 
   // Line chart
@@ -356,11 +358,11 @@ function WidgetContent({ type, data, onItemClick, activeValues, prevValue }: {
     return (
       <ResponsiveContainer width="100%" height="100%">
         <LineChart data={data.data || []} margin={{ top: 5, right: 5, bottom: 5, left: 5 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#EAEBE8" />
-          <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#8B908C' }} tickLine={false} />
-          <YAxis tick={{ fontSize: 10, fill: '#8B908C' }} tickLine={false} axisLine={false} />
-          <Tooltip contentStyle={{ backgroundColor: '#FFFFFF', border: '1px solid #ECEDEB', borderRadius: '8px', fontSize: '11px' }} />
-          <Line type="monotone" dataKey="value" stroke="#9333EA" strokeWidth={2} dot={false} />
+          <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
+          <XAxis dataKey="name" tick={{ fontSize: 10, fill: chart.tickFaint }} tickLine={false} />
+          <YAxis tick={{ fontSize: 10, fill: chart.tickFaint }} tickLine={false} axisLine={false} />
+          <Tooltip contentStyle={{ ...chart.tooltip, fontSize: '11px' }} labelStyle={chart.tooltipLabel} />
+          <Line type="monotone" dataKey="value" stroke={CHART_PRIMARY} strokeWidth={2} dot={false} />
         </LineChart>
       </ResponsiveContainer>
     );
@@ -372,24 +374,13 @@ function WidgetContent({ type, data, onItemClick, activeValues, prevValue }: {
     return (
       <ResponsiveContainer width="100%" height="100%">
         <AreaChart data={data.data || []} margin={{ top: 5, right: 5, bottom: 5, left: 5 }}>
-          <defs>
-            {shops.map(s => {
-              const c = SHOP_COLORS[s] || '#6b7280';
-              return (
-                <linearGradient key={s} id={`area-grad-${s.replace(/\./g, '-')}`} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={c} stopOpacity={0.85} />
-                  <stop offset="100%" stopColor={c} stopOpacity={0.1} />
-                </linearGradient>
-              );
-            })}
-          </defs>
-          <CartesianGrid strokeDasharray="3 3" stroke="#EAEBE8" />
-          <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#8B908C' }} tickLine={false} />
-          <YAxis tick={{ fontSize: 10, fill: '#8B908C' }} tickLine={false} axisLine={false} />
-          <Tooltip contentStyle={{ backgroundColor: '#FFFFFF', border: '1px solid #ECEDEB', borderRadius: '8px', fontSize: '11px' }} />
+          <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
+          <XAxis dataKey="date" tick={{ fontSize: 10, fill: chart.tickFaint }} tickLine={false} />
+          <YAxis tick={{ fontSize: 10, fill: chart.tickFaint }} tickLine={false} axisLine={false} />
+          <Tooltip contentStyle={{ ...chart.tooltip, fontSize: '11px' }} labelStyle={chart.tooltipLabel} />
           <Legend wrapperStyle={{ fontSize: '10px' }} iconType="circle" iconSize={6} />
           {shops.map(s => (
-            <Area key={s} type="monotone" dataKey={s} stackId="stack" stroke={SHOP_COLORS[s] || '#6b7280'} fill={`url(#area-grad-${s.replace(/\./g, '-')})`} strokeWidth={2} />
+            <Area key={s} type="monotone" dataKey={s} stackId="stack" stroke={SHOP_COLORS[s] || chart.tickFaint} fill={SHOP_COLORS[s] || chart.tickFaint} fillOpacity={0.6} strokeWidth={2} />
           ))}
         </AreaChart>
       </ResponsiveContainer>
@@ -415,18 +406,18 @@ function WidgetContent({ type, data, onItemClick, activeValues, prevValue }: {
           <thead>
             <tr className="border-b border-line">
               {(data.columns || []).map((col: string) => (
-                <th key={col} className="py-2 px-2 text-left text-fg-soft font-medium">{col}</th>
+                <th key={col} className="py-2 px-2 text-left text-ink-muted font-medium">{col}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {rows.map((row: Record<string, unknown>, i: number) => (
-              <tr key={i} className="border-b border-line">
+              <tr key={i} className="border-b border-line/50">
                 {(data.columns?.length
                   ? [row.x, ...(data.columns.slice(1).map((c: string) => row[c]))]
                   : Object.values(row)
                 ).map((val: unknown, j: number) => (
-                  <td key={j} className="py-1.5 px-2 text-fg-soft">
+                  <td key={j} className="py-1.5 px-2 text-ink-soft">
                     {typeof val === 'number' ? formatNumber(val) : String(val)}
                   </td>
                 ))}
@@ -438,5 +429,5 @@ function WidgetContent({ type, data, onItemClick, activeValues, prevValue }: {
     );
   }
 
-  return <div className="text-muted text-xs">Brak danych</div>;
+  return <div className="text-ink-faint text-xs">Brak danych</div>;
 }

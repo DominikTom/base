@@ -2,6 +2,7 @@
 
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { SHOP_COLORS, formatCompact } from '@/lib/utils';
+import { useChartTheme } from '@/lib/chart-theme';
 
 interface RevenueChartProps {
   data: Array<Record<string, string | number>>;
@@ -10,43 +11,26 @@ interface RevenueChartProps {
 }
 
 export function RevenueChart({ data, shops, stacked = false }: RevenueChartProps) {
-  // Gradient „opadający": top mocniejszy, dół zanikający.
-  const gradId = (shop: string) => `rev-grad-${shop.replace(/\./g, '-')}`;
+  const chart = useChartTheme();
   return (
     <ResponsiveContainer width="100%" height={320}>
       <AreaChart data={data} margin={{ top: 5, right: 5, bottom: 5, left: 5 }}>
-        <defs>
-          {shops.map(shop => {
-            const c = SHOP_COLORS[shop] || '#6b7280';
-            return (
-              <linearGradient key={shop} id={gradId(shop)} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={c} stopOpacity={stacked ? 0.9 : 0.55} />
-                <stop offset="100%" stopColor={c} stopOpacity={stacked ? 0.15 : 0.02} />
-              </linearGradient>
-            );
-          })}
-        </defs>
-        <CartesianGrid strokeDasharray="3 3" stroke="#EAEBE8" />
+        <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
         <XAxis
           dataKey="date"
-          tick={{ fontSize: 11, fill: '#8B908C' }}
+          tick={{ fontSize: 11, fill: chart.tickFaint }}
           tickLine={false}
-          axisLine={{ stroke: '#3f3f46' }}
+          axisLine={{ stroke: chart.axis }}
         />
         <YAxis
-          tick={{ fontSize: 11, fill: '#8B908C' }}
+          tick={{ fontSize: 11, fill: chart.tickFaint }}
           tickLine={false}
           axisLine={false}
           tickFormatter={formatCompact}
         />
         <Tooltip
-          contentStyle={{
-            backgroundColor: '#FFFFFF',
-            border: '1px solid #ECEDEB',
-            borderRadius: '8px',
-            fontSize: '12px',
-          }}
-          labelStyle={{ color: '#a1a1aa' }}
+          contentStyle={chart.tooltip}
+          labelStyle={chart.tooltipLabel}
           formatter={(value) => [new Intl.NumberFormat('pl-PL').format(Number(value)) + ' PLN', '']}
         />
         <Legend
@@ -61,8 +45,9 @@ export function RevenueChart({ data, shops, stacked = false }: RevenueChartProps
             dataKey={shop}
             name={shop}
             stackId={stacked ? 'stack' : undefined}
-            stroke={SHOP_COLORS[shop] || '#6b7280'}
-            fill={`url(#${gradId(shop)})`}
+            stroke={SHOP_COLORS[shop] || chart.tickFaint}
+            fill={SHOP_COLORS[shop] || chart.tickFaint}
+            fillOpacity={stacked ? 0.6 : 0.1}
             strokeWidth={2}
           />
         ))}
