@@ -26,7 +26,7 @@ export function CreativeThumb({ ad, size = 48, className }: { ad: AdRow; size?: 
   if (!src) {
     return (
       <div
-        className={cn('flex items-center justify-center rounded-lg bg-bg border border-line text-muted shrink-0', className)}
+        className={cn('flex items-center justify-center rounded-lg bg-surface-2 border border-line text-ink-faint shrink-0', className)}
         style={{ width: size, height: size }}
       >
         <ImageOff size={Math.max(14, size / 3)} />
@@ -43,7 +43,7 @@ export function CreativeThumb({ ad, size = 48, className }: { ad: AdRow; size?: 
         width={size}
         height={size}
         loading="lazy"
-        className="w-full h-full object-cover rounded-lg bg-bg border border-line"
+        className="w-full h-full object-cover rounded-lg bg-surface-2 border border-line"
         onError={() => {
           const byAd = imageProxyByAdUrl(ad.adId, ad.accountId);
           setSrc(prev => (prev !== byAd ? byAd : null));

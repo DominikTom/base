@@ -13,12 +13,12 @@ export function AttributionSelect({
   onChange: (w: AttributionWindow) => void;
 }) {
   return (
-    <label className="flex items-center gap-2 text-xs text-muted">
+    <label className="flex items-center gap-2 text-xs text-ink-muted">
       Atrybucja:
       <select
         value={value}
         onChange={e => onChange(e.target.value as AttributionWindow)}
-        className="bg-bg text-fg text-xs rounded-lg px-2 py-1.5 border border-line"
+        className="rounded-xl border border-line bg-surface px-2 py-1.5 text-xs text-ink-soft focus:border-primary/50 focus:outline-none focus:ring-4 focus:ring-primary/10"
       >
         {ATTRIBUTION_WINDOWS.map(w => (
           <option key={w.value} value={w.value}>{w.label}</option>
@@ -42,7 +42,7 @@ export function ExportCsvButton({
   return (
     <a
       href={href}
-      className="flex items-center gap-1.5 px-3 py-1.5 bg-bg hover:bg-line text-fg text-xs rounded-lg border border-line transition-colors"
+      className="btn-secondary gap-1.5 px-3 py-1.5 text-xs"
     >
       <Download size={13} />
       Eksport CSV
@@ -60,13 +60,13 @@ export function DeltaBadge({
   suffix?: string;
 }) {
   if (value === null || value === undefined) {
-    return <span className="text-[11px] text-muted">—</span>;
+    return <span className="text-[11px] text-ink-faint">—</span>;
   }
   const good = invert ? value < 0 : value >= 0;
   return (
     <span className={cn(
-      'inline-flex items-center gap-0.5 text-[11px] px-1.5 py-0.5 rounded',
-      good ? 'bg-emerald-500/10 text-emerald-600' : 'bg-red-500/10 text-danger'
+      'inline-flex items-center gap-0.5 text-[11px] px-1.5 py-0.5 rounded border',
+      good ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-red-50 text-red-700 border-red-200'
     )}>
       {value >= 0 ? '▲' : '▼'} {Math.abs(value).toFixed(1)}{suffix}
     </span>

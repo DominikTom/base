@@ -19,11 +19,11 @@ import {
 // Nagłówki kolumn mają tooltipy tłumaczące metryki nie-marketerom.
 
 const FUNNEL_BADGE: Record<string, string> = {
-  TOFU: 'bg-sky-100 text-sky-700',
-  MOFU: 'bg-amber-100 text-amber-700',
-  BOFU: 'bg-emerald-100 text-emerald-700',
-  Retargeting: 'bg-violet-100 text-violet-700',
-  Retencja: 'bg-pink-100 text-pink-700',
+  TOFU: 'bg-sky-50 text-sky-700 border border-sky-200',
+  MOFU: 'bg-amber-50 text-amber-700 border border-amber-200',
+  BOFU: 'bg-emerald-50 text-emerald-700 border border-emerald-200',
+  Retargeting: 'bg-violet-50 text-violet-700 border border-violet-200',
+  Retencja: 'bg-red-50 text-red-700 border border-red-200',
 };
 
 const METRIC_HEADERS: Array<{ key: string; label: string; hint: string }> = [
@@ -156,34 +156,34 @@ export function CampaignTree({
       {/* Pasek narzędzi */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="relative">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-faint" />
           <input
             value={query}
             onChange={e => setQuery(e.target.value)}
             placeholder="Szukaj kampanii, zestawu, reklamy…"
-            className="w-72 max-w-full pl-9 pr-3 py-2 rounded-lg bg-bg border border-line text-sm text-fg placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary-400"
+            className="input w-72 max-w-full pl-9"
           />
         </div>
         <div className="flex items-center gap-3 flex-wrap">
           {allCampaignTags.length > 0 && (
-            <label className="flex items-center gap-2 text-xs text-muted">
+            <label className="flex items-center gap-2 text-xs text-ink-muted">
               Tag:
               <select
                 value={tagFilter}
                 onChange={e => setTagFilter(e.target.value)}
-                className="bg-bg text-fg text-xs rounded-lg px-2 py-1.5 border border-line max-w-[160px]"
+                className="rounded-xl border border-line bg-surface px-2 py-1.5 text-xs text-ink-soft focus:border-primary/50 focus:outline-none focus:ring-4 focus:ring-primary/10 max-w-[160px]"
               >
                 <option value="">wszystkie</option>
                 {allCampaignTags.map(t => <option key={t} value={t}>{t}</option>)}
               </select>
             </label>
           )}
-          <label className="flex items-center gap-2 text-xs text-muted">
+          <label className="flex items-center gap-2 text-xs text-ink-muted">
             Lejek:
             <select
               value={funnelFilter}
               onChange={e => setFunnelFilter(e.target.value)}
-              className="bg-bg text-fg text-xs rounded-lg px-2 py-1.5 border border-line"
+              className="rounded-xl border border-line bg-surface px-2 py-1.5 text-xs text-ink-soft focus:border-primary/50 focus:outline-none focus:ring-4 focus:ring-primary/10"
             >
               <option value="">wszystkie</option>
               {FUNNEL_STAGES.map(s => <option key={s} value={s}>{s}</option>)}
@@ -191,10 +191,10 @@ export function CampaignTree({
           </label>
           <AttributionSelect value={attribution} onChange={onAttributionChange} />
           <details className="relative">
-            <summary className="flex items-center gap-1.5 px-3 py-1.5 bg-bg hover:bg-line text-fg text-xs rounded-lg border border-line transition-colors cursor-pointer list-none [&::-webkit-details-marker]:hidden">
+            <summary className="btn-secondary gap-1.5 px-3 py-1.5 text-xs cursor-pointer list-none [&::-webkit-details-marker]:hidden">
               <Download size={13} /> Eksport CSV
             </summary>
-            <div className="absolute right-0 mt-1 z-20 w-48 rounded-lg border border-line bg-surface shadow-pop p-1">
+            <div className="absolute right-0 mt-1 z-20 w-48 rounded-xl border border-line bg-surface shadow-pop animate-scale-in p-1">
               {([
                 ['campaigns', 'Kampanie'],
                 ['adsets', 'Zestawy reklam'],
@@ -204,7 +204,7 @@ export function CampaignTree({
                 <a
                   key={scope}
                   href={`${exportBase}&scope=${scope}`}
-                  className="block px-3 py-1.5 text-xs text-fg-soft hover:text-fg hover:bg-bg rounded-md"
+                  className="block px-3 py-1.5 text-xs text-ink-soft hover:text-ink hover:bg-surface-2 rounded-lg"
                 >
                   {label}
                 </a>
@@ -215,18 +215,18 @@ export function CampaignTree({
       </div>
 
       {/* Drzewo */}
-      <div className="rounded-card border border-line bg-surface shadow-card overflow-x-auto">
+      <div className="card overflow-x-auto">
         <table className="w-full text-sm min-w-[1100px]">
           <thead>
             <tr className="border-b border-line bg-surface/80">
-              <th className="px-4 py-3 text-left font-medium text-muted whitespace-nowrap">
+              <th className="px-4 py-3 text-left font-medium text-ink-muted whitespace-nowrap">
                 Kampania / Zestaw / Reklama
               </th>
               {METRIC_HEADERS.map(h => (
                 <th
                   key={h.key}
                   title={h.hint}
-                  className="px-3 py-3 text-right font-medium text-muted whitespace-nowrap cursor-help underline decoration-dotted decoration-line underline-offset-4"
+                  className="px-3 py-3 text-right font-medium text-ink-muted whitespace-nowrap cursor-help underline decoration-dotted decoration-line underline-offset-4"
                 >
                   {h.label}
                 </th>
@@ -237,7 +237,7 @@ export function CampaignTree({
           <tbody>
             {visibleCampaigns.length === 0 && (
               <tr>
-                <td colSpan={METRIC_HEADERS.length + 2} className="px-4 py-8 text-center text-muted">
+                <td colSpan={METRIC_HEADERS.length + 2} className="px-4 py-8 text-center text-ink-muted">
                   {q || tagFilter || funnelFilter ? 'Nic nie znaleziono — zmień wyszukiwanie lub filtry' : 'Brak kampanii w tym zakresie'}
                 </td>
               </tr>
@@ -282,7 +282,7 @@ export function CampaignTree({
           </tbody>
         </table>
       </div>
-      <p className="text-[11px] text-muted">
+      <p className="text-[11px] text-ink-faint">
         Najedź na nagłówek kolumny, żeby zobaczyć co oznacza metryka. Kampanie posortowane wg wydatków.
       </p>
 
@@ -315,7 +315,7 @@ export function CampaignTree({
 
 function MetricCells({ m, attribution, strong }: { m: Metrics; attribution: AttributionWindow; strong?: boolean }) {
   const att = attributed(m, attribution);
-  const cell = cn('px-3 py-2.5 text-right whitespace-nowrap', strong ? 'text-fg font-medium' : 'text-fg-soft');
+  const cell = cn('px-3 py-2.5 text-right whitespace-nowrap font-mono', strong ? 'text-ink font-medium' : 'text-ink-soft');
   return (
     <>
       <td className={cell}>{formatCurrency(m.spend)}</td>
@@ -326,7 +326,7 @@ function MetricCells({ m, attribution, strong }: { m: Metrics; attribution: Attr
       <td className={cell}>{m.cpl > 0 ? `${m.cpl.toFixed(2)} zł` : '—'}</td>
       <td className={cell}>{formatNumber(att.purchases)}</td>
       <td className={cell}>{formatCurrency(att.revenue)}</td>
-      <td className={cn(cell, 'font-semibold', att.roas >= 1 ? 'text-emerald-600' : att.roas > 0 ? 'text-danger' : 'text-muted')}>
+      <td className={cn(cell, 'font-semibold', att.roas >= 1 ? 'text-emerald-600' : att.roas > 0 ? 'text-red-600' : 'text-ink-faint')}>
         {att.roas > 0 ? `${att.roas.toFixed(2)}×` : '—'}
       </td>
     </>
@@ -348,15 +348,15 @@ function CampaignBranch({
   return (
     <>
       <tr
-        className="border-b border-line/70 hover:bg-bg cursor-pointer transition-colors"
+        className="border-b border-line/70 hover:bg-surface-2/60 cursor-pointer transition-colors"
         onClick={onToggle}
       >
         <td className="px-4 py-2.5">
           <div className="flex items-center gap-2 min-w-0">
-            {open ? <ChevronDown size={15} className="text-muted shrink-0" /> : <ChevronRight size={15} className="text-muted shrink-0" />}
+            {open ? <ChevronDown size={15} className="text-ink-muted shrink-0" /> : <ChevronRight size={15} className="text-ink-muted shrink-0" />}
             <div className="min-w-0">
               <div className="flex items-center gap-2 min-w-0">
-                <span className="text-fg font-medium truncate max-w-[340px]" title={campaign.campaignName}>
+                <span className="text-ink font-medium truncate max-w-[340px]" title={campaign.campaignName}>
                   {campaign.campaignName}
                 </span>
                 {campaign.notes && (
@@ -364,33 +364,33 @@ function CampaignBranch({
                 )}
               </div>
               <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                <span className="text-[10px] text-muted">{campaign.shop}</span>
+                <span className="text-[10px] text-ink-faint">{campaign.shop}</span>
                 {campaign.objective && (
-                  <span className="text-[10px] px-1.5 py-px rounded bg-bg border border-line text-fg-soft">
+                  <span className="text-[10px] px-1.5 py-px rounded bg-surface-2 border border-line text-ink-soft">
                     {OBJECTIVE_LABELS[campaign.objective] || campaign.objective}
                   </span>
                 )}
                 {campaign.funnelStage && (
-                  <span className={cn('text-[10px] px-1.5 py-px rounded font-medium', FUNNEL_BADGE[campaign.funnelStage] || 'bg-bg text-fg-soft')}>
+                  <span className={cn('text-[10px] px-1.5 py-px rounded font-medium', FUNNEL_BADGE[campaign.funnelStage] || 'bg-surface-2 text-ink-soft')}>
                     {campaign.funnelStage}
                   </span>
                 )}
                 {campaign.tags.slice(0, 4).map(tag => (
-                  <span key={tag} className="text-[10px] px-1.5 py-px rounded-pill bg-primary-100 text-primary-800">
+                  <span key={tag} className="text-[10px] px-1.5 py-px rounded-full bg-primary-soft text-primary-ink">
                     {tag}
                   </span>
                 ))}
                 {campaign.tags.length > 4 && (
-                  <span className="text-[10px] text-muted" title={campaign.tags.join(', ')}>
+                  <span className="text-[10px] text-ink-faint" title={campaign.tags.join(', ')}>
                     +{campaign.tags.length - 4}
                   </span>
                 )}
                 {campaign.purpose && (
-                  <span className="text-[10px] text-muted italic truncate max-w-[200px]" title={campaign.purpose}>
+                  <span className="text-[10px] text-ink-faint italic truncate max-w-[200px]" title={campaign.purpose}>
                     {campaign.purpose}
                   </span>
                 )}
-                <span className="text-[10px] text-muted">· {adsetCount} zest. · {adCount} rekl.</span>
+                <span className="text-[10px] text-ink-faint">· {adsetCount} zest. · {adCount} rekl.</span>
               </div>
             </div>
           </div>
@@ -400,7 +400,7 @@ function CampaignBranch({
           <button
             onClick={e => { e.stopPropagation(); onEdit(); }}
             title="Edytuj cel wewnętrzny / etap lejka / notatkę"
-            className="p-1.5 rounded-md text-muted hover:text-fg hover:bg-line transition-colors"
+            className="p-1.5 rounded-lg text-ink-faint hover:text-ink hover:bg-surface-2 transition-colors"
           >
             <Pencil size={13} />
           </button>
@@ -424,14 +424,14 @@ function AdsetBranch({
   return (
     <>
       <tr
-        className="border-b border-line/50 bg-bg/40 hover:bg-bg cursor-pointer transition-colors"
+        className="border-b border-line/50 bg-surface-2/40 hover:bg-surface-2/60 cursor-pointer transition-colors"
         onClick={onToggle}
       >
         <td className="px-4 py-2">
           <div className="flex items-center gap-2 pl-6 min-w-0">
-            {open ? <ChevronDown size={14} className="text-muted shrink-0" /> : <ChevronRight size={14} className="text-muted shrink-0" />}
-            <span className="text-fg-soft truncate max-w-[320px]" title={adset.adsetName}>{adset.adsetName}</span>
-            <span className="text-[10px] text-muted shrink-0">· {adCount} rekl.</span>
+            {open ? <ChevronDown size={14} className="text-ink-muted shrink-0" /> : <ChevronRight size={14} className="text-ink-muted shrink-0" />}
+            <span className="text-ink-soft truncate max-w-[320px]" title={adset.adsetName}>{adset.adsetName}</span>
+            <span className="text-[10px] text-ink-faint shrink-0">· {adCount} rekl.</span>
           </div>
         </td>
         <MetricCells m={adset} attribution={attribution} />
@@ -445,16 +445,16 @@ function AdsetBranch({
 function AdLeaf({ ad, attribution, onClick }: { ad: AdRow; attribution: AttributionWindow; onClick: () => void }) {
   return (
     <tr
-      className="border-b border-line/40 bg-bg/70 hover:bg-primary-50 cursor-pointer transition-colors"
+      className="border-b border-line/40 bg-surface-2/70 hover:bg-primary-soft cursor-pointer transition-colors"
       onClick={onClick}
       title="Kliknij, aby zobaczyć podgląd kreacji"
     >
       <td className="px-4 py-2">
         <div className="flex items-center gap-2.5 pl-14 min-w-0">
           <CreativeThumb ad={ad} size={28} />
-          <span className="text-fg-soft truncate max-w-[300px]" title={ad.adName}>{ad.adName}</span>
+          <span className="text-ink-soft truncate max-w-[300px]" title={ad.adName}>{ad.adName}</span>
           {ad.creative?.format && (
-            <span className="text-[9px] uppercase tracking-wide px-1 py-px rounded bg-primary-100 text-primary-800 shrink-0">
+            <span className="text-[9px] font-medium px-1 py-px rounded bg-primary-soft text-primary-ink shrink-0">
               {ad.creative.format}
             </span>
           )}

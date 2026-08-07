@@ -23,17 +23,17 @@ export function TagInput({
   }
 
   return (
-    <div className="mt-1 flex flex-wrap items-center gap-1.5 px-2 py-1.5 rounded-lg bg-bg border border-line focus-within:ring-2 focus-within:ring-primary-400">
+    <div className="mt-1 flex flex-wrap items-center gap-1.5 px-2 py-1.5 rounded-xl bg-surface border border-line focus-within:border-primary/50 focus-within:ring-4 focus-within:ring-primary/10">
       {tags.map(tag => (
         <span
           key={tag}
-          className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-pill bg-primary-100 text-primary-800"
+          className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-primary-soft text-primary-ink"
         >
           {tag}
           <button
             type="button"
             onClick={() => onChange(tags.filter(t => t !== tag))}
-            className="hover:text-primary-900"
+            className="hover:text-primary"
             aria-label={`Usuń tag ${tag}`}
           >
             <X size={11} />
@@ -57,7 +57,7 @@ export function TagInput({
         onBlur={commit}
         placeholder={tags.length === 0 ? placeholder : ''}
         maxLength={40}
-        className="flex-1 min-w-[120px] bg-transparent text-sm text-fg placeholder:text-muted focus:outline-none py-0.5"
+        className="flex-1 min-w-[120px] bg-transparent text-sm text-ink placeholder:text-ink-faint focus:outline-none py-0.5"
       />
     </div>
   );

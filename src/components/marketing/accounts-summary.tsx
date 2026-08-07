@@ -6,9 +6,9 @@ import { DeltaBadge } from './controls';
 import { attributed, type AccountRow, type AdsPayload } from './types';
 
 const SHOP_BADGE: Record<string, string> = {
-  'mybed.pl': 'bg-violet-600',
-  'mybed.de': 'bg-blue-600',
-  'mittohome.pl': 'bg-lime-600',
+  'mybed.pl': 'bg-indigo-500',
+  'mybed.de': 'bg-amber-500',
+  'mittohome.pl': 'bg-emerald-500',
 };
 
 function initials(shop: string): string {
@@ -48,7 +48,7 @@ export function AccountsSummary({
         <MiniStat label="Leady" value={formatNumber(t.leads)} delta={t.deltas.leads} />
         <MiniStat label="Koszt / lead" value={t.leads > 0 ? `${t.cpl.toFixed(2)} zł` : '—'} delta={t.deltas.cpl} invert />
       </div>
-      <p className="text-[11px] text-muted -mt-2">
+      <p className="text-[11px] text-ink-faint -mt-2">
         * Zasięg to suma dziennych zasięgów (Meta deduplikuje tylko w obrębie dnia) — traktuj jako przybliżenie.
       </p>
 
@@ -64,12 +64,12 @@ function TotalCard({ label, value, delta, deltaInvert, sub }: {
   label: string; value: string; delta: number | null; deltaInvert?: boolean; sub?: string;
 }) {
   return (
-    <div className="rounded-card border border-line bg-surface p-4 shadow-card">
-      <div className="text-[11px] uppercase tracking-wider text-muted font-medium">{label}</div>
-      <div className="text-2xl font-bold text-fg tracking-tight mt-1">{value}</div>
+    <div className="card p-4">
+      <div className="stat-label">{label}</div>
+      <div className="font-mono text-2xl font-semibold text-ink tracking-tight mt-1">{value}</div>
       <div className="flex items-center gap-2 mt-1.5">
         <DeltaBadge value={delta} invert={deltaInvert} />
-        {sub && <span className="text-[11px] text-muted">{sub}</span>}
+        {sub && <span className="text-[11px] text-ink-faint">{sub}</span>}
       </div>
     </div>
   );
@@ -79,9 +79,9 @@ function MiniStat({ label, value, delta, invert }: {
   label: string; value: string; delta?: number | null; invert?: boolean;
 }) {
   return (
-    <div className="rounded-card border border-line bg-surface p-3 shadow-card">
-      <div className="text-[11px] uppercase tracking-wider text-muted font-medium">{label}</div>
-      <div className="text-lg font-semibold text-fg mt-0.5">{value}</div>
+    <div className="card p-3">
+      <div className="stat-label">{label}</div>
+      <div className="font-mono text-lg font-semibold text-ink mt-0.5">{value}</div>
       {delta !== undefined && <div className="mt-1"><DeltaBadge value={delta} invert={invert} /></div>}
     </div>
   );
@@ -90,17 +90,17 @@ function MiniStat({ label, value, delta, invert }: {
 function AccountCard({ acc, attribution }: { acc: AccountRow; attribution: AttributionWindow }) {
   const att = attributed(acc, attribution);
   return (
-    <div className="rounded-card border border-line bg-surface p-4 shadow-card grid grid-cols-1 md:grid-cols-[220px_1fr] gap-4 items-center">
+    <div className="card p-4 grid grid-cols-1 md:grid-cols-[220px_1fr] gap-4 items-center">
       <div className="flex items-center gap-3 min-w-0">
         <div className={cn(
-          'w-10 h-10 rounded-lg flex items-center justify-center text-white text-sm font-bold shrink-0',
-          SHOP_BADGE[acc.shop] || 'bg-zinc-500'
+          'w-10 h-10 rounded-xl flex items-center justify-center text-white text-sm font-bold shrink-0',
+          SHOP_BADGE[acc.shop] || 'bg-slate-500'
         )}>
           {initials(acc.shop)}
         </div>
         <div className="min-w-0">
-          <div className="text-sm font-medium text-fg truncate">{acc.shop}</div>
-          <div className="text-[11px] text-muted">Meta Ads{acc.currency && acc.currency !== 'PLN' ? ` · ${acc.currency}` : ''}</div>
+          <div className="text-sm font-medium text-ink truncate">{acc.shop}</div>
+          <div className="text-[11px] text-ink-faint">Meta Ads{acc.currency && acc.currency !== 'PLN' ? ` · ${acc.currency}` : ''}</div>
         </div>
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
@@ -121,8 +121,8 @@ function AccountMetric({ label, value, delta, invert }: {
 }) {
   return (
     <div>
-      <div className="text-[10px] uppercase tracking-wider text-muted">{label}</div>
-      <div className="text-sm font-semibold text-fg mt-0.5">{value}</div>
+      <div className="text-[10px] font-medium text-ink-muted">{label}</div>
+      <div className="font-mono text-sm font-semibold text-ink mt-0.5">{value}</div>
       <div className="mt-0.5"><DeltaBadge value={delta} invert={invert} /></div>
     </div>
   );

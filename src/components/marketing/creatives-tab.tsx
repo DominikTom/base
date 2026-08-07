@@ -90,12 +90,12 @@ export function CreativesTab({
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <label className="flex items-center gap-2 text-xs text-muted">
+        <label className="flex items-center gap-2 text-xs text-ink-muted">
           Sortuj Top 10:
           <select
             value={sortKey}
             onChange={e => setSortKey(e.target.value as SortKey)}
-            className="bg-bg text-fg text-xs rounded-lg px-2 py-1.5 border border-line"
+            className="rounded-xl border border-line bg-surface px-2 py-1.5 text-xs text-ink-soft focus:border-primary/50 focus:outline-none focus:ring-4 focus:ring-primary/10"
           >
             <option value="roas">ROAS</option>
             <option value="spend">Wydatki</option>
@@ -104,12 +104,12 @@ export function CreativesTab({
         </label>
         <div className="flex items-center gap-3 flex-wrap">
           {allTags.length > 0 && (
-            <label className="flex items-center gap-2 text-xs text-muted">
+            <label className="flex items-center gap-2 text-xs text-ink-muted">
               Tag:
               <select
                 value={tagFilter}
                 onChange={e => setTagFilter(e.target.value)}
-                className="bg-bg text-fg text-xs rounded-lg px-2 py-1.5 border border-line max-w-[160px]"
+                className="rounded-xl border border-line bg-surface px-2 py-1.5 text-xs text-ink-soft focus:border-primary/50 focus:outline-none focus:ring-4 focus:ring-primary/10 max-w-[160px]"
               >
                 <option value="">wszystkie</option>
                 {allTags.map(t => <option key={t} value={t}>{t}</option>)}
@@ -125,14 +125,14 @@ export function CreativesTab({
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
         <TopList
           title="Top 10 — Statyczne"
-          icon={<ImageIcon size={15} className="text-muted" />}
+          icon={<ImageIcon size={15} className="text-ink-muted" />}
           ads={topStatic}
           attribution={attribution}
           onSelect={setSelected}
         />
         <TopList
           title="Top 10 — Wideo"
-          icon={<Video size={15} className="text-muted" />}
+          icon={<Video size={15} className="text-ink-muted" />}
           ads={topVideo}
           attribution={attribution}
           onSelect={setSelected}
@@ -140,9 +140,9 @@ export function CreativesTab({
       </div>
 
       {/* Pełna tabela reklam */}
-      <div className="rounded-card border border-line bg-surface p-4 shadow-card">
-        <h3 className="text-sm font-medium text-fg mb-3">
-          Wszystkie reklamy <span className="text-muted font-normal">· klik = podgląd kreacji{tagFilter ? ` · filtr: ${tagFilter}` : ''}</span>
+      <div className="card p-4">
+        <h3 className="section-title mb-3">
+          Wszystkie reklamy <span className="text-ink-muted font-normal">· klik = podgląd kreacji{tagFilter ? ` · filtr: ${tagFilter}` : ''}</span>
         </h3>
         <DataTable data={filteredAds} columns={tableColumns} pageSize={15} onRowClick={setSelected} />
       </div>
@@ -172,14 +172,14 @@ function TopList({
   onSelect: (ad: AdRow) => void;
 }) {
   return (
-    <div className="rounded-card border border-line bg-surface p-4 shadow-card">
+    <div className="card p-4">
       <div className="flex items-center gap-2 mb-3">
         {icon}
-        <h3 className="text-sm font-medium text-fg">{title}</h3>
-        <span className="text-xs text-muted">{ads.length} reklam</span>
+        <h3 className="section-title">{title}</h3>
+        <span className="text-xs text-ink-faint">{ads.length} reklam</span>
       </div>
       {ads.length === 0 ? (
-        <p className="text-xs text-muted py-6 text-center">Brak reklam w tym zakresie</p>
+        <p className="text-xs text-ink-faint py-6 text-center">Brak reklam w tym zakresie</p>
       ) : (
         <ul className="space-y-1">
           {ads.map((ad, i) => {
@@ -188,33 +188,33 @@ function TopList({
               <li key={ad.adId}>
                 <button
                   onClick={() => onSelect(ad)}
-                  className="w-full flex items-center gap-3 rounded-lg px-2 py-2 hover:bg-bg transition-colors text-left"
+                  className="w-full flex items-center gap-3 rounded-xl px-2 py-2 hover:bg-surface-2 transition-colors text-left"
                 >
                   <span className="relative">
                     <CreativeThumb ad={ad} size={44} />
-                    <span className="absolute -top-1 -left-1 w-4 h-4 rounded bg-accent-bg text-[10px] text-accent-fg flex items-center justify-center font-semibold">
+                    <span className="absolute -top-1 -left-1 w-4 h-4 rounded bg-primary text-[10px] text-white flex items-center justify-center font-semibold">
                       {i + 1}
                     </span>
                   </span>
                   <span className="min-w-0 flex-1">
-                    <span className="block text-sm text-fg truncate">{ad.adName}</span>
-                    <span className="block text-[11px] text-muted truncate">
+                    <span className="block text-sm text-ink truncate">{ad.adName}</span>
+                    <span className="block text-[11px] text-ink-faint truncate">
                       {ad.creative?.format || '—'} · {ad.shop}
                     </span>
                   </span>
                   <span className="text-right shrink-0">
-                    <span className="block text-[10px] uppercase text-muted">Wydatki</span>
-                    <span className="block text-xs text-fg-soft">{formatNumber(ad.spend, 2)} zł</span>
+                    <span className="block text-[10px] font-medium text-ink-muted">Wydatki</span>
+                    <span className="block font-mono text-xs text-ink-soft">{formatNumber(ad.spend, 2)} zł</span>
                   </span>
                   <span className="text-right shrink-0 w-20">
-                    <span className="block text-[10px] uppercase text-muted">ROAS</span>
-                    <span className={cn('block text-xs font-semibold', att.roas >= 1 ? 'text-emerald-600' : 'text-danger')}>
+                    <span className="block text-[10px] font-medium text-ink-muted">ROAS</span>
+                    <span className={cn('block font-mono text-xs font-semibold', att.roas >= 1 ? 'text-emerald-600' : 'text-red-600')}>
                       {att.roas.toFixed(2)}×
                     </span>
                   </span>
                   <span className="text-right shrink-0 w-14">
-                    <span className="block text-[10px] uppercase text-muted">Zakupy</span>
-                    <span className="block text-xs text-fg-soft">{att.purchases}</span>
+                    <span className="block text-[10px] font-medium text-ink-muted">Zakupy</span>
+                    <span className="block font-mono text-xs text-ink-soft">{att.purchases}</span>
                   </span>
                 </button>
               </li>

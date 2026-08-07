@@ -54,67 +54,67 @@ export function CampaignMetaEditor({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4" onClick={onClose}>
       <div
-        className="w-full max-w-md rounded-card border border-line bg-surface shadow-pop"
+        className="w-full max-w-md card shadow-pop animate-scale-in"
         onClick={e => e.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-3 p-4 border-b border-line">
           <div className="min-w-0">
-            <h3 className="text-sm font-semibold text-fg flex items-center gap-2">
-              <NotebookPen size={15} className="text-muted" /> Metadane kampanii
+            <h3 className="section-title flex items-center gap-2">
+              <NotebookPen size={15} className="text-ink-muted" /> Metadane kampanii
             </h3>
-            <p className="text-xs text-muted mt-0.5 truncate">{campaign.campaignName}</p>
+            <p className="text-xs text-ink-muted mt-0.5 truncate">{campaign.campaignName}</p>
           </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg text-muted hover:text-fg hover:bg-bg">
+          <button onClick={onClose} className="p-1.5 rounded-lg text-ink-faint hover:text-ink hover:bg-surface-2 transition-colors">
             <X size={16} />
           </button>
         </div>
         <div className="p-4 space-y-3">
           <label className="block">
-            <span className="text-xs text-fg-soft">Cel wewnętrzny (np. „test kreacji”, „feedowanie bazy kontaktów”)</span>
+            <span className="text-xs text-ink-soft">Cel wewnętrzny (np. „test kreacji”, „feedowanie bazy kontaktów”)</span>
             <input
               value={purpose}
               onChange={e => setPurpose(e.target.value)}
               maxLength={120}
-              className="mt-1 w-full px-3 py-2 rounded-lg bg-bg border border-line text-sm text-fg focus:outline-none focus:ring-2 focus:ring-primary-400"
+              className="input mt-1"
             />
           </label>
           <label className="block">
-            <span className="text-xs text-fg-soft">Etap lejka</span>
+            <span className="text-xs text-ink-soft">Etap lejka</span>
             <select
               value={funnelStage}
               onChange={e => setFunnelStage(e.target.value)}
-              className="mt-1 w-full px-3 py-2 rounded-lg bg-bg border border-line text-sm text-fg"
+              className="input mt-1"
             >
               <option value="">— brak —</option>
               {FUNNEL_STAGES.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
           </label>
           <div>
-            <span className="text-xs text-fg-soft">Tagi (Enter dodaje; filtrujesz po nich listę kampanii)</span>
+            <span className="text-xs text-ink-soft">Tagi (Enter dodaje; filtrujesz po nich listę kampanii)</span>
             <TagInput tags={tags} onChange={setTags} />
           </div>
           <label className="block">
-            <span className="text-xs text-fg-soft">Krótka notatka</span>
+            <span className="text-xs text-ink-soft">Krótka notatka</span>
             <textarea
               value={notes}
               onChange={e => setNotes(e.target.value)}
               rows={3}
               maxLength={500}
-              className="mt-1 w-full px-3 py-2 rounded-lg bg-bg border border-line text-sm text-fg focus:outline-none focus:ring-2 focus:ring-primary-400 resize-none"
+              className="input mt-1 resize-none"
             />
           </label>
-          {error && <p className="text-xs text-danger">{error}</p>}
+          {error && <p className="text-xs text-red-600">{error}</p>}
         </div>
         <div className="flex justify-end gap-2 p-4 pt-0">
-          <button onClick={onClose} className="px-3 py-2 text-sm rounded-lg text-fg-soft hover:text-fg hover:bg-bg">
+          <button onClick={onClose} className="btn-ghost px-3 py-2">
             Anuluj
           </button>
           <button
             onClick={handleSave}
             disabled={saving}
-            className="px-4 py-2 text-sm rounded-lg btn-primary-gradient"
+            className="btn-primary"
           >
             {saving ? 'Zapisywanie…' : 'Zapisz'}
           </button>
