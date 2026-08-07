@@ -676,8 +676,8 @@ function AdLevelSection({ view }: { view: 'konta' | 'kampanie' | 'kreacje' }) {
             ))}
           </ul>
           <p className="text-xs text-amber-700 mt-1.5">
-            Sumy i porównania obejmują tylko dostępne dni. Kliknij „Sync ad-level” z zakresem
-            pokrywającym brakujące daty — istniejące dane są bezpieczne.
+            Sumy i porównania obejmują tylko dostępne dni. Kliknij „Sync ad-level” — pobierze
+            wyłącznie brakujące dni (istniejące dane zostają nietknięte).
           </p>
         </div>
       )}
@@ -742,61 +742,104 @@ function humanizeSyncError(message: string): string {
   return message.length > 140 ? `${message.slice(0, 140)}…` : message;
 }
 
+interface SyncPlan {
+  period: { from: string; to: string };
+  accounts: Array<{
+    accountId: string;
+    shop: string;
+    missingDays: number;
+    ranges: Array<{ since: string; until: string }>;
+  }>;
+}
+
 function SyncAdsButton({ onDone }: { onDone: () => void }) {
   const [syncing, setSyncing] = useState(false);
   const [days, setDays] = useState(90);
+  const [fullResync, setFullResync] = useState(false);
   const [progress, setProgress] = useState<{ label: string; current: number; total: number } | null>(null);
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
 
   async function handleSync() {
     setSyncing(true); setResult(null); setProgress(null);
-    const accounts = Object.entries(SHOP_TO_META_ACCOUNT);
-    const chunks = buildBackfillChunks(days, AD_SYNC_CHUNK_DAYS);
-    const total = accounts.length * chunks.length;
     let totalRows = 0;
-    let step = 0;
     const errors: string[] = [];
 
-    for (const [shopLabel, accountId] of accounts) {
-      let firstChunk = true;
-      accountLoop:
-      for (const { since, until } of chunks) {
-        step += 1;
-        // dim_campaigns tylko przy pierwszym chunku konta — mniej calli do Mety
-        const url = `/api/etl/meta-ad-sync?since=${since}&until=${until}`
-          + `&account=${encodeURIComponent(accountId)}${firstChunk ? '' : '&campaigns=0'}`;
-        firstChunk = false;
+    try {
+      // Plan syncu: domyślnie tylko brakujące zakresy per konto + ostatnie
+      // 3 dni (restatement Mety). „Nadpisz wszystko" = pełny re-sync okna.
+      let plan: SyncPlan;
+      if (fullResync) {
+        const chunks = buildBackfillChunks(days, AD_SYNC_CHUNK_DAYS);
+        plan = {
+          period: { from: chunks[chunks.length - 1]?.since || '', to: chunks[0]?.until || '' },
+          accounts: Object.entries(SHOP_TO_META_ACCOUNT).map(([shop, accountId]) => ({
+            accountId, shop, missingDays: 0, ranges: chunks,
+          })),
+        };
+      } else {
+        setProgress({ label: 'sprawdzam braki w bazie', current: 0, total: 1 });
+        const planRes = await fetch(`/api/etl/meta-ad-sync/plan?days=${days}`);
+        const planJson = await planRes.json();
+        if (!planRes.ok) throw new Error(planJson.error || `HTTP ${planRes.status}`);
+        plan = planJson;
+      }
 
-        for (let attempt = 1; attempt <= 3; attempt++) {
-          setProgress({
-            label: attempt === 1 ? shopLabel : `${shopLabel} · ponawiam (${attempt}/3)`,
-            current: step, total,
-          });
-          try {
-            const res = await fetch(url, { method: 'POST' });
-            const json = await parseJsonOrThrow(res);
-            if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
-            totalRows += json.totalRows || 0;
-            await sleep(INTER_CHUNK_PAUSE_MS);
-            break; // chunk OK → następny
-          } catch (err) {
-            const msg = err instanceof Error ? err.message : String(err);
-            if (isMetaRateLimit(msg) && attempt < 3) {
-              // przejściowy limit — odczekaj i ponów ten sam chunk
-              setProgress({ label: `${shopLabel} · limit API, pauza 60 s`, current: step, total });
-              await sleep(RATE_LIMIT_PAUSE_MS);
-              continue;
+      const total = plan.accounts.reduce((n, a) => n + a.ranges.length, 0);
+      const missingTotal = plan.accounts.reduce((n, a) => n + a.missingDays, 0);
+      let step = 0;
+
+      for (const account of plan.accounts) {
+        let firstChunk = true;
+        accountLoop:
+        for (const { since, until } of account.ranges) {
+          step += 1;
+          // dim_campaigns tylko przy pierwszym zakresie konta — mniej calli do Mety
+          const url = `/api/etl/meta-ad-sync?since=${since}&until=${until}`
+            + `&account=${encodeURIComponent(account.accountId)}${firstChunk ? '' : '&campaigns=0'}`;
+          firstChunk = false;
+
+          for (let attempt = 1; attempt <= 3; attempt++) {
+            setProgress({
+              label: attempt === 1 ? `${account.shop} · ${since}→${until}` : `${account.shop} · ponawiam (${attempt}/3)`,
+              current: step, total,
+            });
+            try {
+              const res = await fetch(url, { method: 'POST' });
+              const json = await parseJsonOrThrow(res);
+              if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
+              totalRows += json.totalRows || 0;
+              await sleep(INTER_CHUNK_PAUSE_MS);
+              break; // zakres OK → następny
+            } catch (err) {
+              const msg = err instanceof Error ? err.message : String(err);
+              if (isMetaRateLimit(msg) && attempt < 3) {
+                // przejściowy limit — odczekaj i ponów ten sam zakres
+                setProgress({ label: `${account.shop} · limit API, pauza 60 s`, current: step, total });
+                await sleep(RATE_LIMIT_PAUSE_MS);
+                continue;
+              }
+              errors.push(`${account.shop}: ${humanizeSyncError(msg)}`);
+              break accountLoop; // kolejne zakresy tego konta też padną — następne konto
             }
-            errors.push(`${shopLabel}: ${humanizeSyncError(msg)}`);
-            break accountLoop; // kolejne chunki tego konta też padną — następne konto
           }
         }
       }
+
+      setResult(errors.length === 0
+        ? {
+            ok: true,
+            message: fullResync
+              ? `Nadpisano ${totalRows} wierszy za ${days} dni`
+              : missingTotal === 0
+                ? `Dane kompletne ✓ odświeżono ostatnie 3 dni (${totalRows} wierszy)`
+                : `Uzupełniono ${missingTotal} brakujących dni · ${totalRows} wierszy`,
+          }
+        : { ok: false, message: `Pobrano ${totalRows} wierszy · ${errors.join(' · ')}` });
+    } catch (err) {
+      errors.push(humanizeSyncError(err instanceof Error ? err.message : String(err)));
+      setResult({ ok: false, message: errors.join(' · ') });
     }
 
-    setResult(errors.length === 0
-      ? { ok: true, message: `Ad-level: pobrano ${totalRows} wierszy za ${days} dni` }
-      : { ok: false, message: `Pobrano ${totalRows} wierszy · ${errors.join(' · ')}` });
     if (totalRows > 0) onDone();
     setSyncing(false); setProgress(null);
   }
@@ -808,11 +851,24 @@ function SyncAdsButton({ onDone }: { onDone: () => void }) {
           {progress.label} · {progress.current}/{progress.total}…
         </span>
       ) : result ? (
-        <span className={`text-xs flex items-center gap-1 ${result.ok ? 'text-emerald-600' : 'text-danger'}`}>
-          {result.ok ? <CheckCircle size={14} /> : <XCircle size={14} />}
+        <span className={`text-xs flex items-center gap-1 max-w-md ${result.ok ? 'text-emerald-600' : 'text-danger'}`}>
+          {result.ok ? <CheckCircle size={14} className="shrink-0" /> : <XCircle size={14} className="shrink-0" />}
           {result.message}
         </span>
       ) : null}
+      <label
+        className="flex items-center gap-1.5 text-xs text-muted cursor-pointer select-none"
+        title="Domyślnie sync pobiera tylko brakujące dni + ostatnie 3 dni (oszczędza limit API Meta). Zaznacz, żeby nadpisać cały zakres — np. po zmianie sposobu liczenia."
+      >
+        <input
+          type="checkbox"
+          checked={fullResync}
+          onChange={e => setFullResync(e.target.checked)}
+          disabled={syncing}
+          className="accent-primary-500"
+        />
+        nadpisz wszystko
+      </label>
       <select
         value={days}
         onChange={e => setDays(parseInt(e.target.value, 10))}
@@ -822,7 +878,7 @@ function SyncAdsButton({ onDone }: { onDone: () => void }) {
         {BACKFILL_OPTIONS.map(o => (<option key={o.value} value={o.value}>{o.label}</option>))}
       </select>
       <button onClick={handleSync} disabled={syncing}
-        className="flex items-center gap-2 px-3 py-2 bg-bg hover:bg-line text-fg text-sm rounded-lg transition-colors disabled:opacity-50">
+        className="flex items-center gap-2 px-3 py-2 bg-bg hover:bg-line text-fg text-sm rounded-lg transition-colors disabled:opacity-50 whitespace-nowrap">
         {syncing ? <RefreshCw size={14} className="animate-spin" /> : <RefreshCw size={14} />}
         {syncing ? 'Sync...' : 'Sync ad-level'}
       </button>
