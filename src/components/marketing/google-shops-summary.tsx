@@ -41,18 +41,18 @@ export function GoogleShopsSummary({
         return (
           <div
             key={shop.hostname}
-            className="rounded-card border border-line bg-surface p-4 shadow-card grid grid-cols-1 md:grid-cols-[220px_1fr] gap-4 items-center"
+            className="card p-4 grid grid-cols-1 md:grid-cols-[220px_1fr] gap-4 items-center"
           >
             <div className="flex items-center gap-3 min-w-0">
               <div className={cn(
-                'w-10 h-10 rounded-lg flex items-center justify-center text-white text-sm font-bold shrink-0',
+                'w-10 h-10 rounded-xl flex items-center justify-center text-white text-sm font-bold shrink-0',
                 SHOP_BADGE[shop.hostname] || 'bg-zinc-500'
               )}>
                 {shopInitials(shop.hostname)}
               </div>
               <div className="min-w-0">
-                <div className="text-sm font-medium text-fg truncate">{shop.hostname}</div>
-                <div className="text-[11px] text-muted">Google Ads · GA4</div>
+                <div className="text-sm font-medium text-ink truncate">{shop.hostname}</div>
+                <div className="text-[11px] text-ink-faint">Google Ads · GA4</div>
               </div>
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3">
@@ -83,8 +83,8 @@ function ShopMetric({ label, value, delta, invert }: {
 }) {
   return (
     <div>
-      <div className="text-[10px] uppercase tracking-wider text-muted">{label}</div>
-      <div className="text-sm font-semibold text-fg mt-0.5">{value}</div>
+      <div className="text-[10px] font-medium text-ink-muted">{label}</div>
+      <div className="font-mono text-sm font-semibold text-ink mt-0.5">{value}</div>
       <div className="mt-0.5"><DeltaBadge value={delta} invert={invert} /></div>
     </div>
   );
