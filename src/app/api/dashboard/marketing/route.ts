@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabase';
 import { SHOP_TO_META_ACCOUNT } from '@/lib/meta-ads';
+import { META_ACCOUNT_TO_SHOP } from '@/lib/marketing-ads';
 import { shopFilterToList } from '@/lib/shop-filter';
 
 export async function GET(request: NextRequest) {
@@ -134,6 +135,7 @@ export async function GET(request: NextRequest) {
     const campaignMap: Record<string, {
       campaign_name: string;
       platform: string;
+      shop: string;
       spend: number;
       impressions: number;
       clicks: number;
@@ -147,6 +149,7 @@ export async function GET(request: NextRequest) {
         campaignMap[key] = {
           campaign_name: row.campaign_name || row.campaign_id,
           platform: row.platform,
+          shop: META_ACCOUNT_TO_SHOP[row.account_id as string] || '—',
           spend: 0, impressions: 0, clicks: 0, conversions: 0, conversion_value: 0,
         };
       }

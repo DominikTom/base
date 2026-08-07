@@ -47,14 +47,17 @@ interface CampaignTreeProps {
   onAttributionChange: (w: AttributionWindow) => void;
   onMetaSaved: (campaignId: string, fields: CampaignMetaFields) => void;
   onCreativeSaved?: (creativeId: string, fields: { manualTags: string[]; manualNotes: string | null }) => void;
+  // Prefiltrowanie po nazwie (wejście z Przeglądu przez klik w kampanię) —
+  // renderuj z key={initialQuery}, żeby zmiana fokusu zresetowała drzewo
+  initialQuery?: string;
 }
 
 export function CampaignTree({
-  data, dateFrom, dateTo, shop, attribution, onAttributionChange, onMetaSaved, onCreativeSaved,
+  data, dateFrom, dateTo, shop, attribution, onAttributionChange, onMetaSaved, onCreativeSaved, initialQuery,
 }: CampaignTreeProps) {
   const [openCampaigns, setOpenCampaigns] = useState<Set<string>>(new Set());
   const [openAdsets, setOpenAdsets] = useState<Set<string>>(new Set());
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState(initialQuery || '');
   const [funnelFilter, setFunnelFilter] = useState('');
   const [tagFilter, setTagFilter] = useState('');
   const [editing, setEditing] = useState<CampaignRow | null>(null);

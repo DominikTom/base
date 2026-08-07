@@ -47,6 +47,7 @@ interface MetaMarketingData {
     campaign_id: string;
     campaign_name: string;
     platform: string;
+    shop: string;
     spend: number;
     impressions: number;
     clicks: number;
@@ -139,6 +140,8 @@ export default function MarketingPage() {
 // ─────────────────────────────────────────────────────────────────
 function MetaSection() {
   const [subTab, setSubTab] = useState<MetaSubTab>('przeglad');
+  // Klik w kampanię na Przeglądzie → drzewo Kampanii z prefiltrowaną nazwą
+  const [campaignFocus, setCampaignFocus] = useState('');
 
   return (
     <div className="space-y-5">
@@ -165,7 +168,9 @@ function MetaSection() {
         ))}
       </div>
 
-      {subTab === 'przeglad' ? <MetaTab /> : <AdLevelSection view={subTab} />}
+      {subTab === 'przeglad'
+        ? <MetaTab onOpenCampaign={name => { setCampaignFocus(name); setSubTab('kampanie'); }} />
+        : <AdLevelSection view={subTab} campaignFocus={campaignFocus} />}
     </div>
   );
 }
@@ -173,7 +178,7 @@ function MetaSection() {
 // ─────────────────────────────────────────────────────────────────
 // Meta Ads
 // ─────────────────────────────────────────────────────────────────
-function MetaTab() {
+function MetaTab({ onOpenCampaign }: { onOpenCampaign: (name: string) => void }) {
   const { filters } = useDashboard();
   const [data, setData] = useState<MetaMarketingData | null>(null);
   const [prevKpis, setPrevKpis] = useState<MetaMarketingData['kpis'] | null>(null);
@@ -203,7 +208,7 @@ function MetaTab() {
 
   const campaignColumns: Column<(typeof data.campaignTable)[0]>[] = [
     { key: 'campaign_name', header: 'Kampania', accessor: r => r.campaign_name, className: 'max-w-[250px] truncate' },
-    { key: 'platform', header: 'Platforma', accessor: r => r.platform },
+    { key: 'shop', header: 'Sklep', accessor: r => r.shop },
     { key: 'spend', header: 'Spend', accessor: r => r.spend, align: 'right', format: v => formatCurrency(v as number) },
     { key: 'impressions', header: 'Impressions', accessor: r => r.impressions, align: 'right', format: v => formatNumber(v as number) },
     { key: 'clicks', header: 'Clicks', accessor: r => r.clicks, align: 'right', format: v => formatNumber(v as number) },
@@ -268,21 +273,20 @@ function MetaTab() {
         <SpendRevenueChart data={data.charts.spendVsRevenue} />
       </ChartCard>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <ChartCard title="ROAS Trend">
-          <SimpleBarChart data={data.charts.roasTrend} valueFormatter={v => `${v}x`} />
-        </ChartCard>
-        <ChartCard title="Spend wg platformy">
-          <SimplePieChart data={data.charts.spendByPlatform} />
-        </ChartCard>
-      </div>
-
-      <ChartCard title="Top 10 kampanii wg ROAS" subtitle="Min. spend 100 PLN">
-        <SimpleBarChart data={data.charts.topByRoas} layout="horizontal" barColor={CHART_ACCENT} valueFormatter={v => `${v}x`} height={360} />
+      <ChartCard title="ROAS Trend">
+        <SimpleBarChart data={data.charts.roasTrend} valueFormatter={v => `${v}x`} />
       </ChartCard>
 
-      <ChartCard title="Tabela kampanii">
-        <DataTable data={data.campaignTable} columns={campaignColumns} pageSize={15} />
+      <ChartCard
+        title="Tabela kampanii"
+        subtitle="Klik w nagłówek sortuje · szukajka filtruje po nazwie i sklepie · klik w wiersz otwiera kampanię w drzewie (zestawy + reklamy)"
+      >
+        <DataTable
+          data={data.campaignTable}
+          columns={campaignColumns}
+          pageSize={15}
+          onRowClick={r => onOpenCampaign(r.campaign_name)}
+        />
       </ChartCard>
     </div>
   );
@@ -581,7 +585,7 @@ function SyncMetaButton({ lastSync }: { lastSync: { at: string; rows: number } |
 // Pod-zakładki ad-level: Konta & KPI / Kampanie (drzewo) / Kreacje
 // (fact_daily_ad_performance + dim_campaigns + dim_creatives)
 // ─────────────────────────────────────────────────────────────────
-function AdLevelSection({ view }: { view: 'konta' | 'kampanie' | 'kreacje' }) {
+function AdLevelSection({ view, campaignFocus }: { view: 'konta' | 'kampanie' | 'kreacje'; campaignFocus?: string }) {
   const { filters } = useDashboard();
   const [data, setData] = useState<AdsPayload | null>(null);
   const [loading, setLoading] = useState(true);
@@ -705,6 +709,8 @@ function AdLevelSection({ view }: { view: 'konta' | 'kampanie' | 'kreacje' }) {
         <AccountsSummary data={data} attribution={attribution} />
       ) : view === 'kampanie' ? (
         <CampaignTree
+          key={campaignFocus || 'tree'}
+          initialQuery={campaignFocus}
           data={data}
           dateFrom={filters.dateFrom}
           dateTo={filters.dateTo}
