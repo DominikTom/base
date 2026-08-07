@@ -1,6 +1,7 @@
 'use client';
 
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { useId } from 'react';
 import { formatCompact, CATEGORY_COLORS } from '@/lib/utils';
 import { useChartTheme, CHART_PRIMARY } from '@/lib/chart-theme';
 
@@ -22,11 +23,35 @@ export function SimpleBarChart({
   valueFormatter = formatCompact
 }: SimpleBarChartProps) {
   const chart = useChartTheme();
+  // Unikatowy prefix dla <linearGradient id> — ID musi być unikalne per chart.
+  const uid = useId().replace(/:/g, '');
+
+  const cellColor = (entry: { name: string; color?: string }) =>
+    colorByName ? (CATEGORY_COLORS[entry.name] || entry.color || barColor) : (entry.color || barColor);
+
+  // „Opadający" gradient: pełny kolor u nasady wartości, rozjaśnienie przez
+  // opacity ku końcowi — działa w light i dark bez mieszania z bielą.
+  const uniqueColors = [...new Set(data.map(cellColor))];
+  const gradientId = (color: string) => `bar-grad-${uid}-${color.replace('#', '')}`;
+  const gradDef = (color: string, isHorizontal: boolean) => (
+    <linearGradient
+      key={color}
+      id={gradientId(color)}
+      x1="0"
+      y1="0"
+      x2={isHorizontal ? '1' : '0'}
+      y2={isHorizontal ? '0' : '1'}
+    >
+      <stop offset="0%" stopColor={color} stopOpacity={1} />
+      <stop offset="100%" stopColor={color} stopOpacity={0.35} />
+    </linearGradient>
+  );
 
   if (layout === 'horizontal') {
     return (
       <ResponsiveContainer width="100%" height={height}>
         <BarChart data={data} layout="vertical" margin={{ top: 5, right: 20, bottom: 5, left: 100 }}>
+          <defs>{uniqueColors.map(c => gradDef(c, true))}</defs>
           <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} horizontal={false} />
           <XAxis
             type="number"
@@ -50,10 +75,7 @@ export function SimpleBarChart({
           />
           <Bar dataKey="value" radius={[0, 4, 4, 0]} maxBarSize={24}>
             {data.map((entry, i) => (
-              <Cell
-                key={i}
-                fill={colorByName ? (CATEGORY_COLORS[entry.name] || entry.color || barColor) : (entry.color || barColor)}
-              />
+              <Cell key={i} fill={`url(#${gradientId(cellColor(entry))})`} />
             ))}
           </Bar>
         </BarChart>
@@ -64,6 +86,7 @@ export function SimpleBarChart({
   return (
     <ResponsiveContainer width="100%" height={height}>
       <BarChart data={data} margin={{ top: 5, right: 5, bottom: 5, left: 5 }}>
+        <defs>{uniqueColors.map(c => gradDef(c, false))}</defs>
         <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
         <XAxis
           dataKey="name"
@@ -84,10 +107,7 @@ export function SimpleBarChart({
         />
         <Bar dataKey="value" radius={[4, 4, 0, 0]} maxBarSize={40}>
           {data.map((entry, i) => (
-            <Cell
-              key={i}
-              fill={colorByName ? (CATEGORY_COLORS[entry.name] || entry.color || barColor) : (entry.color || barColor)}
-            />
+            <Cell key={i} fill={`url(#${gradientId(cellColor(entry))})`} />
           ))}
         </Bar>
       </BarChart>

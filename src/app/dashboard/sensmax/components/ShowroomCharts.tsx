@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useId, useMemo, useState } from 'react';
 import { Users } from 'lucide-react';
 import {
   BarChart,
@@ -14,7 +14,7 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import { useDashboard } from '@/lib/dashboard-context';
-import { useChartTheme, CHART_PRIMARY, CHART_SERIES } from '@/lib/chart-theme';
+import { useChartTheme, CHART_PRIMARY, CHART_COLORS } from '@/lib/chart-theme';
 import { ChartCard } from '@/components/charts/chart-card';
 import { KpiCard } from '@/components/ui/kpi-card';
 import { DataTable, type Column } from '@/components/ui/data-table';
@@ -84,6 +84,16 @@ export function ShowroomCharts() {
   const { dateFrom, dateTo } = filters;
   // Chrome wykresów (siatka, osie, tooltip) reagujący na motyw light/dark.
   const chart = useChartTheme();
+  // „Opadający" gradient barów; ID gradientu unikalne per instancja (useId)
+  const uid = useId().replace(/:/g, '');
+  const gradId = (c: string) => `sc-grad-${uid}-${c.replace('#', '')}`;
+  const gradFill = (c: string) => `url(#${gradId(c)})`;
+  const gradDef = (c: string) => (
+    <linearGradient key={c} id={gradId(c)} x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stopColor={c} stopOpacity={1} />
+      <stop offset="100%" stopColor={c} stopOpacity={0.35} />
+    </linearGradient>
+  );
   const axisTick = { fontSize: 10, fill: chart.tick } as const;
 
   const todayIso = useMemo(() => warsawDay(Date.now()), []);
@@ -540,12 +550,13 @@ export function ShowroomCharts() {
             <ChartCard title="Wejścia i zamówienia dziennie" subtitle={`${single!.from} – ${single!.to}`}>
               <ResponsiveContainer width="100%" height={300}>
                 <BarChart data={detailDaily} margin={{ top: 5, right: 5, bottom: 5, left: 5 }}>
+                  <defs>{[SHOWROOM_COLORS[selected], CHART_COLORS.amber].map(gradDef)}</defs>
                   <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
                   <XAxis dataKey="name" tick={axisTick} tickLine={false} axisLine={{ stroke: chart.axis }} interval="preserveStartEnd" minTickGap={20} />
                   <YAxis tick={{ fontSize: 11, fill: chart.tickFaint }} tickLine={false} axisLine={false} allowDecimals={false} />
                   <Tooltip contentStyle={chart.tooltip} labelStyle={chart.tooltipLabel} />
-                  <Bar dataKey="visits" name="wejścia" fill={SHOWROOM_COLORS[selected]} radius={[3, 3, 0, 0]} maxBarSize={28} />
-                  <Bar dataKey="orders" name="zamówienia" fill={CHART_SERIES[3]} radius={[3, 3, 0, 0]} maxBarSize={14} />
+                  <Bar dataKey="visits" name="wejścia" fill={gradFill(SHOWROOM_COLORS[selected])} radius={[3, 3, 0, 0]} maxBarSize={28} />
+                  <Bar dataKey="orders" name="zamówienia" fill={gradFill(CHART_COLORS.amber)} radius={[3, 3, 0, 0]} maxBarSize={14} />
                 </BarChart>
               </ResponsiveContainer>
             </ChartCard>
@@ -553,11 +564,12 @@ export function ShowroomCharts() {
             <ChartCard title="Średni rozkład godzinowy" subtitle={`średnia z okresu ${single!.hourlyFrom} – ${single!.to}`}>
               <ResponsiveContainer width="100%" height={300}>
                 <BarChart data={detailHourlyAvg} margin={{ top: 5, right: 5, bottom: 5, left: 5 }}>
+                  <defs>{[CHART_COLORS.emerald].map(gradDef)}</defs>
                   <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
                   <XAxis dataKey="name" tick={axisTick} tickLine={false} axisLine={{ stroke: chart.axis }} interval={1} />
                   <YAxis tick={{ fontSize: 11, fill: chart.tickFaint }} tickLine={false} axisLine={false} />
                   <Tooltip contentStyle={chart.tooltip} labelStyle={chart.tooltipLabel} />
-                  <Bar dataKey="visits" fill={CHART_SERIES[2]} radius={[3, 3, 0, 0]} maxBarSize={16} />
+                  <Bar dataKey="visits" fill={gradFill(CHART_COLORS.emerald)} radius={[3, 3, 0, 0]} maxBarSize={16} />
                 </BarChart>
               </ResponsiveContainer>
             </ChartCard>

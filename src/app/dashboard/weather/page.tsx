@@ -1,10 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { useDashboard } from '@/lib/dashboard-context';
 import { ChartCard } from '@/components/charts/chart-card';
 import { formatCurrency, formatNumber } from '@/lib/utils';
-import { useChartTheme, CHART_PRIMARY, CHART_SERIES } from '@/lib/chart-theme';
+import { useChartTheme, CHART_PRIMARY, CHART_COLORS } from '@/lib/chart-theme';
 import { WEATHER_METRICS, type WeatherMetricKey } from '@/lib/weather';
 import { CloudRain, Sun, Thermometer, Wind, RefreshCw, Database, Sparkles } from 'lucide-react';
 import {
@@ -57,11 +57,11 @@ interface WeatherResponse {
 // Nakładki pogodowe na główny wykres — każdą można włączyć/wyłączyć
 // niezależnie. Kolory z palety serii, celowo SPOZA indygo (indygo = sprzedaż/bary).
 const OVERLAYS = [
-  { key: 'precip_mm',  label: 'Opady',           unit: 'mm',   color: CHART_SERIES[9] },  // niebieski — woda
-  { key: 'temp_max',   label: 'Temp. max',       unit: '°C',   color: CHART_SERIES[8] },  // czerwony — ciepło
-  { key: 'temp_mean',  label: 'Temp. średnia',   unit: '°C',   color: CHART_SERIES[5] },  // pomarańcz
-  { key: 'sunshine_h', label: 'Nasłonecznienie', unit: 'h',    color: CHART_SERIES[3] },  // bursztyn — słońce
-  { key: 'wind_max',   label: 'Wiatr',           unit: 'km/h', color: CHART_SERIES[7] },  // teal — wiatr
+  { key: 'precip_mm',  label: 'Opady',           unit: 'mm',   color: CHART_COLORS.blue },  // niebieski — woda
+  { key: 'temp_max',   label: 'Temp. max',       unit: '°C',   color: CHART_COLORS.red },  // czerwony — ciepło
+  { key: 'temp_mean',  label: 'Temp. średnia',   unit: '°C',   color: CHART_COLORS.orange },  // pomarańcz
+  { key: 'sunshine_h', label: 'Nasłonecznienie', unit: 'h',    color: CHART_COLORS.amber },  // bursztyn — słońce
+  { key: 'wind_max',   label: 'Wiatr',           unit: 'km/h', color: CHART_COLORS.teal },  // teal — wiatr
 ] as const;
 type OverlayKey = typeof OVERLAYS[number]['key'];
 
@@ -74,6 +74,7 @@ function correlationLabel(r: number): { label: string; color: string } {
 }
 
 export default function WeatherPage() {
+  const uid = useId().replace(/:/g, '');
   const { filters } = useDashboard();
   const chart = useChartTheme();
   const [metric, setMetric] = useState<WeatherMetricKey>('temp_mean');
@@ -341,6 +342,12 @@ export default function WeatherPage() {
           >
             <ResponsiveContainer width="100%" height={380}>
               <ComposedChart data={data.series} margin={{ top: 10, right: 10, bottom: 10, left: 0 }}>
+                <defs>
+                  <linearGradient id={`wx-grad-${uid}`} x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={CHART_PRIMARY} stopOpacity={0.85} />
+                    <stop offset="100%" stopColor={CHART_PRIMARY} stopOpacity={0.25} />
+                  </linearGradient>
+                </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
                 <XAxis dataKey="date" tick={{ fontSize: 11, fill: chart.tick }} tickLine={false} />
                 {/* Lewa oś wspólna dla nakładek pogodowych — wielkości (°C, mm, h)
@@ -351,7 +358,7 @@ export default function WeatherPage() {
                   label={{ value: yLabel, angle: 90, position: 'insideRight', style: { fontSize: 11, fill: chart.tickFaint } }} />
                 <Tooltip contentStyle={chart.tooltip} labelStyle={chart.tooltipLabel} />
                 <Legend wrapperStyle={{ fontSize: 12 }} iconType="circle" />
-                <Bar yAxisId="right" dataKey={yAxis} name={yLabel} fill={CHART_PRIMARY} fillOpacity={0.55} radius={[4, 4, 0, 0]} />
+                <Bar yAxisId="right" dataKey={yAxis} name={yLabel} fill={`url(#wx-grad-${uid})`} radius={[4, 4, 0, 0]} />
                 {OVERLAYS.filter(o => overlays.has(o.key)).map(o => (
                   <Line
                     key={o.key}

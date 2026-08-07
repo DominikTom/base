@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { useChartTheme, CHART_SERIES } from '@/lib/chart-theme';
+import { useChartTheme, CHART_COLORS } from '@/lib/chart-theme';
 import { SHOWROOM_LABELS, SHOWROOM_COLORS, type Showroom } from '@/lib/sensmax/types';
 
 interface Hist {
@@ -188,6 +188,16 @@ export function ReportView({
   const color = SHOWROOM_COLORS[showroom];
   const chart = useChartTheme();
   const axisTick = { fontSize: 10, fill: chart.tick } as const;
+  // „Opadający" gradient barów; ID gradientu unikalne per instancja (useId)
+  const uid = useId().replace(/:/g, '');
+  const gradId = (c: string) => `sr-grad-${uid}-${c.replace('#', '')}`;
+  const gradFill = (c: string) => `url(#${gradId(c)})`;
+  const gradDef = (c: string) => (
+    <linearGradient key={c} id={gradId(c)} x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stopColor={c} stopOpacity={1} />
+      <stop offset="100%" stopColor={c} stopOpacity={0.35} />
+    </linearGradient>
+  );
 
   return (
     <div className="fixed inset-0 z-50 overflow-auto bg-canvas print:static print:overflow-visible print:bg-white">
@@ -246,12 +256,13 @@ export function ReportView({
             <h2 className="mt-7 mb-2 section-title">Wejścia{m.hasSales ? ' i zamówienia' : ''} dziennie</h2>
             <ResponsiveContainer width="100%" height={230}>
               <BarChart data={m.dailyChart} margin={{ top: 4, right: 4, bottom: 4, left: 0 }}>
+                <defs>{[color, CHART_COLORS.amber].map(gradDef)}</defs>
                 <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
                 <XAxis dataKey="name" tick={axisTick} tickLine={false} axisLine={{ stroke: chart.axis }} interval="preserveStartEnd" minTickGap={18} />
                 <YAxis tick={{ fontSize: 11, fill: chart.tickFaint }} tickLine={false} axisLine={false} allowDecimals={false} />
                 <Tooltip contentStyle={chart.tooltip} labelStyle={chart.tooltipLabel} />
-                <Bar dataKey="visits" name="wejścia" fill={color} radius={[3, 3, 0, 0]} maxBarSize={26} />
-                {m.hasSales && <Bar dataKey="orders" name="zamówienia" fill={CHART_SERIES[3]} radius={[3, 3, 0, 0]} maxBarSize={12} />}
+                <Bar dataKey="visits" name="wejścia" fill={gradFill(color)} radius={[3, 3, 0, 0]} maxBarSize={26} />
+                {m.hasSales && <Bar dataKey="orders" name="zamówienia" fill={gradFill(CHART_COLORS.amber)} radius={[3, 3, 0, 0]} maxBarSize={12} />}
               </BarChart>
             </ResponsiveContainer>
 
@@ -261,11 +272,12 @@ export function ReportView({
                 <h2 className="mb-2 section-title">Średni rozkład godzinowy</h2>
                 <ResponsiveContainer width="100%" height={180}>
                   <BarChart data={m.hourly} margin={{ top: 4, right: 4, bottom: 4, left: 0 }}>
+                    <defs>{[CHART_COLORS.emerald].map(gradDef)}</defs>
                     <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
                     <XAxis dataKey="name" tick={axisTick} tickLine={false} axisLine={{ stroke: chart.axis }} interval={2} />
                     <YAxis tick={{ fontSize: 10, fill: chart.tickFaint }} tickLine={false} axisLine={false} />
                     <Tooltip contentStyle={chart.tooltip} labelStyle={chart.tooltipLabel} />
-                    <Bar dataKey="visits" fill={CHART_SERIES[2]} radius={[3, 3, 0, 0]} maxBarSize={12} />
+                    <Bar dataKey="visits" fill={gradFill(CHART_COLORS.emerald)} radius={[3, 3, 0, 0]} maxBarSize={12} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -273,11 +285,12 @@ export function ReportView({
                 <h2 className="mb-2 section-title">Średnio wg dnia tygodnia</h2>
                 <ResponsiveContainer width="100%" height={180}>
                   <BarChart data={m.byWeekday} margin={{ top: 4, right: 4, bottom: 4, left: 0 }}>
+                    <defs>{[color].map(gradDef)}</defs>
                     <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
                     <XAxis dataKey="name" tick={{ fontSize: 11, fill: chart.tick }} tickLine={false} axisLine={{ stroke: chart.axis }} />
                     <YAxis tick={{ fontSize: 10, fill: chart.tickFaint }} tickLine={false} axisLine={false} />
                     <Tooltip contentStyle={chart.tooltip} labelStyle={chart.tooltipLabel} />
-                    <Bar dataKey="visits" fill={color} radius={[3, 3, 0, 0]} maxBarSize={28} />
+                    <Bar dataKey="visits" fill={gradFill(color)} radius={[3, 3, 0, 0]} maxBarSize={28} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>

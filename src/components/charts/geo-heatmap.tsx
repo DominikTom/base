@@ -6,7 +6,7 @@ import L from 'leaflet';
 import 'leaflet.heat';
 import 'leaflet/dist/leaflet.css';
 import { formatCurrency, formatNumber } from '@/lib/utils';
-import { CHART_PRIMARY, CHART_SERIES } from '@/lib/chart-theme';
+import { CHART_PRIMARY, CHART_COLORS } from '@/lib/chart-theme';
 
 // Heatmapa sprzedaży po miastach (PL + DE). Renderuje:
 //   - tile layer OpenStreetMap (bez kluczy)
@@ -55,11 +55,11 @@ function HeatLayer({ points, metric }: { points: GeoPoint[]; metric: Metric }) {
       max: 1.0,
       // Gradient ciepła z palety serii design systemu (zimno → gorąco).
       gradient: {
-        0.0: CHART_SERIES[9],  // niebieski (cold)
-        0.3: CHART_SERIES[2],  // szmaragdowy
-        0.55: CHART_SERIES[3], // bursztynowy
-        0.75: CHART_SERIES[5], // pomarańczowy
-        1.0: CHART_SERIES[8],  // czerwony (hot)
+        0.0: CHART_COLORS.blue,  // niebieski (cold)
+        0.3: CHART_COLORS.emerald,  // szmaragdowy
+        0.55: CHART_COLORS.amber, // bursztynowy
+        0.75: CHART_COLORS.orange, // pomarańczowy
+        1.0: CHART_COLORS.red,  // czerwony (hot)
       },
     });
     layer.addTo(map);

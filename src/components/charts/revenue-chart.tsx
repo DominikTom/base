@@ -1,6 +1,7 @@
 'use client';
 
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+import { useId } from 'react';
 import { SHOP_COLORS, formatCompact } from '@/lib/utils';
 import { useChartTheme } from '@/lib/chart-theme';
 
@@ -12,9 +13,24 @@ interface RevenueChartProps {
 
 export function RevenueChart({ data, shops, stacked = false }: RevenueChartProps) {
   const chart = useChartTheme();
+  // Unikatowy prefix dla <linearGradient id> — ID musi być unikalne per chart.
+  const uid = useId().replace(/:/g, '');
+
+  const shopColor = (shop: string) => SHOP_COLORS[shop] || chart.tickFaint;
+  const gradientId = (shop: string) => `rev-grad-${uid}-${shop.replace(/[^a-z0-9]/gi, '')}`;
+
   return (
     <ResponsiveContainer width="100%" height={320}>
       <AreaChart data={data} margin={{ top: 5, right: 5, bottom: 5, left: 5 }}>
+        <defs>
+          {/* „Opadający" gradient wypełnienia — pełniejszy przy linii, zanika ku osi */}
+          {shops.map(shop => (
+            <linearGradient key={shop} id={gradientId(shop)} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={shopColor(shop)} stopOpacity={stacked ? 0.55 : 0.28} />
+              <stop offset="100%" stopColor={shopColor(shop)} stopOpacity={stacked ? 0.12 : 0.02} />
+            </linearGradient>
+          ))}
+        </defs>
         <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
         <XAxis
           dataKey="date"
@@ -45,9 +61,8 @@ export function RevenueChart({ data, shops, stacked = false }: RevenueChartProps
             dataKey={shop}
             name={shop}
             stackId={stacked ? 'stack' : undefined}
-            stroke={SHOP_COLORS[shop] || chart.tickFaint}
-            fill={SHOP_COLORS[shop] || chart.tickFaint}
-            fillOpacity={stacked ? 0.6 : 0.1}
+            stroke={shopColor(shop)}
+            fill={`url(#${gradientId(shop)})`}
             strokeWidth={2}
           />
         ))}

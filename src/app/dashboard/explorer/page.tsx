@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { useDashboard } from '@/lib/dashboard-context';
 import { shopFilterToList } from '@/lib/shop-filter';
 import { ChartCard } from '@/components/charts/chart-card';
@@ -60,6 +60,19 @@ interface ExplorerResult {
 export default function ExplorerPage() {
   const { filters } = useDashboard();
   const chart = useChartTheme();
+  // „Opadający" gradient serii; ID gradientu unikalne per instancja (useId)
+  const uid = useId().replace(/:/g, '');
+  const gradId = (c: string) => `ex-grad-${uid}-${c.replace('#', '')}`;
+  const gradDefs = (colors: string[], from: number, to: number) => (
+    <defs>
+      {[...new Set(colors)].map(c => (
+        <linearGradient key={c} id={gradId(c)} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={c} stopOpacity={from} />
+          <stop offset="100%" stopColor={c} stopOpacity={to} />
+        </linearGradient>
+      ))}
+    </defs>
+  );
   const [xAxis, setXAxis] = useState('date');
   const [yAxis, setYAxis] = useState('revenue_gross');
   const [groupBy, setGroupBy] = useState('');
@@ -152,13 +165,14 @@ export default function ExplorerPage() {
       return (
         <ResponsiveContainer width="100%" height={400}>
           <AreaChart data={result.data} margin={{ top: 5, right: 20, bottom: 5, left: 5 }}>
+            {gradDefs(groups.map((g, i) => COLORS[i % COLORS.length]), 0.55, 0.12)}
             <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
             <XAxis dataKey="x" tick={{ fontSize: 11, fill: chart.tick }} tickLine={false} axisLine={{ stroke: chart.axis }} />
             <YAxis tick={{ fontSize: 11, fill: chart.tickFaint }} tickLine={false} axisLine={false} />
             <Tooltip contentStyle={chart.tooltip} labelStyle={chart.tooltipLabel} />
             <Legend />
             {groups.map((g, i) => (
-              <Area key={g} type="monotone" dataKey={g} name={g} stackId="stack" stroke={COLORS[i % COLORS.length]} fill={COLORS[i % COLORS.length]} fillOpacity={0.6} strokeWidth={2} />
+              <Area key={g} type="monotone" dataKey={g} name={g} stackId="stack" stroke={COLORS[i % COLORS.length]} fill={`url(#${gradId(COLORS[i % COLORS.length])})`} strokeWidth={2} />
             ))}
           </AreaChart>
         </ResponsiveContainer>
@@ -169,13 +183,14 @@ export default function ExplorerPage() {
     return (
       <ResponsiveContainer width="100%" height={400}>
         <BarChart data={result.data} margin={{ top: 5, right: 20, bottom: 5, left: 5 }}>
+          {gradDefs(groups.map((g, i) => COLORS[i % COLORS.length]), 1, 0.35)}
           <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
           <XAxis dataKey="x" tick={{ fontSize: 11, fill: chart.tick }} tickLine={false} axisLine={{ stroke: chart.axis }} />
           <YAxis tick={{ fontSize: 11, fill: chart.tickFaint }} tickLine={false} axisLine={false} />
           <Tooltip contentStyle={chart.tooltip} labelStyle={chart.tooltipLabel} />
           <Legend />
           {groups.map((g, i) => (
-            <Bar key={g} dataKey={g} name={g} stackId={groupBy ? 'stack' : undefined} fill={COLORS[i % COLORS.length]} radius={[2, 2, 0, 0]} />
+            <Bar key={g} dataKey={g} name={g} stackId={groupBy ? 'stack' : undefined} fill={`url(#${gradId(COLORS[i % COLORS.length])})`} radius={[2, 2, 0, 0]} />
           ))}
         </BarChart>
       </ResponsiveContainer>

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import Link from 'next/link';
 import {
   BarChart, Bar, LineChart, Line, AreaChart, Area, PieChart, Pie, Cell,
@@ -97,6 +97,19 @@ export function ArtifactRenderer({ artifact }: { artifact: Artifact }) {
 function ChartArtifact({ artifact }: { artifact: Extract<Artifact, { type: 'chart' }> }) {
   const { chart_type, x_key, series, data, title, query_spec } = artifact;
   const chart = useChartTheme();
+  // „Opadający" gradient serii; ID gradientu unikalne per instancja (useId)
+  const uid = useId().replace(/:/g, '');
+  const gradId = (c: string) => `ar-grad-${uid}-${c.replace('#', '')}`;
+  const gradDefs = (colors: string[], from: number, to: number) => (
+    <defs>
+      {[...new Set(colors)].map(c => (
+        <linearGradient key={c} id={gradId(c)} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={c} stopOpacity={from} />
+          <stop offset="100%" stopColor={c} stopOpacity={to} />
+        </linearGradient>
+      ))}
+    </defs>
+  );
   const xTick = { fontSize: 11, fill: chart.tick };
   const yTick = { fontSize: 11, fill: chart.tickFaint };
   const [mode, setMode] = useState<'idle' | 'form' | 'saving' | 'saved'>('idle');
@@ -197,24 +210,26 @@ function ChartArtifact({ artifact }: { artifact: Extract<Artifact, { type: 'char
           </LineChart>
         ) : chart_type === 'area' ? (
           <AreaChart data={data} margin={{ top: 5, right: 20, bottom: 5, left: 5 }}>
+            {gradDefs(series.map((s, i) => COLORS[i % COLORS.length]), 0.5, 0.1)}
             <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
             <XAxis dataKey={x_key} tick={xTick} tickLine={false} axisLine={{ stroke: chart.axis }} />
             <YAxis tick={yTick} tickLine={false} axisLine={false} />
             <Tooltip contentStyle={chart.tooltip} labelStyle={chart.tooltipLabel} />
             <Legend wrapperStyle={{ fontSize: 11 }} />
             {series.map((s, i) => (
-              <Area key={s} type="monotone" dataKey={s} stackId="s" stroke={COLORS[i % COLORS.length]} fill={COLORS[i % COLORS.length]} fillOpacity={0.5} strokeWidth={2} />
+              <Area key={s} type="monotone" dataKey={s} stackId="s" stroke={COLORS[i % COLORS.length]} fill={`url(#${gradId(COLORS[i % COLORS.length])})`} strokeWidth={2} />
             ))}
           </AreaChart>
         ) : (
           <BarChart data={data} margin={{ top: 5, right: 20, bottom: 5, left: 5 }}>
+            {gradDefs(series.map((s, i) => COLORS[i % COLORS.length]), 1, 0.35)}
             <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
             <XAxis dataKey={x_key} tick={xTick} tickLine={false} axisLine={{ stroke: chart.axis }} />
             <YAxis tick={yTick} tickLine={false} axisLine={false} />
             <Tooltip contentStyle={chart.tooltip} labelStyle={chart.tooltipLabel} />
             <Legend wrapperStyle={{ fontSize: 11 }} />
             {series.map((s, i) => (
-              <Bar key={s} dataKey={s} fill={COLORS[i % COLORS.length]} radius={[2, 2, 0, 0]} />
+              <Bar key={s} dataKey={s} fill={`url(#${gradId(COLORS[i % COLORS.length])})`} radius={[2, 2, 0, 0]} />
             ))}
           </BarChart>
         )}

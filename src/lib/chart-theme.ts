@@ -56,11 +56,36 @@ export function useChartTheme() {
   return useIsDark() ? DARK : LIGHT;
 }
 
-// Kolory serii danych — odcienie 500 z rodzin statusowych palety,
-// wspólne dla obu motywów.
+// Kolory serii danych — primary/accent + odcienie 500 z rodzin
+// statusowych palety, wspólne dla obu motywów.
 export const CHART_PRIMARY = '#4F46E5';
 export const CHART_ACCENT = '#06B6D4';
+
+// Nazwane kolory serii — do semantycznych przypisań (np. opady = blue).
+export const CHART_COLORS = {
+  indigo: '#4F46E5',
+  cyan: '#06B6D4',
+  violet: '#8B5CF6',
+  sky: '#0EA5E9',
+  teal: '#14B8A6',
+  emerald: '#10B981',
+  amber: '#F59E0B',
+  orange: '#F97316',
+  red: '#EF4444',
+  blue: '#3B82F6',
+} as const;
+
+// Kolejność serii: najpierw chłodna gama indygo→cyjan (charakter Auralis),
+// ciepłe kolory dopiero gdy serii jest naprawdę dużo.
 export const CHART_SERIES = [
-  '#6366F1', '#06B6D4', '#10B981', '#F59E0B', '#8B5CF6',
-  '#F97316', '#0EA5E9', '#14B8A6', '#EF4444', '#3B82F6',
+  CHART_COLORS.indigo,
+  CHART_COLORS.cyan,
+  CHART_COLORS.violet,
+  CHART_COLORS.sky,
+  CHART_COLORS.teal,
+  CHART_COLORS.emerald,
+  CHART_COLORS.amber,
+  CHART_COLORS.orange,
+  CHART_COLORS.red,
+  CHART_COLORS.blue,
 ];

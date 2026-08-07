@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useDashboard } from '@/lib/dashboard-context';
 import { shopFilterToList } from '@/lib/shop-filter';
@@ -270,6 +270,8 @@ function WidgetContent({ type, data, onItemClick, activeValues, prevValue }: {
   prevValue: number | null;
 }) {
   const chart = useChartTheme();
+  // Unikatowy prefix dla <linearGradient id> — ID musi być unikalne per widget.
+  const uid = useId().replace(/:/g, '');
   const clickable = !!WIDGET_CLICK_FIELD[type];
 
   // Pivot
@@ -374,13 +376,22 @@ function WidgetContent({ type, data, onItemClick, activeValues, prevValue }: {
     return (
       <ResponsiveContainer width="100%" height="100%">
         <AreaChart data={data.data || []} margin={{ top: 5, right: 5, bottom: 5, left: 5 }}>
+          <defs>
+            {/* „Opadający" gradient wypełnienia — pełniejszy przy linii, zanika ku osi */}
+            {shops.map(s => (
+              <linearGradient key={s} id={`wg-${uid}-${s.replace(/[^a-z0-9]/gi, '')}`} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={SHOP_COLORS[s] || chart.tickFaint} stopOpacity={0.55} />
+                <stop offset="100%" stopColor={SHOP_COLORS[s] || chart.tickFaint} stopOpacity={0.12} />
+              </linearGradient>
+            ))}
+          </defs>
           <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
           <XAxis dataKey="date" tick={{ fontSize: 10, fill: chart.tickFaint }} tickLine={false} />
           <YAxis tick={{ fontSize: 10, fill: chart.tickFaint }} tickLine={false} axisLine={false} />
           <Tooltip contentStyle={{ ...chart.tooltip, fontSize: '11px' }} labelStyle={chart.tooltipLabel} />
           <Legend wrapperStyle={{ fontSize: '10px' }} iconType="circle" iconSize={6} />
           {shops.map(s => (
-            <Area key={s} type="monotone" dataKey={s} stackId="stack" stroke={SHOP_COLORS[s] || chart.tickFaint} fill={SHOP_COLORS[s] || chart.tickFaint} fillOpacity={0.6} strokeWidth={2} />
+            <Area key={s} type="monotone" dataKey={s} stackId="stack" stroke={SHOP_COLORS[s] || chart.tickFaint} fill={`url(#wg-${uid}-${s.replace(/[^a-z0-9]/gi, '')})`} strokeWidth={2} />
           ))}
         </AreaChart>
       </ResponsiveContainer>

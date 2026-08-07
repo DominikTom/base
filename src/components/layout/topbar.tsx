@@ -105,7 +105,7 @@ export function Topbar() {
         })}
       </div>
 
-      <ThemeToggle className="ml-auto" />
+      <ThemeToggle variant="segmented" className="ml-auto" />
     </header>
   );
 }

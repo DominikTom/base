@@ -62,10 +62,11 @@ export function InsightsCard() {
 
   return (
     <div className="card relative overflow-hidden p-6">
-      {/* Subtle gradient blob */}
+      {/* Subtelna poświata primary — jak app-ambient, działa w obu motywach */}
       <div
         aria-hidden
-        className="pointer-events-none absolute -top-24 -right-24 w-96 h-96 rounded-full bg-primary-soft opacity-60 blur-3xl"
+        className="pointer-events-none absolute -top-24 -right-24 h-96 w-96 rounded-full"
+        style={{ background: 'radial-gradient(circle at center, rgb(var(--primary) / 0.14) 0%, rgb(var(--primary) / 0.05) 50%, transparent 75%)' }}
       />
 
       <div className="relative flex items-start justify-between gap-4 mb-5">

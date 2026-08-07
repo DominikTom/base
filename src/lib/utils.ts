@@ -66,25 +66,25 @@ export function getDateRange(preset: string): { from: string; to: string } {
 // design systemu (wspólne dla light/dark). Recharts nie czyta zmiennych
 // CSS w atrybutach SVG, stąd wartości zebrane tutaj, w jednym miejscu.
 export const SHOP_COLORS: Record<string, string> = {
-  'mybed.pl':     '#6366F1',  // indigo — główny sklep
-  'mybed.de':     '#F59E0B',  // amber
-  'mittohome.pl': '#10B981',  // emerald
-  'showroom':     '#8B5CF6',  // violet
-  'amazon.de':    '#F97316',  // orange
-  'allegro.pl':   '#EF4444',  // red
-  'kaufland.de':  '#06B6D4',  // cyan
+  'mybed.pl':     '#4F46E5',  // indygo (primary) — główny sklep
+  'mybed.de':     '#06B6D4',  // cyjan (accent)
+  'mittohome.pl': '#8B5CF6',  // violet
+  'showroom':     '#14B8A6',  // teal
+  'amazon.de':    '#F59E0B',  // amber
+  'allegro.pl':   '#F97316',  // orange
+  'kaufland.de':  '#0EA5E9',  // sky
 };
 
 export const CATEGORY_COLORS: Record<string, string> = {
-  'łóżko':      '#6366F1',  // indigo
-  'materac':    '#10B981',  // emerald
-  'kołdra':     '#F59E0B',  // amber
-  'poduszka':   '#8B5CF6',  // violet
-  'sofa':       '#EF4444',  // red
-  'fotel':      '#F97316',  // orange
-  'pufa':       '#06B6D4',  // cyan
-  'meble':      '#3B82F6',  // blue
-  'koc':        '#0EA5E9',  // sky
-  'dekoracje':  '#14B8A6',  // teal
+  'łóżko':      '#4F46E5',  // indygo (primary)
+  'materac':    '#06B6D4',  // cyjan (accent)
+  'kołdra':     '#8B5CF6',  // violet
+  'poduszka':   '#0EA5E9',  // sky
+  'sofa':       '#14B8A6',  // teal
+  'fotel':      '#F59E0B',  // amber
+  'pufa':       '#F97316',  // orange
+  'meble':      '#10B981',  // emerald
+  'koc':        '#3B82F6',  // blue
+  'dekoracje':  '#EF4444',  // red
   'inne':       '#6B7280',  // gray
 };

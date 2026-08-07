@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { useDashboard } from '@/lib/dashboard-context';
 import { shopFilterToList, shopFilterLabel } from '@/lib/shop-filter';
 import { KpiCard } from '@/components/ui/kpi-card';
@@ -52,6 +52,10 @@ interface TrafficData {
 export default function TrafficPage() {
   const { filters } = useDashboard();
   const chart = useChartTheme();
+  // „Opadający" gradient serii; ID gradientu unikalne per instancja (useId)
+  const uid = useId().replace(/:/g, '');
+  const hostColor = (i: number) => Object.values(SHOP_COLORS)[i] || CHART_SERIES[i % CHART_SERIES.length];
+  const gradId = (c: string) => `tr-grad-${uid}-${c.replace('#', '')}`;
   const [data, setData] = useState<TrafficData | null>(null);
   const [prevKpis, setPrevKpis] = useState<TrafficData['kpis'] | null>(null);
   const [loading, setLoading] = useState(true);
@@ -232,6 +236,14 @@ export default function TrafficPage() {
       <ChartCard title="Sesje w czasie" subtitle="Podział na hostname">
         <ResponsiveContainer width="100%" height={320}>
           <AreaChart data={data.charts.sessionsTimeSeries} margin={{ top: 5, right: 5, bottom: 5, left: 5 }}>
+            <defs>
+              {[...new Set(data.hostnames.map((_, i) => hostColor(i)))].map(c => (
+                <linearGradient key={c} id={gradId(c)} x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={c} stopOpacity={0.55} />
+                  <stop offset="100%" stopColor={c} stopOpacity={0.12} />
+                </linearGradient>
+              ))}
+            </defs>
             <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
             <XAxis dataKey="date" tick={{ fontSize: 11, fill: chart.tick }} tickLine={false} />
             <YAxis tick={{ fontSize: 11, fill: chart.tickFaint }} tickLine={false} axisLine={false} />
@@ -244,9 +256,8 @@ export default function TrafficPage() {
                 dataKey={host}
                 name={host}
                 stackId="stack"
-                stroke={Object.values(SHOP_COLORS)[i] || CHART_SERIES[i % CHART_SERIES.length]}
-                fill={Object.values(SHOP_COLORS)[i] || CHART_SERIES[i % CHART_SERIES.length]}
-                fillOpacity={0.6}
+                stroke={hostColor(i)}
+                fill={`url(#${gradId(hostColor(i))})`}
                 strokeWidth={2}
               />
             ))}
