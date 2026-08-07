@@ -23,8 +23,8 @@ export default async function PublicShowroomReportPage({
 
   if (!valid) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-zinc-100 p-6 text-zinc-700">
-        <div className="max-w-md rounded-lg border border-zinc-300 bg-white p-6 text-center text-sm">
+      <div className="flex min-h-screen items-center justify-center bg-canvas p-6 text-ink-soft">
+        <div className="card max-w-md p-6 text-center text-sm">
           Link do raportu jest nieprawidłowy. Poproś o nowy link osobę, która go wygenerowała.
         </div>
       </div>

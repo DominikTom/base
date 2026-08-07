@@ -62,26 +62,29 @@ export function getDateRange(preset: string): { from: string; to: string } {
 
 // Palety serii — odcienie primary (fiolet). Sklepy/kategorie zachowują
 // własne kolory (ich identyfikacja), ale teraz w spójnej rodzinie.
+// Kolory serii danych na wykresach — odcienie 500 z rodzin statusowych
+// design systemu (wspólne dla light/dark). Recharts nie czyta zmiennych
+// CSS w atrybutach SVG, stąd wartości zebrane tutaj, w jednym miejscu.
 export const SHOP_COLORS: Record<string, string> = {
-  'mybed.pl':     '#7E22CE',  // primary-700 — główny sklep
-  'mybed.de':     '#A855F7',  // primary-500
-  'mittohome.pl': '#C084FC',  // primary-400
-  'showroom':    '#581C87',  // primary-900 — głęboki
-  'amazon.de':   '#9333EA',  // primary-600
-  'allegro.pl':  '#D8B4FE',  // primary-300
-  'kaufland.de': '#6B21A8',  // primary-800
+  'mybed.pl':     '#6366F1',  // indigo — główny sklep
+  'mybed.de':     '#F59E0B',  // amber
+  'mittohome.pl': '#10B981',  // emerald
+  'showroom':     '#8B5CF6',  // violet
+  'amazon.de':    '#F97316',  // orange
+  'allegro.pl':   '#EF4444',  // red
+  'kaufland.de':  '#06B6D4',  // cyan
 };
 
 export const CATEGORY_COLORS: Record<string, string> = {
-  'łóżko':      '#7E22CE',  // primary-700 — flagship
-  'materac':    '#A855F7',  // primary-500
-  'kołdra':     '#C084FC',  // primary-400
-  'poduszka':   '#D8B4FE',  // primary-300
-  'sofa':       '#9333EA',  // primary-600
-  'fotel':      '#6B21A8',  // primary-800
-  'pufa':       '#581C87',  // primary-900
-  'meble':      '#E9D5FF',  // primary-200
-  'koc':        '#F3E8FF',  // primary-100
-  'dekoracje':  '#7C3AED',  // accent fiolet
-  'inne':       '#0F1310',  // czarny akcent dla „inne"
+  'łóżko':      '#6366F1',  // indigo
+  'materac':    '#10B981',  // emerald
+  'kołdra':     '#F59E0B',  // amber
+  'poduszka':   '#8B5CF6',  // violet
+  'sofa':       '#EF4444',  // red
+  'fotel':      '#F97316',  // orange
+  'pufa':       '#06B6D4',  // cyan
+  'meble':      '#3B82F6',  // blue
+  'koc':        '#0EA5E9',  // sky
+  'dekoracje':  '#14B8A6',  // teal
+  'inne':       '#6B7280',  // gray
 };
