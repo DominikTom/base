@@ -3,21 +3,23 @@
 import { useState } from 'react';
 import { X, NotebookPen } from 'lucide-react';
 import { FUNNEL_STAGES } from '@/lib/marketing-constants';
-import type { CampaignRow } from './types';
+import { TagInput } from './tag-input';
+import type { CampaignRow, CampaignMetaFields } from './types';
 
 // Edytor pól manualnych kampanii: cel wewnętrzny (np. „test kreacji",
-// „feedowanie bazy kontaktów"), etap lejka i krótka notatka.
+// „feedowanie bazy kontaktów"), etap lejka, własne tagi i krótka notatka.
 // Pola z Meta API (objective, status) nadpisuje wyłącznie ETL.
 export function CampaignMetaEditor({
   campaign, onClose, onSaved,
 }: {
   campaign: CampaignRow;
   onClose: () => void;
-  onSaved: (fields: { purpose: string | null; funnelStage: string | null; notes: string | null }) => void;
+  onSaved: (fields: CampaignMetaFields) => void;
 }) {
   const [purpose, setPurpose] = useState(campaign.purpose || '');
   const [funnelStage, setFunnelStage] = useState(campaign.funnelStage || '');
   const [notes, setNotes] = useState(campaign.notes || '');
+  const [tags, setTags] = useState<string[]>(campaign.tags || []);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -34,6 +36,7 @@ export function CampaignMetaEditor({
           purpose: purpose.trim() || null,
           funnel_stage: funnelStage || null,
           notes: notes.trim() || null,
+          tags,
         }),
       });
       const json = await res.json();
@@ -42,6 +45,7 @@ export function CampaignMetaEditor({
         purpose: purpose.trim() || null,
         funnelStage: funnelStage || null,
         notes: notes.trim() || null,
+        tags,
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -87,6 +91,10 @@ export function CampaignMetaEditor({
               {FUNNEL_STAGES.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
           </label>
+          <div>
+            <span className="text-xs text-fg-soft">Tagi (Enter dodaje; filtrujesz po nich listę kampanii)</span>
+            <TagInput tags={tags} onChange={setTags} />
+          </div>
           <label className="block">
             <span className="text-xs text-fg-soft">Krótka notatka</span>
             <textarea

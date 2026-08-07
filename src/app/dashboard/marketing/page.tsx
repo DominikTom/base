@@ -603,7 +603,7 @@ function AdLevelSection({ view }: { view: 'konta' | 'kampanie' | 'kreacje' }) {
 
   const handleCampaignMetaSaved = (
     campaignId: string,
-    fields: { purpose: string | null; funnelStage: string | null; notes: string | null }
+    fields: { purpose: string | null; funnelStage: string | null; notes: string | null; tags: string[] }
   ) => {
     setData(prev => prev
       ? {
@@ -611,6 +611,31 @@ function AdLevelSection({ view }: { view: 'konta' | 'kampanie' | 'kreacje' }) {
           campaigns: prev.campaigns.map(c =>
             c.campaignId === campaignId ? { ...c, ...fields } : c
           ),
+        }
+      : prev);
+  };
+
+  // Zapis tagów/notatki kreacji z modalu — aktualizuje wszystkie reklamy tej
+  // kreacji. Unia tagów dostaje nowe manualne od ręki; tagi usunięte znikną
+  // z unii przy następnym fetchu (klient nie zna osobno tagów auto/AI).
+  const handleCreativeSaved = (
+    creativeId: string,
+    fields: { manualTags: string[]; manualNotes: string | null }
+  ) => {
+    setData(prev => prev
+      ? {
+          ...prev,
+          ads: prev.ads.map(a => a.creativeId === creativeId && a.creative
+            ? {
+                ...a,
+                creative: {
+                  ...a.creative,
+                  manualTags: fields.manualTags,
+                  manualNotes: fields.manualNotes,
+                  tags: Array.from(new Set([...a.creative.tags, ...fields.manualTags])),
+                },
+              }
+            : a),
         }
       : prev);
   };
@@ -637,6 +662,26 @@ function AdLevelSection({ view }: { view: 'konta' | 'kampanie' | 'kreacje' }) {
         <SyncAdsButton onDone={() => setReloadKey(k => k + 1)} />
       </div>
 
+      {/* Ostrzeżenie o niepełnych danych — bez tego dziura po rate limicie
+          wygląda jak "te same liczby dla 7 i 30 dni" i podważa zaufanie */}
+      {!loading && data && data.dataQuality?.some(dq => !dq.complete) && (
+        <div className="rounded-card border border-amber-300 bg-amber-50 px-4 py-3">
+          <p className="text-sm font-medium text-amber-800">Niekompletne dane ad-level w wybranym zakresie</p>
+          <ul className="mt-1 space-y-0.5">
+            {data.dataQuality.filter(dq => !dq.complete).map(dq => (
+              <li key={dq.accountId} className="text-xs text-amber-700">
+                <span className="font-medium">{dq.shop}</span>: {dq.daysCovered} z {dq.expectedDays} dni
+                {dq.lastDate ? <> · dane do <span className="font-medium">{dq.lastDate}</span></> : ' · brak danych'}
+              </li>
+            ))}
+          </ul>
+          <p className="text-xs text-amber-700 mt-1.5">
+            Sumy i porównania obejmują tylko dostępne dni. Kliknij „Sync ad-level” z zakresem
+            pokrywającym brakujące daty — istniejące dane są bezpieczne.
+          </p>
+        </div>
+      )}
+
       {loading ? (
         <PanelLoading />
       ) : !data || data.ads.length === 0 ? (
@@ -657,6 +702,7 @@ function AdLevelSection({ view }: { view: 'konta' | 'kampanie' | 'kreacje' }) {
           attribution={attribution}
           onAttributionChange={setAttribution}
           onMetaSaved={handleCampaignMetaSaved}
+          onCreativeSaved={handleCreativeSaved}
         />
       ) : (
         <CreativesTab
@@ -666,6 +712,7 @@ function AdLevelSection({ view }: { view: 'konta' | 'kampanie' | 'kreacje' }) {
           shop={filters.shop}
           attribution={attribution}
           onAttributionChange={setAttribution}
+          onCreativeSaved={handleCreativeSaved}
         />
       )}
     </div>

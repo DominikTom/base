@@ -19,16 +19,39 @@ interface CreativesTabProps {
   shop: string;
   attribution: AttributionWindow;
   onAttributionChange: (w: AttributionWindow) => void;
+  onCreativeSaved?: (creativeId: string, fields: { manualTags: string[]; manualNotes: string | null }) => void;
 }
 
 // Zakładka Kreacje: Top 10 statycznych i Top 10 wideo (jak w narzędziu
 // agencji) + pełna tabela reklam. Klik w kreację otwiera modal z podglądem
 // na żywo (iframe Meta → wideo HD → obraz).
 export function CreativesTab({
-  data, dateFrom, dateTo, shop, attribution, onAttributionChange,
+  data, dateFrom, dateTo, shop, attribution, onAttributionChange, onCreativeSaved,
 }: CreativesTabProps) {
   const [sortKey, setSortKey] = useState<SortKey>('roas');
+  const [tagFilter, setTagFilter] = useState('');
   const [selected, setSelected] = useState<AdRow | null>(null);
+
+  // Tag pasuje, gdy nosi go kreacja (auto/AI/manualny) LUB kampania nadrzędna —
+  // Kamila taguje kampanię "test kreacji" i widzi tu wszystkie jej reklamy.
+  const campaignTags = useMemo(
+    () => new Map(data.campaigns.map(c => [c.campaignId, c.tags])),
+    [data.campaigns]
+  );
+  const allTags = useMemo(() => {
+    const set = new Set<string>();
+    for (const a of data.ads) for (const t of a.creative?.tags || []) set.add(t);
+    for (const c of data.campaigns) for (const t of c.tags) set.add(t);
+    return Array.from(set).sort((a, b) => a.localeCompare(b, 'pl'));
+  }, [data.ads, data.campaigns]);
+
+  const filteredAds = useMemo(() => {
+    if (!tagFilter) return data.ads;
+    return data.ads.filter(a =>
+      (a.creative?.tags || []).includes(tagFilter) ||
+      (campaignTags.get(a.campaignId) || []).includes(tagFilter)
+    );
+  }, [data.ads, tagFilter, campaignTags]);
 
   const { topStatic, topVideo } = useMemo(() => {
     const sorter = (a: AdRow, b: AdRow) => {
@@ -37,12 +60,12 @@ export function CreativesTab({
       const bb = attributed(b, attribution);
       return sortKey === 'roas' ? bb.roas - aa.roas : bb.purchases - aa.purchases;
     };
-    const withSpend = data.ads.filter(a => a.spend > 0);
+    const withSpend = filteredAds.filter(a => a.spend > 0);
     return {
       topStatic: withSpend.filter(a => a.creative?.format !== 'video').sort(sorter).slice(0, 10),
       topVideo: withSpend.filter(a => a.creative?.format === 'video').sort(sorter).slice(0, 10),
     };
-  }, [data.ads, sortKey, attribution]);
+  }, [filteredAds, sortKey, attribution]);
 
   const tableColumns: Column<AdRow>[] = [
     { key: 'adName', header: 'Reklama', accessor: r => r.adName, className: 'max-w-[260px] truncate' },
@@ -79,7 +102,20 @@ export function CreativesTab({
             <option value="purchases">Zakupy</option>
           </select>
         </label>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
+          {allTags.length > 0 && (
+            <label className="flex items-center gap-2 text-xs text-muted">
+              Tag:
+              <select
+                value={tagFilter}
+                onChange={e => setTagFilter(e.target.value)}
+                className="bg-bg text-fg text-xs rounded-lg px-2 py-1.5 border border-line max-w-[160px]"
+              >
+                <option value="">wszystkie</option>
+                {allTags.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </label>
+          )}
           <AttributionSelect value={attribution} onChange={onAttributionChange} />
           <ExportCsvButton scope="ads" dateFrom={dateFrom} dateTo={dateTo} shop={shop} />
         </div>
@@ -106,9 +142,9 @@ export function CreativesTab({
       {/* Pełna tabela reklam */}
       <div className="rounded-card border border-line bg-surface p-4 shadow-card">
         <h3 className="text-sm font-medium text-fg mb-3">
-          Wszystkie reklamy <span className="text-muted font-normal">· klik = podgląd kreacji</span>
+          Wszystkie reklamy <span className="text-muted font-normal">· klik = podgląd kreacji{tagFilter ? ` · filtr: ${tagFilter}` : ''}</span>
         </h3>
-        <DataTable data={data.ads} columns={tableColumns} pageSize={15} onRowClick={setSelected} />
+        <DataTable data={filteredAds} columns={tableColumns} pageSize={15} onRowClick={setSelected} />
       </div>
 
       {selected && (
@@ -119,6 +155,7 @@ export function CreativesTab({
           dateTo={dateTo}
           attribution={attribution}
           onClose={() => setSelected(null)}
+          onCreativeSaved={onCreativeSaved}
         />
       )}
     </div>

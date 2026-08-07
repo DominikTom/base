@@ -13,6 +13,19 @@ export const SHOP_TO_META_ACCOUNT: Record<string, string> = {
 export const FUNNEL_STAGES = ['TOFU', 'MOFU', 'BOFU', 'Retargeting', 'Retencja'] as const;
 export type FunnelStage = (typeof FUNNEL_STAGES)[number];
 
+// Walidacja własnych tagów (kampanie i kreacje): tablica krótkich stringów,
+// trim + dedup, max 15 tagów po 40 znaków. Zwraca null gdy wejście złe.
+export function sanitizeTags(input: unknown): string[] | null {
+  if (input === null || input === undefined) return [];
+  if (!Array.isArray(input)) return null;
+  if (input.some(t => typeof t !== 'string')) return null;
+  const cleaned = Array.from(new Set(
+    (input as string[]).map(t => t.trim()).filter(Boolean)
+  ));
+  if (cleaned.length > 15 || cleaned.some(t => t.length > 40)) return null;
+  return cleaned;
+}
+
 export const ATTRIBUTION_WINDOWS = [
   { value: 'default', label: 'Domyślna (konto)' },
   { value: '1d_click', label: '1 dzień klik' },

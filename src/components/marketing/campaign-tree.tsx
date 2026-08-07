@@ -3,12 +3,15 @@
 import { useMemo, useState } from 'react';
 import { ChevronRight, ChevronDown, Pencil, Download, Search, StickyNote } from 'lucide-react';
 import { cn, formatCurrency, formatNumber } from '@/lib/utils';
-import { OBJECTIVE_LABELS, type AttributionWindow } from '@/lib/marketing-constants';
+import { FUNNEL_STAGES, OBJECTIVE_LABELS, type AttributionWindow } from '@/lib/marketing-constants';
 import { AttributionSelect } from './controls';
 import { CreativeThumb } from './creative-thumb';
 import { AdPreviewModal } from './ad-preview-modal';
 import { CampaignMetaEditor } from './campaign-meta-editor';
-import { attributed, type AdsPayload, type CampaignRow, type AdsetRow, type AdRow, type Metrics } from './types';
+import {
+  attributed,
+  type AdsPayload, type CampaignRow, type AdsetRow, type AdRow, type Metrics, type CampaignMetaFields,
+} from './types';
 
 // Hierarchiczne drzewo: kampania → zestawy reklam → reklamy.
 // Chevron rozwija poziom niżej, klik w reklamę otwiera podgląd kreacji,
@@ -42,17 +45,35 @@ interface CampaignTreeProps {
   shop: string;
   attribution: AttributionWindow;
   onAttributionChange: (w: AttributionWindow) => void;
-  onMetaSaved: (campaignId: string, fields: { purpose: string | null; funnelStage: string | null; notes: string | null }) => void;
+  onMetaSaved: (campaignId: string, fields: CampaignMetaFields) => void;
+  onCreativeSaved?: (creativeId: string, fields: { manualTags: string[]; manualNotes: string | null }) => void;
 }
 
 export function CampaignTree({
-  data, dateFrom, dateTo, shop, attribution, onAttributionChange, onMetaSaved,
+  data, dateFrom, dateTo, shop, attribution, onAttributionChange, onMetaSaved, onCreativeSaved,
 }: CampaignTreeProps) {
   const [openCampaigns, setOpenCampaigns] = useState<Set<string>>(new Set());
   const [openAdsets, setOpenAdsets] = useState<Set<string>>(new Set());
   const [query, setQuery] = useState('');
+  const [funnelFilter, setFunnelFilter] = useState('');
+  const [tagFilter, setTagFilter] = useState('');
   const [editing, setEditing] = useState<CampaignRow | null>(null);
   const [selectedAd, setSelectedAd] = useState<AdRow | null>(null);
+
+  // Wszystkie tagi kampanii w zakresie — zasilają dropdown filtra
+  const allCampaignTags = useMemo(
+    () => Array.from(new Set(data.campaigns.flatMap(c => c.tags))).sort((a, b) => a.localeCompare(b, 'pl')),
+    [data.campaigns]
+  );
+
+  // Filtry lejka i tagu zawężają listę kampanii PRZED wyszukiwarką
+  const baseCampaigns = useMemo(
+    () => data.campaigns.filter(c =>
+      (!funnelFilter || c.funnelStage === funnelFilter) &&
+      (!tagFilter || c.tags.includes(tagFilter))
+    ),
+    [data.campaigns, funnelFilter, tagFilter]
+  );
 
   const { adsetsByCampaign, adsByAdset } = useMemo(() => {
     const byCampaign = new Map<string, AdsetRow[]>();
@@ -79,7 +100,7 @@ export function CampaignTree({
     const nameMatchAdsets = new Set<string>();
     const autoOpenCampaigns = new Set<string>();
     const autoOpenAdsets = new Set<string>();
-    for (const c of data.campaigns) {
+    for (const c of baseCampaigns) {
       if (c.campaignName.toLowerCase().includes(q)) nameMatchCampaigns.add(c.campaignId);
     }
     for (const s of data.adsets) {
@@ -95,11 +116,11 @@ export function CampaignTree({
       }
     }
     return { nameMatchCampaigns, nameMatchAdsets, autoOpenCampaigns, autoOpenAdsets };
-  }, [q, data.campaigns, data.adsets, data.ads]);
+  }, [q, baseCampaigns, data.adsets, data.ads]);
 
   const visibleCampaigns = search
-    ? data.campaigns.filter(c => search.nameMatchCampaigns.has(c.campaignId) || search.autoOpenCampaigns.has(c.campaignId))
-    : data.campaigns;
+    ? baseCampaigns.filter(c => search.nameMatchCampaigns.has(c.campaignId) || search.autoOpenCampaigns.has(c.campaignId))
+    : baseCampaigns;
 
   const isCampaignOpen = (id: string) =>
     search ? (search.autoOpenCampaigns.has(id) || openCampaigns.has(id)) : openCampaigns.has(id);
@@ -143,7 +164,31 @@ export function CampaignTree({
             className="w-72 max-w-full pl-9 pr-3 py-2 rounded-lg bg-bg border border-line text-sm text-fg placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary-400"
           />
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
+          {allCampaignTags.length > 0 && (
+            <label className="flex items-center gap-2 text-xs text-muted">
+              Tag:
+              <select
+                value={tagFilter}
+                onChange={e => setTagFilter(e.target.value)}
+                className="bg-bg text-fg text-xs rounded-lg px-2 py-1.5 border border-line max-w-[160px]"
+              >
+                <option value="">wszystkie</option>
+                {allCampaignTags.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </label>
+          )}
+          <label className="flex items-center gap-2 text-xs text-muted">
+            Lejek:
+            <select
+              value={funnelFilter}
+              onChange={e => setFunnelFilter(e.target.value)}
+              className="bg-bg text-fg text-xs rounded-lg px-2 py-1.5 border border-line"
+            >
+              <option value="">wszystkie</option>
+              {FUNNEL_STAGES.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </label>
           <AttributionSelect value={attribution} onChange={onAttributionChange} />
           <details className="relative">
             <summary className="flex items-center gap-1.5 px-3 py-1.5 bg-bg hover:bg-line text-fg text-xs rounded-lg border border-line transition-colors cursor-pointer list-none [&::-webkit-details-marker]:hidden">
@@ -193,7 +238,7 @@ export function CampaignTree({
             {visibleCampaigns.length === 0 && (
               <tr>
                 <td colSpan={METRIC_HEADERS.length + 2} className="px-4 py-8 text-center text-muted">
-                  {q ? 'Nic nie znaleziono' : 'Brak kampanii w tym zakresie'}
+                  {q || tagFilter || funnelFilter ? 'Nic nie znaleziono — zmień wyszukiwanie lub filtry' : 'Brak kampanii w tym zakresie'}
                 </td>
               </tr>
             )}
@@ -259,6 +304,7 @@ export function CampaignTree({
           dateTo={dateTo}
           attribution={attribution}
           onClose={() => setSelectedAd(null)}
+          onCreativeSaved={onCreativeSaved}
         />
       )}
     </div>
@@ -327,6 +373,16 @@ function CampaignBranch({
                 {campaign.funnelStage && (
                   <span className={cn('text-[10px] px-1.5 py-px rounded font-medium', FUNNEL_BADGE[campaign.funnelStage] || 'bg-bg text-fg-soft')}>
                     {campaign.funnelStage}
+                  </span>
+                )}
+                {campaign.tags.slice(0, 4).map(tag => (
+                  <span key={tag} className="text-[10px] px-1.5 py-px rounded-pill bg-primary-100 text-primary-800">
+                    {tag}
+                  </span>
+                ))}
+                {campaign.tags.length > 4 && (
+                  <span className="text-[10px] text-muted" title={campaign.tags.join(', ')}>
+                    +{campaign.tags.length - 4}
                   </span>
                 )}
                 {campaign.purpose && (

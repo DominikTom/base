@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { X, ImageOff, ExternalLink } from 'lucide-react';
+import { X, ImageOff, ExternalLink, Tags } from 'lucide-react';
 import { formatNumber } from '@/lib/utils';
 import type { AttributionWindow } from '@/lib/marketing-constants';
+import { TagInput } from './tag-input';
 import {
   attributed, imageProxyUrl, imageProxyByAdUrl,
   type AdRow, type AdDailyPoint,
@@ -16,6 +17,8 @@ interface AdPreviewModalProps {
   dateTo: string;
   attribution: AttributionWindow;
   onClose: () => void;
+  // Zapis własnych tagów/notatki kreacji — rodzic aktualizuje payload
+  onCreativeSaved?: (creativeId: string, fields: { manualTags: string[]; manualNotes: string | null }) => void;
 }
 
 // Modal podglądu reklamy — trzy warstwy próbowane w tej kolejności:
@@ -24,7 +27,7 @@ interface AdPreviewModalProps {
 //   3. obraz statyczny przez proxy obrazków (z samonaprawą po wygaśnięciu URL)
 // Podgląd i dane dzienne ładują się równolegle, każde z własnym spinnerem.
 // Renderuj z key={ad.adId} — zmiana reklamy resetuje stan przez remount.
-export function AdPreviewModal({ ad, dateFrom, dateTo, attribution, onClose }: AdPreviewModalProps) {
+export function AdPreviewModal({ ad, dateFrom, dateTo, attribution, onClose, onCreativeSaved }: AdPreviewModalProps) {
   const [previewHtml, setPreviewHtml] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(true);
   const [daily, setDaily] = useState<AdDailyPoint[] | null>(null);
@@ -148,6 +151,16 @@ export function AdPreviewModal({ ad, dateFrom, dateTo, attribution, onClose }: A
           </div>
         )}
 
+        {/* Własne tagi + notatka kreacji */}
+        {ad.creativeId && ad.creative && (
+          <CreativeMetaSection
+            creativeId={ad.creativeId}
+            initialTags={ad.creative.manualTags || []}
+            initialNotes={ad.creative.manualNotes || ''}
+            onSaved={onCreativeSaved}
+          />
+        )}
+
         {/* KPI */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 px-4 pb-4">
           <div className="rounded-lg border border-line bg-bg p-3">
@@ -205,6 +218,79 @@ export function AdPreviewModal({ ad, dateFrom, dateTo, attribution, onClose }: A
           >
             <ExternalLink size={13} /> Otwórz w Ads Manager
           </a>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Własne tagi + notatka kreacji, zapisywane do dim_creatives (manual_tags /
+// manual_notes). Filtrowanie w zakładce Kreacje działa po unii tagów
+// auto + AI + manualnych.
+function CreativeMetaSection({
+  creativeId, initialTags, initialNotes, onSaved,
+}: {
+  creativeId: string;
+  initialTags: string[];
+  initialNotes: string;
+  onSaved?: (creativeId: string, fields: { manualTags: string[]; manualNotes: string | null }) => void;
+}) {
+  const [tags, setTags] = useState<string[]>(initialTags);
+  const [notes, setNotes] = useState(initialNotes);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const dirty = notes !== initialNotes
+    || tags.length !== initialTags.length
+    || tags.some((t, i) => t !== initialTags[i]);
+
+  async function handleSave() {
+    setSaving(true);
+    setError(null);
+    setSaved(false);
+    try {
+      const res = await fetch('/api/dashboard/marketing/creative-meta', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ creative_id: creativeId, tags, notes: notes.trim() || null }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
+      setSaved(true);
+      onSaved?.(creativeId, { manualTags: tags, manualNotes: notes.trim() || null });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="px-4 pb-4">
+      <div className="rounded-lg border border-line bg-bg p-3 space-y-2">
+        <div className="flex items-center gap-1.5 text-xs font-medium text-fg-soft">
+          <Tags size={13} className="text-muted" /> Twoje tagi i notatka kreacji
+        </div>
+        <TagInput tags={tags} onChange={t => { setTags(t); setSaved(false); }} placeholder="np. UGC, blackweek, test hooka…" />
+        <input
+          value={notes}
+          onChange={e => { setNotes(e.target.value); setSaved(false); }}
+          maxLength={300}
+          placeholder="Krótka notatka (opcjonalnie)"
+          className="w-full px-3 py-2 rounded-lg bg-surface border border-line text-sm text-fg placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary-400"
+        />
+        <div className="flex items-center justify-between">
+          <span className="text-[11px] text-muted">
+            {error ? <span className="text-danger">{error}</span> : saved ? 'Zapisano ✓' : 'Tagi działają w filtrach zakładki Kreacje i w CSV'}
+          </span>
+          <button
+            onClick={handleSave}
+            disabled={saving || !dirty}
+            className="px-3 py-1.5 text-xs rounded-lg btn-primary-gradient"
+          >
+            {saving ? 'Zapisywanie…' : 'Zapisz'}
+          </button>
         </div>
       </div>
     </div>

@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthUser } from '@/lib/auth';
 import { getSupabaseAdmin } from '@/lib/supabase';
-import { FUNNEL_STAGES } from '@/lib/marketing-constants';
+import { FUNNEL_STAGES, sanitizeTags } from '@/lib/marketing-constants';
 
 // PATCH /api/dashboard/marketing/campaign-meta
-// Body: { campaign_id, account_id?, purpose?, funnel_stage?, notes? }
+// Body: { campaign_id, account_id?, purpose?, funnel_stage?, notes?, tags? }
 //
-// Edycja pól manualnych kampanii (cel wewnętrzny / etap lejka / notatka).
-// Pola z Meta API (objective, status, budżety) nadpisuje wyłącznie ETL.
-// Zapis wymaga zalogowanej sesji (zespół marketingu — nie tylko admin).
+// Edycja pól manualnych kampanii (cel wewnętrzny / etap lejka / notatka /
+// własne tagi). Pola z Meta API (objective, status, budżety) nadpisuje
+// wyłącznie ETL. Zapis wymaga zalogowanej sesji (zespół marketingu).
 export async function PATCH(request: NextRequest) {
   try {
     const { user } = await getAuthUser();
@@ -21,7 +21,14 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'campaign_id required' }, { status: 400 });
     }
 
-    const update: Record<string, string | null> = {};
+    const update: Record<string, string | string[] | null> = {};
+    if ('tags' in body) {
+      const tags = sanitizeTags(body.tags);
+      if (tags === null) {
+        return NextResponse.json({ error: 'tags must be an array of short strings (max 15 × 40 znaków)' }, { status: 400 });
+      }
+      update.manual_tags = tags;
+    }
     for (const field of ['purpose', 'notes'] as const) {
       if (field in body) {
         const v = body[field];

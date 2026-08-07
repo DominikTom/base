@@ -76,7 +76,7 @@ export async function GET(request: NextRequest) {
       for (let i = 0; i < ids.length; i += 200) {
         const { data } = await getSupabaseAdmin()
           .from('dim_campaigns')
-          .select('campaign_id, objective, effective_status, purpose, funnel_stage, notes')
+          .select('campaign_id, objective, effective_status, purpose, funnel_stage, notes, manual_tags')
           .in('campaign_id', ids.slice(i, i + 200));
         for (const r of data || []) meta.set(r.campaign_id as string, r);
       }
@@ -91,6 +91,7 @@ export async function GET(request: NextRequest) {
           'Cel wewnętrzny': (m?.purpose as string) || '',
           'Etap lejka': (m?.funnel_stage as string) || '',
           'Notatka': (m?.notes as string) || '',
+          'Tagi': ((m?.manual_tags as string[]) || []).join(', '),
           ...metricColumns(c),
         };
       });
@@ -103,12 +104,31 @@ export async function GET(request: NextRequest) {
         ...metricColumns(a),
       }));
     } else if (scope === 'ads') {
-      records = aggregateAds(rows).map(a => ({
+      const adsAgg = aggregateAds(rows);
+      // Tagi kreacji (auto + AI + manualne) — Kamila filtruje po nich w Excelu
+      const creativeIds = Array.from(new Set(adsAgg.map(a => a.creativeId).filter((id): id is string => !!id)));
+      const tagsByCreative = new Map<string, string>();
+      for (let i = 0; i < creativeIds.length; i += 200) {
+        const { data } = await getSupabaseAdmin()
+          .from('dim_creatives')
+          .select('creative_id, format, auto_tags, ai_tags, manual_tags')
+          .in('creative_id', creativeIds.slice(i, i + 200));
+        for (const r of data || []) {
+          const all = Array.from(new Set([
+            ...((r.auto_tags as string[]) || []),
+            ...((r.ai_tags as string[]) || []),
+            ...((r.manual_tags as string[]) || []),
+          ]));
+          tagsByCreative.set(r.creative_id as string, all.join(', '));
+        }
+      }
+      records = adsAgg.map(a => ({
         'Sklep': a.shop,
         'Kampania': a.campaignName,
         'Zestaw reklam': a.adsetName,
         'Reklama': a.adName,
         'ID reklamy': a.adId,
+        'Tagi kreacji': (a.creativeId && tagsByCreative.get(a.creativeId)) || '',
         'Hook rate (%)': num(a.hookRate),
         'Thruplays': a.thruplays,
         ...metricColumns(a),

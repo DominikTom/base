@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabase';
 import { previousPeriod, pctChange } from '@/lib/period-compare';
+import { SHOP_TO_META_ACCOUNT } from '@/lib/marketing-constants';
 import {
-  fetchAdPerfRows, shopFilterToAccountIds,
+  fetchAdPerfRows, shopFilterToAccountIds, META_ACCOUNT_TO_SHOP,
   aggregateAccounts, aggregateCampaigns, aggregateAdsets, aggregateAds,
   emptyTotals, addRow, finalizeTotals,
   type FinalizedMetrics,
@@ -79,7 +80,7 @@ export async function GET(request: NextRequest) {
     for (let i = 0; i < campaignIds.length; i += 200) {
       const { data } = await db
         .from('dim_campaigns')
-        .select('campaign_id, objective, status, effective_status, daily_budget, lifetime_budget, purpose, funnel_stage, notes')
+        .select('campaign_id, objective, status, effective_status, daily_budget, lifetime_budget, purpose, funnel_stage, notes, manual_tags')
         .in('campaign_id', campaignIds.slice(i, i + 200));
       for (const row of data || []) campaignMeta.set(row.campaign_id as string, row);
     }
@@ -93,6 +94,7 @@ export async function GET(request: NextRequest) {
         purpose: (m?.purpose as string) || null,
         funnelStage: (m?.funnel_stage as string) || null,
         notes: (m?.notes as string) || null,
+        tags: (m?.manual_tags as string[]) || [],
       };
     });
 
@@ -105,7 +107,7 @@ export async function GET(request: NextRequest) {
     for (let i = 0; i < creativeIds.length; i += 200) {
       const { data } = await db
         .from('dim_creatives')
-        .select('creative_id, format, thumbnail_url, image_url, video_id, title, body, call_to_action_type, is_dynamic, auto_tags, ai_tags, manual_tags')
+        .select('creative_id, format, thumbnail_url, image_url, video_id, title, body, call_to_action_type, is_dynamic, auto_tags, ai_tags, manual_tags, manual_notes')
         .in('creative_id', creativeIds.slice(i, i + 200));
       for (const row of data || []) creativeMeta.set(row.creative_id as string, row);
     }
@@ -127,14 +129,57 @@ export async function GET(request: NextRequest) {
             ...((m.ai_tags as string[]) || []),
             ...((m.manual_tags as string[]) || []),
           ])),
+          manualTags: (m.manual_tags as string[]) || [],
+          manualNotes: (m.manual_notes as string) || null,
         } : null,
       };
     });
+
+    // Jakość danych per konto: czy ad-level pokrywa wybrany zakres dat.
+    // Bez tego dziura w danych (np. po rate limicie Mety) wygląda jak
+    // "identyczne liczby dla 7 i 30 dni" — mylące, więc raportujemy wprost.
+    const expectedDays = Math.max(1, Math.round(
+      (new Date(dateTo).getTime() - new Date(dateFrom).getTime()) / 86_400_000
+    ) + 1);
+    const expectedAccounts = accountFilter ?? Object.values(SHOP_TO_META_ACCOUNT);
+    const daysByAccount = new Map<string, Set<string>>();
+    for (const r of rows) {
+      const set = daysByAccount.get(r.account_id) || new Set<string>();
+      set.add(r.date);
+      daysByAccount.set(r.account_id, set);
+    }
+    const dataQuality = [];
+    for (const accId of expectedAccounts) {
+      if (accId === 'NONE') continue;
+      const days = daysByAccount.get(accId);
+      let lastDate: string | null = null;
+      if (!days || days.size < expectedDays) {
+        // Dociągnij ostatnią datę w bazie dla konta — podpowiada, dokąd sięgają dane
+        const { data: lastRow } = await db
+          .from('fact_daily_ad_performance')
+          .select('date')
+          .eq('platform', 'meta')
+          .eq('account_id', accId)
+          .order('date', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        lastDate = (lastRow?.date as string) || null;
+      }
+      dataQuality.push({
+        accountId: accId,
+        shop: META_ACCOUNT_TO_SHOP[accId] || accId,
+        daysCovered: days?.size || 0,
+        expectedDays,
+        lastDate,
+        complete: (days?.size || 0) >= expectedDays,
+      });
+    }
 
     return NextResponse.json({
       period: { from: dateFrom, to: dateTo },
       previous: prev,
       coverage,
+      dataQuality,
       totals: { ...cur, deltas: deltasOf(cur, prv) },
       accounts: accountsOut,
       campaigns: campaignsOut,

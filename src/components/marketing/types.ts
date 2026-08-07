@@ -58,6 +58,15 @@ export interface CampaignRow extends Metrics {
   purpose: string | null;
   funnelStage: string | null;
   notes: string | null;
+  tags: string[];
+}
+
+// Pola manualne kampanii edytowalne z dashboardu
+export interface CampaignMetaFields {
+  purpose: string | null;
+  funnelStage: string | null;
+  notes: string | null;
+  tags: string[];
 }
 
 export interface AdsetRow extends Metrics {
@@ -78,7 +87,9 @@ export interface CreativeInfo {
   body: string | null;
   callToActionType: string | null;
   isDynamic: boolean;
-  tags: string[];
+  tags: string[];          // unia auto + AI + manualne (do filtrowania)
+  manualTags: string[];    // tylko własne (edytowalne w modalu)
+  manualNotes: string | null;
 }
 
 export interface AdRow extends Metrics {
@@ -94,10 +105,22 @@ export interface AdRow extends Metrics {
   creative: CreativeInfo | null;
 }
 
+// Pokrycie zakresu dat danymi ad-level per konto — niekompletne konto
+// tłumaczy "dziwne" liczby (identyczne sumy dla różnych zakresów itd.)
+export interface DataQualityRow {
+  accountId: string;
+  shop: string;
+  daysCovered: number;
+  expectedDays: number;
+  lastDate: string | null;
+  complete: boolean;
+}
+
 export interface AdsPayload {
   period: { from: string; to: string };
   previous: { from: string; to: string };
   coverage: { from: string; to: string; rows: number } | null;
+  dataQuality: DataQualityRow[];
   totals: Metrics & { deltas: Deltas };
   accounts: AccountRow[];
   campaigns: CampaignRow[];
