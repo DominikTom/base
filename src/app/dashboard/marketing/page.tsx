@@ -21,6 +21,7 @@ import type { AdsPayload } from '@/components/marketing/types';
 import { AccountsSummary } from '@/components/marketing/accounts-summary';
 import { CampaignTree } from '@/components/marketing/campaign-tree';
 import { CreativesTab } from '@/components/marketing/creatives-tab';
+import { GoogleShopsSummary, type GoogleShopRow } from '@/components/marketing/google-shops-summary';
 
 interface MetaMarketingData {
   kpis: {
@@ -89,6 +90,7 @@ interface GoogleAdsData {
     cpc: number;
     roas: number;
   }>;
+  shops: GoogleShopRow[];
   campaignSumSpend: number;
   coverage: { from: string; to: string; rows: number } | null;
   lastSync: { at: string; rows: number } | null;
@@ -292,7 +294,7 @@ function MetaTab() {
 function GoogleAdsTab() {
   const { filters } = useDashboard();
   const [data, setData] = useState<GoogleAdsData | null>(null);
-  const [prevKpis, setPrevKpis] = useState<GoogleAdsData['kpis'] | null>(null);
+  const [prevData, setPrevData] = useState<GoogleAdsData | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -304,7 +306,7 @@ function GoogleAdsTab() {
         const [prevRes] = await Promise.all([
           fetch(`/api/dashboard/marketing/google?${mk(prev.from, prev.to)}`).then(r => r.ok ? r.json() : null).catch(() => null),
         ]);
-        setPrevKpis(prevRes?.kpis ?? null);
+        setPrevData(prevRes && !prevRes.error ? prevRes : null);
         const params = new URLSearchParams({
           date_from: filters.dateFrom,
           date_to: filters.dateTo,
@@ -317,6 +319,8 @@ function GoogleAdsTab() {
     }
     fetchData();
   }, [filters]);
+
+  const prevKpis = prevData?.kpis ?? null;
 
   if (loading) return <PanelLoading />;
   if (!data) return <PanelEmpty hint="Brak danych Google Ads. Zsynchronizuj GA4." />;
@@ -386,6 +390,10 @@ function GoogleAdsTab() {
         <KpiCard title="Avg CTR" value={`${data.kpis.avgCtr.toFixed(2)}%`} icon={<Eye size={18} />}
           change={pctChange(data.kpis.avgCtr, prevKpis?.avgCtr)} changeLabel={COMPARE_LABEL} />
       </div>
+
+      {/* Per sklep — ten sam układ co karty kont Meta (Konta & KPI),
+          żeby porównywać sklepy jeden obok drugiego. Widoczne przy >1 sklepie. */}
+      <GoogleShopsSummary shops={data.shops || []} prevShops={prevData?.shops ?? null} />
 
       <ChartCard title="Spend vs Revenue" subtitle="Dual-axis line chart">
         <SpendRevenueChart data={data.charts.spendVsRevenue} />

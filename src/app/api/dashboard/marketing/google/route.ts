@@ -187,6 +187,48 @@ export async function GET(request: NextRequest) {
     // Suma per-kampania — żeby frontend mógł pokazać gap vs Total Spend
     const campaignSumSpend = Math.round(campaignTable.reduce((s, c) => s + c.spend, 0));
 
+    // Per sklep (hostname) — te same zasady co headline KPIs: strona kosztowa
+    // (spend/clicks/impressions) z __total__, strona przychodowa
+    // (revenue/transakcje/sesje) z google/cpc. Zasila karty "obok siebie"
+    // jak w Meta Konta & KPI.
+    const shopAgg: Record<string, {
+      spend: number; clicks: number; impressions: number;
+      revenue: number; transactions: number; sessions: number;
+    }> = {};
+    const shopEntry = (hostname: string) => {
+      if (!shopAgg[hostname]) {
+        shopAgg[hostname] = { spend: 0, clicks: 0, impressions: 0, revenue: 0, transactions: 0, sessions: 0 };
+      }
+      return shopAgg[hostname];
+    };
+    for (const r of totalNorm) {
+      const s = shopEntry(r.hostname);
+      s.spend += r.spend;
+      s.clicks += r.clicks;
+      s.impressions += r.impressions;
+    }
+    for (const r of campNorm) {
+      const s = shopEntry(r.hostname);
+      s.revenue += r.revenue;
+      s.transactions += r.transactions;
+      s.sessions += r.sessions;
+    }
+    const shops = Object.entries(shopAgg)
+      .map(([hostname, s]) => ({
+        hostname,
+        spend: Math.round(s.spend),
+        revenue: Math.round(s.revenue),
+        transactions: s.transactions,
+        sessions: s.sessions,
+        clicks: s.clicks,
+        impressions: s.impressions,
+        roas: s.spend > 0 ? Math.round((s.revenue / s.spend) * 100) / 100 : 0,
+        cpc: s.clicks > 0 ? Math.round((s.spend / s.clicks) * 100) / 100 : 0,
+        ctr: s.impressions > 0 ? Math.round((s.clicks / s.impressions) * 10000) / 100 : 0,
+        convRate: s.sessions > 0 ? Math.round((s.transactions / s.sessions) * 10000) / 100 : 0,
+      }))
+      .sort((a, b) => b.spend - a.spend);
+
     const topByRoas = [...campaignTable]
       .filter(c => c.spend > 100)
       .sort((a, b) => b.roas - a.roas)
@@ -229,6 +271,7 @@ export async function GET(request: NextRequest) {
         convRate: Math.round(convRate * 100) / 100,
       },
       charts: { spendVsRevenue, roasTrend, spendByShop, topByRoas },
+      shops,
       campaignTable,
       campaignSumSpend,
       coverage,

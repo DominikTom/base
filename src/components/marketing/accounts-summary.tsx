@@ -5,15 +5,16 @@ import type { AttributionWindow } from '@/lib/marketing-constants';
 import { DeltaBadge } from './controls';
 import { attributed, type AccountRow, type AdsPayload } from './types';
 
-const SHOP_BADGE: Record<string, string> = {
+export const SHOP_BADGE: Record<string, string> = {
   'mybed.pl': 'bg-indigo-500',
   'mybed.de': 'bg-amber-500',
   'mittohome.pl': 'bg-emerald-500',
 };
 
-function initials(shop: string): string {
+export function shopInitials(shop: string): string {
   return shop.replace(/\..*$/, '').slice(0, 2).toUpperCase();
 }
+const initials = shopInitials;
 
 // Nagłówkowe KPI + karty per konto reklamowe (jak w narzędziu agencji):
 // te same wskaźniki rozbite per konto, z deltą okres-do-okresu.
