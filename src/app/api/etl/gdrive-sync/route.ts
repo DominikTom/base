@@ -167,17 +167,44 @@ export async function GET(request: NextRequest) {
       // here and relied on step 7 to rebuild it. Step 7 never ran, so the table
       // sat empty. The delete now lives inside fn_rebuild_daily_revenue, in the
       // same statement as the insert that replaces it.
+      //
+      // Change detection: the export always carries the full history, and
+      // fn_upsert_fact_orders rewrites every row it is given, so a nightly run
+      // used to re-upsert all ~49k orders and ~170k items even when the file
+      // had not changed at all. Run #668 burned its entire 240 s budget on that
+      // and still finished `partial`. Send only what actually differs.
+      //
+      // Items ride on their order's row_hash: an item change (fabric, size,
+      // quantity) moves the order total, which is part of that hash. `?full=1`
+      // forces everything through for the rare case where it does not, and
+      // after a schema or parser change.
+      const forceFull = searchParams.get('full') === '1';
+      const existingHashes = forceFull ? new Map<string, string>() : await fetchOrderHashes(db);
+
+      const ordersToUpsert = forceFull
+        ? orders
+        : orders.filter(o => existingHashes.get(o.order_id) !== o.row_hash);
+      const changedOrderIds = new Set(ordersToUpsert.map(o => o.order_id));
+      const itemsToUpsert = forceFull
+        ? items
+        : items.filter(i => changedOrderIds.has(i.order_id));
+
+      const skipped = {
+        orders: orders.length - ordersToUpsert.length,
+        items: items.length - itemsToUpsert.length,
+      };
+
       let ordersUpserted = 0;
       let truncated = false;
-      for (let i = 0; i < orders.length; i += ORDERS_CHUNK) {
+      for (let i = 0; i < ordersToUpsert.length; i += ORDERS_CHUNK) {
         if (timeLeft() <= 0) { truncated = true; break; }
-        ordersUpserted += await upsertOrdersRpc(db, orders.slice(i, i + ORDERS_CHUNK));
+        ordersUpserted += await upsertOrdersRpc(db, ordersToUpsert.slice(i, i + ORDERS_CHUNK));
       }
 
       let itemsUpserted = 0;
-      for (let i = 0; i < items.length; i += ITEMS_CHUNK) {
+      for (let i = 0; i < itemsToUpsert.length; i += ITEMS_CHUNK) {
         if (timeLeft() <= 0) { truncated = true; break; }
-        itemsUpserted += await upsertItemsRpc(db, items.slice(i, i + ITEMS_CHUNK));
+        itemsUpserted += await upsertItemsRpc(db, itemsToUpsert.slice(i, i + ITEMS_CHUNK));
       }
 
       // Step 4: optional raw landing (audit trail), with retention.
@@ -235,6 +262,8 @@ export async function GET(request: NextRequest) {
           aggregates,
           duration_ms: durationMs,
           truncated,
+          skipped_unchanged: skipped,
+          full_refresh: forceFull,
         },
       });
 
@@ -252,6 +281,8 @@ export async function GET(request: NextRequest) {
         aggregates,
         durationMs,
         truncated,
+        skippedUnchanged: skipped,
+        fullRefresh: forceFull,
       });
     } catch (err) {
       await finishLog(db, etlLogId, 'error', String(err));
@@ -339,6 +370,24 @@ async function rebuildAggregates(
   out.fabrics = typeof fab === 'number' ? fab : 0;
 
   return out;
+}
+
+/**
+ * order_id -> row_hash for every order already stored, in one RPC call.
+ *
+ * A failure here must not fail the run: an empty map just means nothing is
+ * skipped, i.e. the previous full-rewrite behaviour.
+ */
+async function fetchOrderHashes(
+  db: ReturnType<typeof getSupabaseAdmin>
+): Promise<Map<string, string>> {
+  const { data, error } = await db.rpc('fn_order_hashes');
+  if (error) {
+    console.error('fn_order_hashes failed, falling back to full upsert:', error.message);
+    return new Map();
+  }
+  if (!data || typeof data !== 'object') return new Map();
+  return new Map(Object.entries(data as Record<string, string>));
 }
 
 async function purgeRawLanding(
