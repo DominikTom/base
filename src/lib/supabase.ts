@@ -22,7 +22,12 @@ export function getSupabase(): SupabaseClient {
 export function getSupabaseAdmin(): SupabaseClient {
   if (!_supabaseAdmin) {
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || '';
-    const key = process.env.SUPABASE_SERVICE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || '';
+    // No anon fallback. This client is what every server route writes through,
+    // and silently degrading to the public key meant privileged writes only
+    // worked because RLS was disabled on those tables — the fallback and the
+    // missing RLS were propping each other up. A missing service key is a
+    // deployment fault and must surface as one.
+    const key = process.env.SUPABASE_SERVICE_KEY || '';
     if (!url || !key) throw new Error('Missing SUPABASE_URL or SUPABASE_SERVICE_KEY');
     _supabaseAdmin = createClient(url, key);
   }

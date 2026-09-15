@@ -42,36 +42,50 @@ export async function isAdmin(
 // Strażnik admin-only API. Zwraca null gdy OK; gdy nie-admin / nie-zalogowany
 // zwraca gotowy NextResponse z odpowiednim kodem 401/403.
 //
-// Akceptujemy cztery ścieżki uwierzytelnienia:
-//   1. Vercel Cron header `x-vercel-cron: 1` (wewnętrzne wywołanie z Vercel).
-//   2. Vercel Cron user-agent `vercel-cron/...` (fallback gdy header zniknie).
-//   3. Bearer token = ETL_CRON_SECRET lub CRON_SECRET (manualny curl / Vercel
-//      CRON_SECRET env, który Vercel automatycznie wstrzykuje do Authorization).
-//   4. Sesja Supabase z rolą 'admin' w user_profiles.
+// Akceptujemy dwie ścieżki uwierzytelnienia:
+//   1. Bearer token = CRON_SECRET lub ETL_CRON_SECRET. Vercel Cron wysyła
+//      `Authorization: Bearer $CRON_SECRET`, gdy zmienna CRON_SECRET jest
+//      ustawiona na projekcie. To jedyna część żądania, której obcy nadawca
+//      nie podrobi.
+//   2. Sesja Supabase z rolą 'admin' w user_profiles.
 //
-// Punkty 1-3 są kluczowe — bez nich Vercel Cron dostawał 401 i wszystkie
-// scheduled ETL syncs były zablokowane (regresja w commicie e144b5d od 2026-06-08).
+// USUNIĘTE: `x-vercel-cron: 1` oraz user-agent `vercel-cron/...`. Oba to zwykłe
+// nagłówki żądania — Vercel je ustawia przy własnych wywołaniach, ale ich nie
+// filtruje na wejściu, więc dowolny nadawca mógł je wysłać i uruchomić każdy
+// chroniony endpoint (ETL, sync Meta/GA4, sales-sync). To był w praktyce brak
+// autoryzacji z wyglądem autoryzacji.
+//
+// Regresja e144b5d z 2026-06-08, opisana tu wcześniej, brała się stąd, że
+// Vercel wysyła nagłówek Authorization TYLKO gdy CRON_SECRET istnieje. Warunek
+// jest więc taki: ustaw CRON_SECRET na projekcie ZANIM to wdrożysz, inaczej
+// crony znowu dostaną 401. Szczegóły w docs/RUNBOOK-etl.md.
 import { NextResponse } from 'next/server';
+
+/** Porównanie w stałym czasie — sekret nie wycieka kanałem czasowym. */
+function safeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
 export async function requireAdmin(): Promise<NextResponse | null> {
   const h = await headers();
-
-  if (h.get('x-vercel-cron') === '1') return null;
-
-  const userAgent = h.get('user-agent') || '';
-  if (userAgent.startsWith('vercel-cron')) return null;
 
   const authHeader = h.get('authorization');
   if (authHeader?.startsWith('Bearer ')) {
     const token = authHeader.slice(7);
-    if (process.env.ETL_CRON_SECRET && token === process.env.ETL_CRON_SECRET) return null;
-    if (process.env.CRON_SECRET && token === process.env.CRON_SECRET) return null;
+    const accepted = [process.env.CRON_SECRET, process.env.ETL_CRON_SECRET].filter(
+      (s): s is string => typeof s === 'string' && s.length > 0
+    );
+    // Bez short-circuitu: liczba porównań nie zależy od tego, który pasował.
+    if (accepted.reduce((ok, secret) => safeEqual(token, secret) || ok, false)) return null;
   }
 
   const { user, supabase } = await getAuthUser();
   if (!user) {
     console.warn('[requireAdmin] 401', {
-      xVercelCron: h.get('x-vercel-cron'),
-      userAgent: userAgent.slice(0, 60),
+      userAgent: (h.get('user-agent') || '').slice(0, 60),
       authPresent: !!authHeader,
       hasEtlSecret: !!process.env.ETL_CRON_SECRET,
       hasCronSecret: !!process.env.CRON_SECRET,

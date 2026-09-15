@@ -3,6 +3,7 @@ import Papa from 'papaparse';
 import { parseErpCsv, type RawCsvRow } from '@/lib/erp-parser';
 import { listCsvFiles, downloadFileAsText } from '@/lib/google-drive';
 import { getSupabaseAdmin } from '@/lib/supabase';
+import { requireAdmin } from '@/lib/auth';
 import {
   ETL_PIPELINE,
   ETL_VERSION,
@@ -16,10 +17,30 @@ import {
 } from '@/lib/erp-etl';
 
 export const maxDuration = 300;
-const PAGE_SIZE = 1000;
-const RAW_CHUNK = 500;
-const ORDERS_CHUNK = 200;
-const ITEMS_CHUNK = 500;
+const RAW_CHUNK = 1000;
+const ORDERS_CHUNK = 500;
+const ITEMS_CHUNK = 1000;
+
+/**
+ * Stop issuing new work after this much wall-clock time and finalize the log.
+ *
+ * The platform kills the function at maxDuration with no chance to run
+ * `finally`, which is how every run since 2026-04-28 ended: the ETL row stayed
+ * `running` until the next invocation auto-closed it 45 min later as stale,
+ * and the advisory lock was never released. Finishing under our own budget
+ * means the log always tells the truth about what happened.
+ */
+const TIME_BUDGET_MS = 240_000;
+
+/**
+ * Appending the full export to raw_erp_orders on every run grew the landing
+ * table to 30.6M rows for 49k orders and dominated the runtime (~440 inserts
+ * per run before a single fact row was written). It is an audit trail, not a
+ * dependency of any dashboard query, so it is opt-in now and retained for a
+ * few runs only. Set ETL_RAW_LANDING=1 to re-enable.
+ */
+const RAW_LANDING_ENABLED = process.env.ETL_RAW_LANDING === '1';
+const RAW_LANDING_KEEP_RUNS = Number(process.env.ETL_RAW_LANDING_KEEP_RUNS || 3);
 
 /**
  * Google Drive auto-import endpoint.
@@ -30,30 +51,16 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const mode = searchParams.get('mode') || 'manual';
 
-    // Auth — przepuszczamy dwie ścieżki: Vercel Cron internal (x-vercel-cron / CRON_SECRET)
-    // i ręczny bearer ETL_CRON_SECRET. Logujemy nagłówki przy 401 — od 2026-06-08
-    // crony dostawały 401 i nie wiedzieliśmy czemu.
-    const authHeader = request.headers.get('authorization');
-    const userAgent = request.headers.get('user-agent') || '';
-    const cronSecret = process.env.ETL_CRON_SECRET;
-    const vercelCronSecret = process.env.CRON_SECRET;
-    const isVercelCronHeader = request.headers.get('x-vercel-cron') === '1';
-    const isVercelCronUA = userAgent.startsWith('vercel-cron');
-    const matchesEtlBearer = !!cronSecret && authHeader === `Bearer ${cronSecret}`;
-    const matchesVercelBearer = !!vercelCronSecret && authHeader === `Bearer ${vercelCronSecret}`;
-    const allowed = isVercelCronHeader || isVercelCronUA || matchesEtlBearer || matchesVercelBearer;
+    // Auth via the shared guard: bearer CRON_SECRET / ETL_CRON_SECRET, or an
+    // admin session. The `x-vercel-cron` header and the `vercel-cron`
+    // user-agent are gone — both are ordinary request headers that Vercel sets
+    // on its own calls but does not strip from inbound traffic, so either one
+    // let anyone on the internet drive a full ETL run.
+    const guard = await requireAdmin();
+    if (guard) return guard;
 
-    if (!allowed) {
-      console.warn('[gdrive-sync] 401 unauthorized', {
-        mode,
-        xVercelCron: request.headers.get('x-vercel-cron'),
-        userAgent: userAgent.slice(0, 60),
-        authPresent: !!authHeader,
-        hasEtlSecret: !!cronSecret,
-        hasVercelSecret: !!vercelCronSecret,
-      });
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+    const startedAtMs = Date.now();
+    const timeLeft = () => TIME_BUDGET_MS - (Date.now() - startedAtMs);
 
     const db = getSupabaseAdmin();
     await closeStaleRunningLogs(db);
@@ -153,34 +160,43 @@ export async function GET(request: NextRequest) {
       const { orders, items, quarantine, warnings, stats } = result;
       const { min: minDate, max: maxDate } = stats.dateRange;
 
-      // Step 3: append raw rows (audit trail)
-      let rawInserted = 0;
-      for (let i = 0; i < csvRows.length; i += RAW_CHUNK) {
-        const chunk = csvRows.slice(i, i + RAW_CHUNK);
-        rawInserted += await insertRawRows(db, chunk, {
-          etlRunId,
-          sourceFile: latestFile.name,
-          startRowNumber: i + 2, // +1 zero-index, +1 header
-        });
-      }
-
-      // Step 4: clear daily_revenue for affected date range (will re-aggregate)
-      if (minDate && minDate !== '9999-12-31' && maxDate && maxDate !== '0000-01-01') {
-        await db.from('fact_daily_revenue').delete().gte('date', minDate).lte('date', maxDate);
-      }
-
-      // Step 5: idempotent upserts via RPC (fact_orders.row_hash drives change detection)
+      // Step 3: facts first. The raw landing table is only an audit trail, so
+      // it must never consume the budget the dashboards actually depend on.
+      //
+      // The old step 4 deleted fact_daily_revenue for the whole CSV date range
+      // here and relied on step 7 to rebuild it. Step 7 never ran, so the table
+      // sat empty. The delete now lives inside fn_rebuild_daily_revenue, in the
+      // same statement as the insert that replaces it.
       let ordersUpserted = 0;
+      let truncated = false;
       for (let i = 0; i < orders.length; i += ORDERS_CHUNK) {
+        if (timeLeft() <= 0) { truncated = true; break; }
         ordersUpserted += await upsertOrdersRpc(db, orders.slice(i, i + ORDERS_CHUNK));
       }
 
       let itemsUpserted = 0;
       for (let i = 0; i < items.length; i += ITEMS_CHUNK) {
+        if (timeLeft() <= 0) { truncated = true; break; }
         itemsUpserted += await upsertItemsRpc(db, items.slice(i, i + ITEMS_CHUNK));
       }
 
-      // Step 6: quarantine
+      // Step 4: optional raw landing (audit trail), with retention.
+      let rawInserted = 0;
+      let rawPurged = 0;
+      if (RAW_LANDING_ENABLED) {
+        for (let i = 0; i < csvRows.length; i += RAW_CHUNK) {
+          if (timeLeft() <= 0) { truncated = true; break; }
+          const chunk = csvRows.slice(i, i + RAW_CHUNK);
+          rawInserted += await insertRawRows(db, chunk, {
+            etlRunId,
+            sourceFile: latestFile.name,
+            startRowNumber: i + 2, // +1 zero-index, +1 header
+          });
+        }
+        rawPurged = await purgeRawLanding(db, RAW_LANDING_KEEP_RUNS);
+      }
+
+      // Step 5: quarantine
       let quarantined = 0;
       if (quarantine.length) {
         quarantined = await insertQuarantine(db, quarantine, {
@@ -189,26 +205,37 @@ export async function GET(request: NextRequest) {
         });
       }
 
-      // Step 7: rebuild aggregations (daily_revenue + dim_*)
-      await rebuildDailyRevenue(minDate, maxDate);
-      await rebuildDimTables();
+      // Step 6: rebuild aggregations server-side.
+      // These used to page every order and every one of the 154k order items
+      // over PostgREST and group them in JS — several hundred round-trips that
+      // never fit the function budget. Now three statements in the database.
+      const aggregates = await rebuildAggregates(db, minDate, maxDate);
 
-      // Step 8: sanity + finish log
+      // Step 7: sanity + finish log
       const sanity = await runSanityChecks(db, {
         from: minDate !== '9999-12-31' ? minDate : undefined,
         to: maxDate !== '0000-01-01' ? maxDate : undefined,
       });
 
       const totalRows = stats.totalRows;
-      const status = totalRows > 0 && quarantined / totalRows > 0.01 ? 'partial' : 'success';
+      const tooManyQuarantined = totalRows > 0 && quarantined / totalRows > 0.01;
+      const status = truncated || tooManyQuarantined ? 'partial' : 'success';
+      const durationMs = Date.now() - startedAtMs;
 
-      await finishLog(db, etlLogId, status, null, {
+      await finishLog(db, etlLogId, status, truncated ? 'Stopped at time budget — rerun to continue' : null, {
         rows_processed: totalRows,
         rows_inserted: ordersUpserted + itemsUpserted,
         rows_quarantined: quarantined,
         date_range_start: minDate !== '9999-12-31' ? minDate : null,
         date_range_end: maxDate !== '0000-01-01' ? maxDate : null,
-        details: { etl_run_id: etlRunId, mode, warnings, sanity, raw_rows_inserted: rawInserted },
+        details: {
+          etl_run_id: etlRunId, mode, warnings, sanity,
+          raw_rows_inserted: rawInserted,
+          raw_rows_purged: rawPurged,
+          aggregates,
+          duration_ms: durationMs,
+          truncated,
+        },
       });
 
       return NextResponse.json({
@@ -218,9 +245,13 @@ export async function GET(request: NextRequest) {
         orders: ordersUpserted,
         items: itemsUpserted,
         rawRows: rawInserted,
+        rawPurged,
         quarantined,
         warnings: warnings.length,
         dateRange: stats.dateRange,
+        aggregates,
+        durationMs,
+        truncated,
       });
     } catch (err) {
       await finishLog(db, etlLogId, 'error', String(err));
@@ -283,111 +314,42 @@ async function finishLog(
   }).eq('id', id);
 }
 
-async function rebuildDailyRevenue(minDate: string, maxDate: string) {
-  if (!minDate || minDate === '9999-12-31') return;
+async function rebuildAggregates(
+  db: ReturnType<typeof getSupabaseAdmin>,
+  minDate: string,
+  maxDate: string
+): Promise<{ dailyRevenueRows: number; products: number; fabrics: number }> {
+  const out = { dailyRevenueRows: 0, products: 0, fabrics: 0 };
 
-  const orders = await fetchAllFrom(
-    'fact_orders',
-    'order_date, source_shop, total_gross, total_gross_pln, shipping_cost_pln, is_paid, status, currency',
-    q => q.gte('order_date', minDate).lte('order_date', maxDate + 'T23:59:59')
-  );
-
-  if (!orders.length) return;
-
-  const grouped: Record<string, {
-    orders_count: number; orders_paid: number; orders_cancelled: number;
-    revenue_gross_pln: number; revenue_paid_pln: number; shipping_revenue_pln: number;
-    revenue_gross_original: number; original_currency: string;
-  }> = {};
-
-  for (const o of orders) {
-    const date = o.order_date.substring(0, 10);
-    const key = `${date}|${o.source_shop}`;
-    if (!grouped[key]) {
-      grouped[key] = {
-        orders_count: 0, orders_paid: 0, orders_cancelled: 0,
-        revenue_gross_pln: 0, revenue_paid_pln: 0, shipping_revenue_pln: 0,
-        revenue_gross_original: 0, original_currency: o.currency || 'PLN',
-      };
-    }
-    const g = grouped[key];
-    g.orders_count++;
-    if (o.is_paid) g.orders_paid++;
-    if (o.status === 'anulowane') g.orders_cancelled++;
-    g.revenue_gross_pln += o.total_gross_pln || 0;
-    if (o.is_paid) g.revenue_paid_pln += o.total_gross_pln || 0;
-    g.shipping_revenue_pln += o.shipping_cost_pln || 0;
-    g.revenue_gross_original += o.total_gross || 0;
+  if (minDate && minDate !== '9999-12-31' && maxDate && maxDate !== '0000-01-01') {
+    const { data, error } = await db.rpc('fn_rebuild_daily_revenue', {
+      p_from: minDate,
+      p_to: maxDate,
+    });
+    if (error) throw new Error(`fn_rebuild_daily_revenue: ${error.message}`);
+    out.dailyRevenueRows = typeof data === 'number' ? data : 0;
   }
 
-  const rows = Object.entries(grouped).map(([key, g]) => {
-    const [date, source_shop] = key.split('|');
-    return {
-      date, source_shop, ...g,
-      avg_order_value_pln: g.orders_count > 0 ? g.revenue_gross_pln / g.orders_count : 0,
-    };
-  });
+  const { data: prod, error: prodErr } = await db.rpc('fn_rebuild_dim_products');
+  if (prodErr) throw new Error(`fn_rebuild_dim_products: ${prodErr.message}`);
+  out.products = typeof prod === 'number' ? prod : 0;
 
-  for (let i = 0; i < rows.length; i += 500) {
-    await getSupabaseAdmin().from('fact_daily_revenue').upsert(rows.slice(i, i + 500), { onConflict: 'date,source_shop' });
-  }
+  const { data: fab, error: fabErr } = await db.rpc('fn_rebuild_dim_fabrics');
+  if (fabErr) throw new Error(`fn_rebuild_dim_fabrics: ${fabErr.message}`);
+  out.fabrics = typeof fab === 'number' ? fab : 0;
+
+  return out;
 }
 
-async function rebuildDimTables() {
-  const items = await fetchAllFrom('fact_order_items', 'product_name, product_category, quantity, order_id');
-  if (items.length) {
-    const map: Record<string, { category: string; orders: Set<string>; qty: number }> = {};
-    for (const i of items) {
-      if (!map[i.product_name]) map[i.product_name] = { category: i.product_category, orders: new Set(), qty: 0 };
-      map[i.product_name].orders.add(i.order_id);
-      map[i.product_name].qty += i.quantity || 1;
-    }
-    const rows = Object.entries(map).map(([name, v]) => ({
-      product_name: name, product_category: v.category,
-      total_orders: v.orders.size, total_quantity: v.qty,
-      updated_at: new Date().toISOString(),
-    }));
-    for (let j = 0; j < rows.length; j += 500) {
-      await getSupabaseAdmin().from('dim_products').upsert(rows.slice(j, j + 500), { onConflict: 'product_name' });
-    }
+async function purgeRawLanding(
+  db: ReturnType<typeof getSupabaseAdmin>,
+  keepRuns: number
+): Promise<number> {
+  const { data, error } = await db.rpc('fn_purge_raw_erp_orders', { p_keep_runs: keepRuns });
+  if (error) {
+    // Retention is housekeeping — never fail an otherwise good run over it.
+    console.error('raw_erp_orders purge failed:', error.message);
+    return 0;
   }
-
-  const fabItems = await fetchAllFrom(
-    'fact_order_items',
-    'fabric, fabric_collection, order_id',
-    q => q.not('fabric', 'is', null)
-  );
-  if (fabItems.length) {
-    const map: Record<string, { collection: string; orders: Set<string> }> = {};
-    for (const i of fabItems) {
-      if (!i.fabric) continue;
-      if (!map[i.fabric]) map[i.fabric] = { collection: i.fabric_collection || i.fabric, orders: new Set() };
-      map[i.fabric].orders.add(i.order_id);
-    }
-    const rows = Object.entries(map).map(([name, v]) => ({
-      fabric_name: name, fabric_collection: v.collection,
-      total_orders: v.orders.size, updated_at: new Date().toISOString(),
-    }));
-    for (let j = 0; j < rows.length; j += 500) {
-      await getSupabaseAdmin().from('dim_fabrics').upsert(rows.slice(j, j + 500), { onConflict: 'fabric_name' });
-    }
-  }
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function fetchAllFrom(table: string, select: string, apply?: (q: any) => any): Promise<any[]> {
-  const out: unknown[] = [];
-  let offset = 0;
-  while (true) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let q: any = getSupabaseAdmin().from(table).select(select).range(offset, offset + PAGE_SIZE - 1);
-    if (apply) q = apply(q);
-    const { data, error } = await q;
-    if (error) throw error;
-    if (!data || data.length === 0) break;
-    out.push(...data);
-    if (data.length < PAGE_SIZE) break;
-    offset += PAGE_SIZE;
-  }
-  return out as any[];
+  return typeof data === 'number' ? data : 0;
 }

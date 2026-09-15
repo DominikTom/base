@@ -35,12 +35,6 @@ export async function POST(request: NextRequest) {
 export async function GET(request: NextRequest) {
   const _guard = await requireAdmin();
   if (_guard) return _guard;
-  const isVercelCron = request.headers.get('x-vercel-cron') === '1';
-  const cronSecret = process.env.ETL_CRON_SECRET;
-  const authHeader = request.headers.get('authorization');
-  if (!isVercelCron && cronSecret && authHeader !== `Bearer ${cronSecret}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
   return syncAdsDays(7, null, true);
 }
 

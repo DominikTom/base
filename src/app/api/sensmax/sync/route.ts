@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { requireAdmin } from '@/lib/auth';
 import { refreshSensorsList, syncHistorical } from '@/lib/sensmax/sync';
 
@@ -15,15 +15,9 @@ async function runSync() {
 }
 
 // Vercel Cron triggers a GET request (with the x-vercel-cron header).
-export async function GET(request: NextRequest) {
+export async function GET() {
   const _guard = await requireAdmin();
   if (_guard) return _guard;
-  const authHeader = request.headers.get('authorization');
-  const cronSecret = process.env.ETL_CRON_SECRET || process.env.SENSMAX_CRON_SECRET;
-  const isVercelCron = request.headers.get('x-vercel-cron') === '1';
-  if (!isVercelCron && cronSecret && authHeader !== `Bearer ${cronSecret}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
   return runSync();
 }
 
