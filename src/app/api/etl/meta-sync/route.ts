@@ -28,29 +28,41 @@ export async function POST(request: NextRequest) {
   return syncMeta(days);
 }
 
-// GET — Vercel Cron daily at 5:00 UTC (Hobby plan = daily minimum)
+// GET — Vercel Cron daily at 5:00 UTC (Hobby plan = daily minimum).
+// ?account=act_xxx&days=N — backfill jednego konta (np. nowej marki): kasuje
+// i nadpisuje wyłącznie wiersze tego konta, pozostałe konta nietknięte.
 export async function GET(request: NextRequest) {
   const _guard = await requireAdmin();
   if (_guard) return _guard;
+  const { searchParams } = new URL(request.url);
+  const only = searchParams.get('account');
+  if (only) {
+    if (!getAdAccountIds().includes(only)) {
+      return NextResponse.json({ error: `account ${only} not configured` }, { status: 400 });
+    }
+    const daysParam = parseInt(searchParams.get('days') || '90', 10);
+    const days = Number.isFinite(daysParam) && daysParam > 0 && daysParam <= 1100 ? daysParam : 90;
+    return syncMeta(days, only);
+  }
   // 28-day window covers Meta's attribution lookback so late-reported
   // conversions retroactively update historical rows.
   return syncMeta(28);
 }
 
-async function syncMeta(daysBack: number) {
+async function syncMeta(daysBack: number, only?: string) {
   const today = new Date();
   const dateTo = new Date(today);
   dateTo.setDate(dateTo.getDate() - 1);
   const dateFrom = new Date(today);
   dateFrom.setDate(dateFrom.getDate() - daysBack);
   const fmt = (d: Date) => d.toISOString().split('T')[0];
-  return syncMetaRange(fmt(dateFrom), fmt(dateTo));
+  return syncMetaRange(fmt(dateFrom), fmt(dateTo), only);
 }
 
-async function syncMetaRange(dateFromStr: string, dateToStr: string) {
+async function syncMetaRange(dateFromStr: string, dateToStr: string, only?: string) {
   try {
     const db = getSupabaseAdmin();
-    const accountIds = getAdAccountIds();
+    const accountIds = only ? [only] : getAdAccountIds();
 
     if (accountIds.length === 0) {
       return NextResponse.json({ error: 'META_AD_ACCOUNTS not configured' }, { status: 500 });
@@ -64,11 +76,13 @@ async function syncMetaRange(dateFromStr: string, dateToStr: string) {
     const etlLogId = etlLog?.id;
 
     try {
-      // Delete existing meta data in range
-      await db.from('fact_daily_adspend').delete()
+      // Delete existing meta data in range (backfill jednego konta: tylko jego wiersze)
+      let del = db.from('fact_daily_adspend').delete()
         .eq('platform', 'meta')
         .gte('date', dateFromStr)
         .lte('date', dateToStr);
+      if (only) del = del.eq('account_id', only);
+      await del;
 
       let totalRows = 0;
       const results: Record<string, number> = {};
