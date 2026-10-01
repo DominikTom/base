@@ -4,6 +4,7 @@ const PROPERTY_HOSTNAME_MAP: Record<string, string> = {
   '298581907': 'mybed.pl',
   '478191159': 'mybed.de',
   '473912359': 'mittohome.pl',
+  '551834016': 'nomosleep.pl',
 };
 
 function getAuth() {
