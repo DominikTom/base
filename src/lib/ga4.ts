@@ -20,6 +20,32 @@ function getAuth() {
 // Synchronizujemy każdą usługę z PROPERTY_HOSTNAME_MAP plus ewentualne dodatkowe
 // z GA4_PROPERTY_IDS — nowa marka wymaga tylko wpisu w mapie, bez edycji env
 // (zmienna jest „sensitive", więc w Vercelu nie da się jej dopisać, tylko wpisać od nowa).
+type AnalyticsData = ReturnType<typeof google.analyticsdata>;
+type RunReportBody = import('googleapis').analyticsdata_v1beta.Schema$RunReportRequest;
+
+// advertiserAdCost/Clicks/Impressions sumują KAŻDĄ platformę, której koszty są
+// podpięte do usługi GA4 (Google Ads, Meta Ads przez integrację GA4, importy
+// „Other Ads"). Kolumna ad_cost ma znaczyć Google Ads spend — Meta liczymy
+// osobno z Marketing API, inaczej NOMO (Meta podpięta w GA4) liczy ją podwójnie.
+// Filtr po sessionSourcePlatform; gdyby API odrzuciło filtr, wracamy do
+// zapytania bez filtra, żeby nie zatrzymać syncu.
+async function runAdsReport(analytics: AnalyticsData, property: string, requestBody: RunReportBody) {
+  try {
+    return await analytics.properties.runReport({
+      property,
+      requestBody: {
+        ...requestBody,
+        dimensionFilter: {
+          filter: { fieldName: 'sessionSourcePlatform', stringFilter: { matchType: 'EXACT', value: 'Google Ads' } },
+        },
+      },
+    });
+  } catch (err) {
+    console.warn(`GA4 ${property}: ads report with Google Ads filter failed, falling back to all platforms —`, String(err));
+    return analytics.properties.runReport({ property, requestBody });
+  }
+}
+
 export function getPropertyIds(): string[] {
   const fromEnv = (process.env.GA4_PROPERTY_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
   return [...new Set([...Object.keys(PROPERTY_HOSTNAME_MAP), ...fromEnv])];
@@ -89,15 +115,12 @@ export async function fetchGA4DailyTotals(
         ],
       },
     }),
-    analytics.properties.runReport({
-      property,
-      requestBody: {
-        dateRanges,
-        dimensions: [{ name: 'date' }, { name: 'sessionCampaignName' }],
-        metrics: [
-          { name: 'advertiserAdCost' }, { name: 'advertiserAdClicks' }, { name: 'advertiserAdImpressions' },
-        ],
-      },
+    runAdsReport(analytics, property, {
+      dateRanges,
+      dimensions: [{ name: 'date' }, { name: 'sessionCampaignName' }],
+      metrics: [
+        { name: 'advertiserAdCost' }, { name: 'advertiserAdClicks' }, { name: 'advertiserAdImpressions' },
+      ],
     }),
   ]);
 
@@ -173,15 +196,12 @@ export async function fetchGA4Report(
         ],
       },
     }),
-    analytics.properties.runReport({
-      property,
-      requestBody: {
-        dateRanges, dimensions: dims,
-        metrics: [
-          { name: 'advertiserAdCost' }, { name: 'advertiserAdClicks' },
-          { name: 'advertiserAdImpressions' },
-        ],
-      },
+    runAdsReport(analytics, property, {
+      dateRanges, dimensions: dims,
+      metrics: [
+        { name: 'advertiserAdCost' }, { name: 'advertiserAdClicks' },
+        { name: 'advertiserAdImpressions' },
+      ],
     }),
   ]);
 
