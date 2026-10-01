@@ -105,15 +105,25 @@ async function syncGA4({ daysBack, totalsOnly }: { daysBack: number; totalsOnly:
         return { hostname: getHostname(propertyId), rows: propRows };
       });
 
-      const propResults = await Promise.all(promises);
-      for (const r of propResults) {
-        results[r.hostname] = r.rows;
-        totalRows += r.rows;
-      }
+      // allSettled: brak dostępu do jednej usługi (np. nowa marka bez konta
+      // serwisowego w GA4) nie może przerwać syncu pozostałych sklepów.
+      const settled = await Promise.allSettled(promises);
+      const errors: Record<string, string> = {};
+      settled.forEach((r, i) => {
+        if (r.status === 'fulfilled') {
+          results[r.value.hostname] = r.value.rows;
+          totalRows += r.value.rows;
+        } else {
+          errors[getHostname(propertyIds[i])] = String(r.reason).slice(0, 300);
+        }
+      });
+      const failed = Object.keys(errors).length;
+      if (failed === propertyIds.length) throw new Error(JSON.stringify(errors));
 
       if (etlLogId) {
         await db.from('etl_log').update({
-          status: 'success',
+          status: failed ? 'partial' : 'success',
+          error_message: failed ? JSON.stringify(errors).slice(0, 1000) : null,
           finished_at: new Date().toISOString(),
           rows_processed: totalRows,
           rows_inserted: totalRows,
@@ -123,8 +133,9 @@ async function syncGA4({ daysBack, totalsOnly }: { daysBack: number; totalsOnly:
       }
 
       return NextResponse.json({
-        success: true,
+        success: failed === 0,
         properties: results,
+        ...(failed ? { errors } : {}),
         totalRows,
         dateRange: { from: dateFromStr, to: dateToStr },
         mode: totalsOnly ? 'totals_only_90d' : 'full_7d',

@@ -17,9 +17,12 @@ function getAuth() {
   });
 }
 
+// Synchronizujemy każdą usługę z PROPERTY_HOSTNAME_MAP plus ewentualne dodatkowe
+// z GA4_PROPERTY_IDS — nowa marka wymaga tylko wpisu w mapie, bez edycji env
+// (zmienna jest „sensitive", więc w Vercelu nie da się jej dopisać, tylko wpisać od nowa).
 export function getPropertyIds(): string[] {
-  const ids = process.env.GA4_PROPERTY_IDS || '';
-  return ids.split(',').map(s => s.trim()).filter(Boolean);
+  const fromEnv = (process.env.GA4_PROPERTY_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
+  return [...new Set([...Object.keys(PROPERTY_HOSTNAME_MAP), ...fromEnv])];
 }
 
 export function getHostname(propertyId: string): string {
