@@ -8,7 +8,7 @@ import { LogoMark } from '@/components/ui/logo-mark';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
 
 const ALLOWED_DOMAINS = ['mybed.pl', 'mybed.de', 'mittohome.pl'];
-const BRANDS = ['MyBed.pl', 'MyBed.de', 'MittoHome.pl'];
+const BRANDS = ['MyBed.pl', 'MyBed.de', 'MittoHome.pl', 'NomoSleep.pl'];
 
 function GoogleLogo() {
   // Logotyp marki zewnętrznej — jedyny dozwolony wyjątek od zakazu hexów

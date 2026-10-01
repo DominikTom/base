@@ -13,6 +13,7 @@ const SHOPS = [
   { value: 'mybed.pl', label: 'MyBed.pl' },
   { value: 'mybed.de', label: 'MyBed.de' },
   { value: 'mittohome.pl', label: 'MittoHome.pl' },
+  { value: 'nomosleep.pl', label: 'NomoSleep.pl' },
 ];
 
 const PRESETS = [

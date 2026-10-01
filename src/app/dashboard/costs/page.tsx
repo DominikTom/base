@@ -16,7 +16,7 @@ interface AgencyCost {
   platform: string | null;
 }
 
-const SHOPS = ['mybed.pl', 'mybed.de', 'mittohome.pl'];
+const SHOPS = ['mybed.pl', 'mybed.de', 'mittohome.pl', 'nomosleep.pl'];
 const PLATFORMS = ['meta', 'google'];
 
 export default function CostsPage() {

@@ -125,9 +125,9 @@ export interface EtlLog {
 }
 
 // Pojedynczy sklep — dla UI list / etykiet. 'all' to legacy/wildcard.
-// W praktyce filtrujemy do MyBed Group: mybed.pl, mybed.de, mittohome.pl.
+// W praktyce filtrujemy do MyBed Group: mybed.pl, mybed.de, mittohome.pl, nomosleep.pl.
 // Pozostałe (amazon.de, allegro.pl, showroom, kaufland.de) ukryte z UI.
-export type Shop = 'all' | 'mybed.pl' | 'mybed.de' | 'mittohome.pl';
+export type Shop = 'all' | 'mybed.pl' | 'mybed.de' | 'mittohome.pl' | 'nomosleep.pl';
 export type CompareMode = 'none' | 'mom' | 'yoy' | 'previous_period';
 export type Granularity = 'day' | 'week' | 'month' | 'quarter';
 

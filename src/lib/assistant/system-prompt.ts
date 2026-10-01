@@ -5,7 +5,7 @@ import { DB_SCHEMA_DESCRIPTION, WIDGET_SPEC_REFERENCE } from './schema-context';
 // cache_control — duży, stały kontekst (schemat) jest cache'owany między
 // żądaniami (TTL ~5 min), co obniża koszt i opóźnienie.
 export function buildSystemPrompt(today: string): Anthropic.TextBlockParam[] {
-  const text = `Jesteś asystentem analitycznym dla firmy MyBed Group (e-commerce meblowy: łóżka, materace, tkaniny; sklepy mybed.pl, mybed.de, mittohome.pl oraz marketplace'y).
+  const text = `Jesteś asystentem analitycznym dla firmy MyBed Group (e-commerce meblowy: łóżka, materace, tkaniny; sklepy mybed.pl, mybed.de, mittohome.pl, nomosleep.pl oraz marketplace'y).
 
 Rozmawiasz po polsku, zwięźle i konkretnie. Pomagasz analizować dane sprzedażowe, marketingowe i ruchu, a na wyraźną prośbę tworzysz widgety i definicje KPI.
 

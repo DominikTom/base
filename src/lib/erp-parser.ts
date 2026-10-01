@@ -133,8 +133,8 @@ const CATEGORY_RULES: CategoryRule[] = [
   { category: 'dopłata', item_type: 'surcharge', match: n => /dopłata|zaliczka/i.test(n) },
   { category: 'próbki', item_type: 'product', match: n => /próbk|darmowe/i.test(n) },
   { category: 'łóżko', item_type: 'product', match: n => /łóżko|łożko|bett|boxspring/i.test(n) },
-  { category: 'materac', item_type: 'product', match: n => /materac|matratze|topper/i.test(n) },
-  { category: 'kołdra', item_type: 'product', match: n => /kołdr/i.test(n) },
+  { category: 'materac', item_type: 'product', match: n => /materac|matratze|topper|toper /i.test(n) },
+  { category: 'kołdra', item_type: 'product', match: n => /kołdr|koldr/i.test(n) },
   { category: 'poduszka', item_type: 'product', match: n => /poduszk/i.test(n) },
   { category: 'sofa', item_type: 'product', match: n => /sofa|narożnik/i.test(n) },
   { category: 'fotel', item_type: 'product', match: n => /fotel/i.test(n) },
@@ -169,6 +169,12 @@ function detectSource(orderNumber: string, optionStr: string): { platform: strin
 
   if (num.startsWith('Shopify')) {
     return { platform: 'shopify', shop: 'mittohome.pl' };
+  }
+  // NomoSleep: ERP numeruje „NOMO-83", podzielone zamówienia „NOMO-65/1".
+  // Inne warianty z prefiksem NOMO („NOMOTEST-T-01", „NOMO PROBE A-…",
+  // „NOMO-9042/1-E2E") to zamówienia testowe z wdrożenia — zostają 'unknown'.
+  if (/^NOMO-\d+(\/\d+)?$/i.test(num)) {
+    return { platform: 'nomo', shop: 'nomosleep.pl' };
   }
   if (num.startsWith('Amazon')) {
     return { platform: 'amazon', shop: 'amazon.de' };

@@ -9,7 +9,8 @@ Wszystkie kwoty są w PLN (kolumny *_pln). Dane analityczne, tylko do odczytu.
 ## fact_orders — zamówienia (ziarno: jedno zamówienie)
 - order_id (text, PK), order_date (timestamptz), expected_date, fulfillment_date
 - source_platform (text: woocommerce, amazon, allegro, kaufland, showroom...)
-- source_shop (text: mybed.pl, mybed.de, mittohome.pl, showroom, amazon.de, allegro.pl, kaufland.de)
+- source_shop (text: mybed.pl, mybed.de, mittohome.pl, nomosleep.pl, showroom, amazon.de, allegro.pl, kaufland.de)
+  (nomosleep.pl = marka NOMO / NomoSleep; zamówienia w ERP mają numery „NOMO-<nr>”)
 - currency, total_gross (oryginalna waluta), total_gross_pln, shipping_cost_pln, exchange_rate
 - is_paid (bool), status (text), coupon_code, delivery_city, delivery_zip, delivery_method
 - supplier (text), production_batch, sales_person, marketplace_tag, operational_tags (text[])
@@ -38,6 +39,7 @@ Ma WSZYSTKIE kolumny fact_order_items oraz dodatkowo:
 - Tylko próbki tkanin → WHERE is_sample = true
 - Konkretnie łóżka → dodatkowo AND product_category = 'łóżko'
   (UWAGA: mittohome.pl sprzedaje głównie sofy, narożniki i szafki — nie łóżka;
+   nomosleep.pl sprzedaje materace, toppery, poduszki i kołdry NOMO — też nie łóżka;
    dla pytań ogólnych o "produkty" nie zawężaj do kategorii 'łóżko')
 - Pozycje logistyczne wyklucza już warunek item_type = 'product'
   (poza nim są 'shipping' / 'service' / 'surcharge').
@@ -85,15 +87,15 @@ Sklepy Amazon/Allegro/Kaufland nie mają osobnych kont Meta — ich wydatki idą
 Google Ads spend NIE jest w tej tabeli — szukaj w fact_daily_traffic.ad_cost (patrz niżej).
 
 ## fact_daily_traffic — ruch GA4 + Google Ads spend (ziarno: date + source + medium + hostname + campaign)
-- date, source, medium, campaign, hostname (= sklep: mybed.pl / mybed.de / mittohome.pl)
+- date, source, medium, campaign, hostname (= sklep: mybed.pl / mybed.de / mittohome.pl / nomosleep.pl)
 - sessions, users, new_users, pageviews, bounce_rate, avg_session_duration, transactions, ga_revenue, ad_cost
 
 ### WAŻNE — Google Ads spend
 Wydatki Google Ads są w kolumnie ad_cost, w SPECJALNYCH wierszach source = '__total__'
 (GA4 raportuje dzienny ad_cost tylko jako dzienne podsumowanie, nie per kampania).
 Dla spend per sklep użyj hostname (sklep = hostname, bez mapowania).
-UWAGA — WALUTA: ad_cost i ga_revenue są w walucie property GA4: PLN dla mybed.pl
-i mittohome.pl, ale EUR dla mybed.de. Tabela nie ma kolumny waluty. Aby zwrócić
+UWAGA — WALUTA: ad_cost i ga_revenue są w walucie property GA4: PLN dla mybed.pl,
+mittohome.pl i nomosleep.pl, ale EUR dla mybed.de. Tabela nie ma kolumny waluty. Aby zwrócić
 spójną kwotę w PLN, przemnóż wartości dla mybed.de przez kurs EUR→PLN dnia.
 Kursy są w fact_orders.exchange_rate (currency='EUR'); dim_exchange_rates jest puste.
 

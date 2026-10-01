@@ -113,3 +113,46 @@ describe('parseErpCsv — Shoper without -1/-2 suffix', () => {
     expect(r.warnings[0]).toContain('Shoper123456');
   });
 });
+
+describe('parseErpCsv — NomoSleep (prefiks NOMO)', () => {
+  it('maps NOMO-<n> and split NOMO-<n>/<k> orders to nomosleep.pl in PLN', async () => {
+    const rows = [
+      row({
+        'Numer': 'NOMO-83',
+        'Data zamówienia': '2026-09-30 16:32:40',
+        'Pozycje zamówienia/Produkt/Nazwa': 'Materac NOMO Pro 160x200 Średnia',
+        'Suma': '2849.05',
+      }),
+      row({ 'Pozycje zamówienia/Produkt/Nazwa': 'Toper NOMO Visco 160x200' }),
+      row({ 'Pozycje zamówienia/Produkt/Nazwa': 'Koldra NOMO Zimowa 160x200' }),
+      row({
+        'Numer': 'NOMO-65/1',
+        'Data zamówienia': '2026-09-20 10:00:00',
+        'Pozycje zamówienia/Produkt/Nazwa': 'Poduszka NOMO Klasyk 50x70',
+      }),
+    ];
+    const r = await parseErpCsv(rows);
+
+    for (const id of ['NOMO-83', 'NOMO-65/1']) {
+      const o = r.orders.find(x => x.order_id === id)!;
+      expect(o.source_shop).toBe('nomosleep.pl');
+      expect(o.source_platform).toBe('nomo');
+      expect(o.currency).toBe('PLN');
+    }
+    expect(r.orders.find(x => x.order_id === 'NOMO-83')!.total_gross_pln).toBe(2849.05);
+
+    const cats = r.items.filter(i => i.order_id === 'NOMO-83').map(i => i.product_category);
+    expect(cats).toEqual(['materac', 'materac', 'kołdra']);
+  });
+
+  it('leaves NOMO test orders as unknown', async () => {
+    const ids = ['NOMOTEST-T-01', 'NOMO PROBE A-083435', 'NOMO-TEST-1', 'NOMO-9042/1-E2E'];
+    const rows = ids.map(id => row({
+      'Numer': id,
+      'Data zamówienia': '2026-08-04 10:00:00',
+      'Pozycje zamówienia/Produkt/Nazwa': 'Materac',
+    }));
+    const r = await parseErpCsv(rows);
+    expect(r.orders.map(o => o.source_shop)).toEqual(ids.map(() => 'unknown'));
+  });
+});

@@ -69,6 +69,7 @@ export const SHOP_COLORS: Record<string, string> = {
   'mybed.pl':     '#4F46E5',  // indygo (primary) — główny sklep
   'mybed.de':     '#06B6D4',  // cyjan (accent)
   'mittohome.pl': '#8B5CF6',  // violet
+  'nomosleep.pl': '#10B981',  // emerald
   'showroom':     '#14B8A6',  // teal
   'amazon.de':    '#F59E0B',  // amber
   'allegro.pl':   '#F97316',  // orange

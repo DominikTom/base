@@ -5,6 +5,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 const HOSTNAME_CURRENCY: Record<string, string> = {
   'mybed.pl': 'PLN',
   'mittohome.pl': 'PLN',
+  'nomosleep.pl': 'PLN',
   'mybed.de': 'EUR',
 };
 

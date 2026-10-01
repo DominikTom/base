@@ -1,6 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 
-// Taksonomia tagów dla kreacji e-commerce (mybed.pl / .de / mittohome).
+// Taksonomia tagów dla kreacji e-commerce (mybed.pl / .de / mittohome / nomosleep).
 // Trzymana osobno, bo używana dwukrotnie: w system prompcie (jako instrukcja
 // dla modelu) i w walidacji odpowiedzi.
 export const CREATIVE_TAG_TAXONOMY = {
