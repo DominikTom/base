@@ -60,6 +60,7 @@ export const META_ACCOUNT_TO_SHOP: Record<string, string> = {
   'act_1681802382204753': 'mybed.pl',
   'act_637792865917248': 'mybed.de',
   'act_797212915921530': 'mittohome.pl',
+  'act_1376753327967692': 'nomosleep.pl',
 };
 
 // Datasety y_axis → dyspozytor w eksploratorze i pivot.

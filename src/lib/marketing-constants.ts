@@ -3,11 +3,13 @@
 
 // Mapowanie Shop label → Meta Ad Account ID. Client-safe (same ID kont są
 // publiczne w URL-ach Ads Managera); tokeny zostają wyłącznie w env serwera.
-// Przy dodaniu nowej marki: wpis tutaj + para act_id:token w META_AD_ACCOUNTS.
+// Przy dodaniu nowej marki: wpis tutaj + para act_id:token w META_AD_ACCOUNTS
+// (albo w META_AD_ACCOUNTS_EXTRA, żeby nie przepisywać istniejących tokenów).
 export const SHOP_TO_META_ACCOUNT: Record<string, string> = {
   'mybed.pl': 'act_1681802382204753',
   'mybed.de': 'act_637792865917248',
   'mittohome.pl': 'act_797212915921530',
+  'nomosleep.pl': 'act_1376753327967692',
 };
 
 export const FUNNEL_STAGES = ['TOFU', 'MOFU', 'BOFU', 'Retargeting', 'Retencja'] as const;

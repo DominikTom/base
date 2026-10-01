@@ -12,17 +12,29 @@ export async function POST() {
   return syncGA4({ daysBack: 365, totalsOnly: true });
 }
 
-// GET — Vercel Cron: totals + detail for last 7 days
+// GET — Vercel Cron: totals + detail for last 7 days.
+// ?property=<id>&days=N — backfill jednej usługi (np. nowej marki): kasuje
+// i nadpisuje wyłącznie wiersze jej hostname, inne sklepy zostają nietknięte.
 export async function GET(request: NextRequest) {
   const _guard = await requireAdmin();
   if (_guard) return _guard;
+  const { searchParams } = new URL(request.url);
+  const only = searchParams.get('property');
+  if (only) {
+    if (!getPropertyIds().includes(only)) {
+      return NextResponse.json({ error: `property ${only} not configured` }, { status: 400 });
+    }
+    const daysParam = parseInt(searchParams.get('days') || '90', 10);
+    const daysBack = Number.isFinite(daysParam) && daysParam > 0 && daysParam <= 400 ? daysParam : 90;
+    return syncGA4({ daysBack, totalsOnly: false, only });
+  }
   return syncGA4({ daysBack: 7, totalsOnly: false });
 }
 
-async function syncGA4({ daysBack, totalsOnly }: { daysBack: number; totalsOnly: boolean }) {
+async function syncGA4({ daysBack, totalsOnly, only }: { daysBack: number; totalsOnly: boolean; only?: string }) {
   try {
     const db = getSupabaseAdmin();
-    const propertyIds = getPropertyIds();
+    const propertyIds = only ? [only] : getPropertyIds();
 
     if (propertyIds.length === 0) {
       return NextResponse.json({ error: 'GA4_PROPERTY_IDS not configured' }, { status: 500 });
@@ -47,7 +59,12 @@ async function syncGA4({ daysBack, totalsOnly }: { daysBack: number; totalsOnly:
       const dateToStr = fmt(dateTo);
 
       // Clean slate for manual sync, targeted delete for cron
-      if (totalsOnly) {
+      if (only) {
+        // Backfill jednej usługi: tylko jej hostname w zakresie dat
+        await db.from('fact_daily_traffic').delete()
+          .eq('hostname', getHostname(only))
+          .gte('date', dateFromStr).lte('date', dateToStr);
+      } else if (totalsOnly) {
         // Manual: delete ALL data, fresh start
         await db.from('fact_daily_traffic').delete().gte('date', '2020-01-01');
       } else {

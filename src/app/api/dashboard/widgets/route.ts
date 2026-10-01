@@ -214,7 +214,7 @@ export async function POST(request: NextRequest) {
         'mybed.pl': ['mybed.pl', 'mybed_pl', 'mybedpl', 'act_1681802382204753'],
         'mybed.de': ['mybed.de', 'mybed_de', 'mybedde', 'act_637792865917248'],
         'mittohome.pl': ['mittohome.pl', 'mittohome_pl', 'mittohomepl', 'act_797212915921530'],
-        'nomosleep.pl': ['nomosleep.pl', 'nomosleep_pl', 'nomosleeppl'],
+        'nomosleep.pl': ['nomosleep.pl', 'nomosleep_pl', 'nomosleeppl', 'act_1376753327967692'],
         'showroom': ['showroom'],
         'amazon.de': ['amazon.de', 'amazon_de', 'amazonde'],
         'allegro.pl': ['allegro.pl', 'allegro_pl', 'allegropl'],

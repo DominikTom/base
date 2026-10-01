@@ -72,12 +72,14 @@ Tabela NIE ma kolumny source_shop. Przypisanie wydatku do sklepu robisz po accou
   - 'act_1681802382204753' → 'mybed.pl'
   - 'act_637792865917248'  → 'mybed.de'
   - 'act_797212915921530'  → 'mittohome.pl'
+  - 'act_1376753327967692' → 'nomosleep.pl'
 Wzorzec SQL dla „spend per sklep per miesiąc":
   SELECT date_trunc('month', date)::date AS month,
          CASE account_id
            WHEN 'act_1681802382204753' THEN 'mybed.pl'
            WHEN 'act_637792865917248'  THEN 'mybed.de'
            WHEN 'act_797212915921530'  THEN 'mittohome.pl'
+           WHEN 'act_1376753327967692' THEN 'nomosleep.pl'
          END AS shop,
          ROUND(SUM(spend)::numeric, 0) AS spend_pln
   FROM fact_daily_adspend

@@ -8,8 +8,12 @@ export { SHOP_TO_META_ACCOUNT } from './marketing-constants';
 
 // Każda marka ma osobną apkę Meta w swoim portfolio biznesowym → token per ad account.
 // META_AD_ACCOUNTS format: "act_123:EAA_token_A,act_456:EAA_token_B,act_789:EAA_token_C"
+// META_AD_ACCOUNTS_EXTRA — ten sam format, czytany dodatkowo. Zmienne są
+// „sensitive" (Vercel nie pokazuje wartości), więc nowa marka idzie do osobnej
+// zmiennej zamiast przepisywania wszystkich tokenów w META_AD_ACCOUNTS.
 function parseAccountEntries(): Array<{ accountId: string; token: string }> {
-  const raw = process.env.META_AD_ACCOUNTS ?? '';
+  const raw = [process.env.META_AD_ACCOUNTS, process.env.META_AD_ACCOUNTS_EXTRA]
+    .filter(Boolean).join(',');
   const entries: Array<{ accountId: string; token: string }> = [];
   for (const chunk of raw.split(',').map(s => s.trim()).filter(Boolean)) {
     const colonAt = chunk.indexOf(':');
