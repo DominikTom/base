@@ -1,60 +1,26 @@
 import { z } from 'zod';
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { getSupabaseAdmin } from '@/lib/supabase';
-import type { McpAuthContext } from './auth';
-import { MCP_SHOPS, resolveShopScope, shopForAccount } from './shops';
+import { badRequest, defineCapability, forbidden, notFound, type Capability } from '@/lib/hub/core';
+import { MCP_SHOPS, resolveShopScope, shopForAccount } from '@/lib/mcp/shops';
 import {
   ATTRIBUTIONS, LEVELS, SORT_KEYS, DATE_RE, DEFAULT_FATIGUE, NO_CREATIVE_KEY,
-  type Attribution, type Level, type Metrics, type SortKey,
+  type Attribution, type Metrics,
   compareBy, daysBetweenInclusive, emptyTotals, addRow, fatigueVerdict, finalize, groupRows,
   pct, previousRange, shiftDays,
-} from './metrics';
-import { allTags, fetchAdRows, fetchCreatives, imageFor, latestDataDate, thumbnailFor, type CreativeRow } from './data';
+} from '@/lib/mcp/metrics';
+import { allTags, fetchAdRows, fetchCreatives, imageFor, latestDataDate, thumbnailFor, type CreativeRow } from '@/lib/mcp/data';
 
-// Narzędzia MCP dash.mybed — tylko odczyt. Każde narzędzie:
-//   * liczy zakres sklepów z tokenu użytkownika (resolveShopScope),
-//   * zwraca JSON w polu text (czytelny dla modelu) + structuredContent,
-//   * zapisuje wywołanie w mcp_audit (argumenty, liczba wierszy, czas, błąd).
+// Zdolności Data Hub: reklamy Meta (wyniki, zmęczenie kreacji, kreacje,
+// kampanie), materiały ze Studio i stan danych. Wystawiane jako REST
+// /api/v1/<path> i narzędzia MCP o tej samej nazwie (patrz src/lib/hub/core.ts).
 
 const MAX_RANGE_DAYS = 400;
 const shopSchema = z.enum(MCP_SHOPS).optional().describe('Sklep: mybed.pl | mybed.de | mojepostel.cz | mittohome.pl | nomosleep.pl. Brak = wszystkie dostępne.');
 const dateSchema = z.string().regex(DATE_RE, 'Format YYYY-MM-DD');
-const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } as const;
-
-type ToolResult = { content: Array<{ type: 'text'; text: string }>; structuredContent?: Record<string, unknown>; isError?: boolean };
 
 function checkRange(from: string, to: string) {
-  if (from > to) throw new Error('date_from nie może być późniejsze niż date_to.');
-  if (daysBetweenInclusive(from, to) > MAX_RANGE_DAYS) throw new Error(`Maksymalny zakres to ${MAX_RANGE_DAYS} dni.`);
-}
-
-function ok(payload: Record<string, unknown>): ToolResult {
-  return { content: [{ type: 'text', text: JSON.stringify(payload) }], structuredContent: payload };
-}
-
-async function audit(db: SupabaseClient, ctx: McpAuthContext, tool: string, args: unknown, rows: number | null, ms: number, error: string | null) {
-  try {
-    await db.from('mcp_audit').insert({
-      token_id: ctx.tokenId, user_id: ctx.userId, tool, args: args ?? null, rows, duration_ms: ms, error,
-    });
-  } catch { /* audyt nie może zablokować odpowiedzi */ }
-}
-
-function wrap<A>(ctx: McpAuthContext, tool: string, fn: (db: SupabaseClient, args: A) => Promise<{ payload: Record<string, unknown>; rows: number }>) {
-  return async (args: A): Promise<ToolResult> => {
-    const db = getSupabaseAdmin();
-    const started = Date.now();
-    try {
-      const { payload, rows } = await fn(db, args);
-      await audit(db, ctx, tool, args, rows, Date.now() - started, null);
-      return ok(payload);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      await audit(db, ctx, tool, args, null, Date.now() - started, message);
-      return { content: [{ type: 'text', text: `Błąd: ${message}` }], isError: true };
-    }
-  };
+  if (from > to) throw badRequest('date_from nie może być późniejsze niż date_to.');
+  if (daysBetweenInclusive(from, to) > MAX_RANGE_DAYS) throw badRequest(`Maksymalny zakres to ${MAX_RANGE_DAYS} dni.`);
 }
 
 const DEFINITIONS = {
@@ -99,12 +65,15 @@ function compactCreative(db: SupabaseClient, c: CreativeRow | undefined) {
   };
 }
 
-export function registerTools(server: McpServer, ctx: McpAuthContext): void {
+export const adsCapabilities: Capability[] = [
   // ── 1. ads_performance ─────────────────────────────────
-  server.registerTool('ads_performance', {
+  defineCapability({
+    name: 'ads_performance',
+    path: 'ads/performance',
+    tag: 'Reklamy Meta',
     title: 'Wyniki reklam Meta',
     description: 'Metryki reklam Meta na poziomie kampanii, zestawu, reklamy albo kreacji za okres, ze zmianą względem poprzedniego okresu tej samej długości. Kwoty w PLN.',
-    inputSchema: {
+    input: {
       shop: shopSchema,
       date_from: dateSchema,
       date_to: dateSchema,
@@ -114,13 +83,9 @@ export function registerTools(server: McpServer, ctx: McpAuthContext): void {
       sort_by: z.enum(SORT_KEYS).default('spend').describe('CPA sortowane rosnąco, reszta malejąco.'),
       limit: z.number().int().min(1).max(200).default(50),
     },
-    annotations: READ_ONLY,
-  }, wrap(ctx, 'ads_performance', async (db, a: {
-    shop?: string; date_from: string; date_to: string; level: Level; attribution: Attribution;
-    min_spend?: number; sort_by: SortKey; limit: number;
-  }) => {
+    run: async ({ db, auth }, a) => {
     checkRange(a.date_from, a.date_to);
-    const scope = resolveShopScope(a.shop, ctx.allowedShops);
+    const scope = resolveShopScope(a.shop, auth.allowedShops);
     const prev = previousRange(a.date_from, a.date_to);
     const [rows, prevRows] = await Promise.all([
       fetchAdRows(db, { accountIds: scope.accountIds, from: a.date_from, to: a.date_to }),
@@ -183,21 +148,24 @@ export function registerTools(server: McpServer, ctx: McpAuthContext): void {
         definitions: DEFINITIONS,
       },
     };
-  }));
+    },
+  }),
 
   // ── 2. creative_fatigue ────────────────────────────────
-  server.registerTool('creative_fatigue', {
+  defineCapability({
+    name: 'creative_fatigue',
+    path: 'ads/fatigue',
+    tag: 'Reklamy Meta',
     title: 'Zmęczenie kreacji',
     description: 'Reklamy ze zmęczeniem: frequency > 3 i spadek CTR > 20% okno do okna, albo wzrost CPA > 30%. Okna liczone od ostatniego dnia z danymi.',
-    inputSchema: {
+    input: {
       shop: shopSchema,
       window_days: z.number().int().min(3).max(60).default(7),
       min_spend: z.number().min(0).default(500).describe('Minimalny wydatek w bieżącym oknie (PLN).'),
       attribution: z.enum(ATTRIBUTIONS).default('7d_click'),
     },
-    annotations: READ_ONLY,
-  }, wrap(ctx, 'creative_fatigue', async (db, a: { shop?: string; window_days: number; min_spend: number; attribution: Attribution }) => {
-    const scope = resolveShopScope(a.shop, ctx.allowedShops);
+    run: async ({ db, auth }, a) => {
+    const scope = resolveShopScope(a.shop, auth.allowedShops);
     const last = await latestDataDate(db, scope.accountIds);
     if (!last) return { rows: 0, payload: { rows: [], warnings: [...scope.warnings, 'Brak danych reklam dla zakresu.'] } };
     const curr = { from: shiftDays(last, -(a.window_days - 1)), to: last };
@@ -258,13 +226,17 @@ export function registerTools(server: McpServer, ctx: McpAuthContext): void {
         definitions: DEFINITIONS,
       },
     };
-  }));
+    },
+  }),
 
   // ── 3. creatives_list ──────────────────────────────────
-  server.registerTool('creatives_list', {
+  defineCapability({
+    name: 'creatives_list',
+    path: 'creatives',
+    tag: 'Reklamy Meta',
     title: 'Lista kreacji',
     description: 'Kreacje z wynikami w okresie (spend, ROAS, CPA, hook rate), tagami i stałym URL miniatury. Filtry: format, proporcje, tagi (wszystkie muszą wystąpić).',
-    inputSchema: {
+    input: {
       shop: shopSchema,
       date_from: dateSchema,
       date_to: dateSchema,
@@ -276,13 +248,9 @@ export function registerTools(server: McpServer, ctx: McpAuthContext): void {
       sort_by: z.enum(['spend', 'roas', 'cpa', 'hook_rate'] as const).default('spend'),
       limit: z.number().int().min(1).max(200).default(50),
     },
-    annotations: READ_ONLY,
-  }, wrap(ctx, 'creatives_list', async (db, a: {
-    shop?: string; date_from: string; date_to: string; format?: string; aspect_ratio?: string; tags?: string[];
-    min_spend?: number; attribution: Attribution; sort_by: SortKey; limit: number;
-  }) => {
+    run: async ({ db, auth }, a) => {
     checkRange(a.date_from, a.date_to);
-    const scope = resolveShopScope(a.shop, ctx.allowedShops);
+    const scope = resolveShopScope(a.shop, auth.allowedShops);
     const rows = await fetchAdRows(db, { accountIds: scope.accountIds, from: a.date_from, to: a.date_to });
     const groups = groupRows(rows.filter(r => r.creative_id), 'creative', a.attribution);
     const creatives = await fetchCreatives(db, [...groups.keys()]);
@@ -333,23 +301,26 @@ export function registerTools(server: McpServer, ctx: McpAuthContext): void {
       rows: out.length,
       payload: { period: { from: a.date_from, to: a.date_to }, attribution: a.attribution, shops: scope.shops, rows_total: items.length, rows: out, warnings, definitions: DEFINITIONS },
     };
-  }));
+    },
+  }),
 
   // ── 4. creative_detail ─────────────────────────────────
-  server.registerTool('creative_detail', {
+  defineCapability({
+    name: 'creative_detail',
+    path: 'creatives/{creative_id}',
+    tag: 'Reklamy Meta',
     title: 'Szczegóły kreacji',
     description: 'Pełne copy, obraz/wideo, permalink, analiza AI, dzienny szereg metryk i reklamy/zestawy/kampanie używające kreacji.',
-    inputSchema: {
+    input: {
       creative_id: z.string().min(1),
       days: z.number().int().min(1).max(MAX_RANGE_DAYS).default(90).describe('Długość dziennego szeregu (dni wstecz od ostatnich danych).'),
       attribution: z.enum(ATTRIBUTIONS).default('7d_click'),
     },
-    annotations: READ_ONLY,
-  }, wrap(ctx, 'creative_detail', async (db, a: { creative_id: string; days: number; attribution: Attribution }) => {
-    const scope = resolveShopScope(undefined, ctx.allowedShops);
+    run: async ({ db, auth }, a) => {
+    const scope = resolveShopScope(undefined, auth.allowedShops);
     const c = (await fetchCreatives(db, [a.creative_id])).get(a.creative_id);
-    if (!c) throw new Error(`Nie znam kreacji ${a.creative_id}.`);
-    if (!scope.accountIds.includes(c.account_id)) throw new Error(`Brak dostępu do kreacji ${a.creative_id} (sklep ${shopForAccount(c.account_id)}).`);
+    if (!c) throw notFound(`Nie znam kreacji ${a.creative_id}.`);
+    if (!scope.accountIds.includes(c.account_id)) throw forbidden(`Brak dostępu do kreacji ${a.creative_id} (sklep ${shopForAccount(c.account_id)}).`);
 
     const last = (await latestDataDate(db, [c.account_id])) || new Date().toISOString().slice(0, 10);
     const from = shiftDays(last, -(a.days - 1));
@@ -398,21 +369,24 @@ export function registerTools(server: McpServer, ctx: McpAuthContext): void {
         definitions: DEFINITIONS,
       },
     };
-  }));
+    },
+  }),
 
   // ── 5. campaigns_list ──────────────────────────────────
-  server.registerTool('campaigns_list', {
+  defineCapability({
+    name: 'campaigns_list',
+    path: 'campaigns',
+    tag: 'Reklamy Meta',
     title: 'Lista kampanii',
     description: 'Kampanie Meta (cel, status, budżet, etap lejka, tagi) z wydatkiem i ROAS z ostatnich 7 i 30 dni.',
-    inputSchema: {
+    input: {
       shop: shopSchema,
       status: z.string().regex(/^[A-Za-z_]+$/).optional().describe('np. ACTIVE, PAUSED (porównywane ze status i effective_status)'),
       funnel_stage: z.string().optional().describe('TOFU | MOFU | BOFU | Retargeting | Retencja'),
       attribution: z.enum(ATTRIBUTIONS).default('7d_click'),
     },
-    annotations: READ_ONLY,
-  }, wrap(ctx, 'campaigns_list', async (db, a: { shop?: string; status?: string; funnel_stage?: string; attribution: Attribution }) => {
-    const scope = resolveShopScope(a.shop, ctx.allowedShops);
+    run: async ({ db, auth }, a) => {
+    const scope = resolveShopScope(a.shop, auth.allowedShops);
     if (scope.accountIds.length === 0) return { rows: 0, payload: { rows: [], warnings: scope.warnings } };
     let q = db.from('dim_campaigns')
       .select('campaign_id, account_id, name, objective, status, effective_status, daily_budget, lifetime_budget, start_time, stop_time, purpose, funnel_stage, notes, manual_tags, last_seen_at')
@@ -451,22 +425,26 @@ export function registerTools(server: McpServer, ctx: McpAuthContext): void {
         warnings: [...scope.warnings, 'Budżety w walucie konta (mybed.de: EUR); wydatki i ROAS w PLN.'],
       },
     };
-  }));
+    },
+  }),
 
   // ── 6. assets_search ───────────────────────────────────
-  server.registerTool('assets_search', {
+  defineCapability({
+    name: 'assets_search',
+    path: 'assets',
+    tag: 'Materiały',
     title: 'Szukaj materiałów',
     description: 'Szuka packshotów (nazwa pliku, wymiary np. „1080x1080”) i scen lifestyle z MyBed Studio. Zwraca podpisane URL-e ważne 24 h.',
-    inputSchema: {
+    input: {
       query: z.string().min(1),
       type: z.enum(['packshot', 'lifestyle', 'video'] as const).optional(),
       limit: z.number().int().min(1).max(100).default(20),
     },
-    annotations: READ_ONLY,
-  }, wrap(ctx, 'assets_search', async (db, a: { query: string; type?: 'packshot' | 'lifestyle' | 'video'; limit: number }) => {
+    // Materiały marki nie są przypisane do sklepu — dostępne dla każdego ważnego tokenu.
+    run: async ({ db }, a) => {
     // Znaki specjalne filtra PostgREST (`,` `(` `)` `"` `\`) i LIKE (`%` `_`) wycinamy z frazy.
     const term = a.query.replace(/[%_,()"\\]/g, ' ').replace(/\s+/g, ' ').trim();
-    if (!term) throw new Error('Pusta fraza wyszukiwania.');
+    if (!term) throw badRequest('Pusta fraza wyszukiwania.');
     const dims = /(\d{2,5})\s*[x×]\s*(\d{2,5})/i.exec(a.query);
     const out: Array<Record<string, unknown>> = [];
     const warnings: string[] = [];
@@ -504,16 +482,19 @@ export function registerTools(server: McpServer, ctx: McpAuthContext): void {
     if (a.type === 'video') warnings.push('Brak indeksu wideo — filmy nie są jeszcze w Storage (planowany indeks z Google Drive i Figmy).');
 
     return { rows: out.length, payload: { query: a.query, rows: out.slice(0, a.limit), url_ttl_hours: 24, warnings } };
-  }));
+    },
+  }),
 
   // ── 7. data_health ─────────────────────────────────────
-  server.registerTool('data_health', {
+  defineCapability({
+    name: 'data_health',
+    path: 'health',
+    tag: 'System',
     title: 'Stan danych',
-    description: 'Ostatni dzień danych per konto, % wierszy bez creative_id (30 dni), kreacje bez tagów AI i bez kopii miniatury, ostatnie błędy ETL.',
-    inputSchema: { shop: shopSchema },
-    annotations: READ_ONLY,
-  }, wrap(ctx, 'data_health', async (db, a: { shop?: string }) => {
-    const scope = resolveShopScope(a.shop, ctx.allowedShops);
+    description: 'Stan danych Data Hub: ostatni dzień sprzedaży ERP, GA4, showroomów i reklam Meta per konto, % wierszy bez creative_id (30 dni), kreacje bez tagów AI i bez kopii miniatury, ostatnie udane i nieudane przebiegi ETL.',
+    input: { shop: shopSchema },
+    run: async ({ db, auth }, a) => {
+    const scope = resolveShopScope(a.shop, auth.allowedShops);
     const today = new Date().toISOString().slice(0, 10);
     const from30 = shiftDays(today, -30);
 
@@ -542,7 +523,7 @@ export function registerTools(server: McpServer, ctx: McpAuthContext): void {
       withoutStoredThumb = count ?? 0;
     }
 
-    const SOURCES = ['meta_ads', 'meta_ads_adlevel', 'creative_tagging', 'creative_thumbs', 'creative_backfill'];
+    const SOURCES = ['gdrive_csv', 'ga4', 'meta_ads', 'meta_ads_adlevel', 'creative_tagging', 'creative_thumbs', 'creative_backfill'];
     const { data: errors } = await db.from('etl_log')
       .select('source, status, started_at, error_message')
       .in('source', SOURCES).in('status', ['error', 'failed'])
@@ -553,10 +534,32 @@ export function registerTools(server: McpServer, ctx: McpAuthContext): void {
       lastSuccess[source] = (data?.finished_at as string) ?? null;
     }
 
+    // Świeżość pozostałych źródeł Data Hub (sprzedaż ERP, GA4, showroomy).
+    const latest = async (table: string, column: string, filter?: [string, string]) => {
+      let q = db.from(table).select(column).order(column, { ascending: false }).limit(1);
+      if (filter) q = q.eq(filter[0], filter[1]);
+      const { data } = await q.maybeSingle();
+      const v = (data as Record<string, unknown> | null)?.[column];
+      return v ? String(v).slice(0, 10) : null;
+    };
+    const [lastOrder, lastGa4, lastShowroomSales, lastVisits] = await Promise.all([
+      latest('fact_orders', 'order_date'),
+      latest('fact_daily_traffic', 'date', ['source', '__total__']),
+      latest('sensmax_showroom_sales', 'date'),
+      latest('sensmax_hourly_visits', 'date'),
+    ]);
+
     return {
       rows: accounts.length,
       payload: {
-        today, shops: scope.shops, accounts,
+        today, shops: scope.shops,
+        sources_last_date: {
+          sales_erp_orders: lastOrder,
+          traffic_ga4: lastGa4,
+          showroom_sales_sheets: lastShowroomSales,
+          showroom_visitors_sensmax: lastVisits,
+        },
+        accounts,
         creatives_ai_tag_status: statusCounts,
         creatives_without_stored_thumbnail: withoutStoredThumb,
         etl_last_success: lastSuccess,
@@ -564,5 +567,6 @@ export function registerTools(server: McpServer, ctx: McpAuthContext): void {
         warnings: scope.warnings,
       },
     };
-  }));
-}
+    },
+  }),
+];

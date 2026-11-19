@@ -25,15 +25,24 @@ export async function fetchEurRatesByDate(
   dateFrom: string,
   dateTo: string,
 ): Promise<EurRateMap> {
-  const { data } = await db
-    .from('fact_orders')
-    .select('order_date, exchange_rate')
-    .eq('currency', 'EUR')
-    .gte('order_date', dateFrom)
-    .lte('order_date', dateTo + 'T23:59:59')
-    .limit(50000);
+  // Stronicowanie: PostgREST zwraca max 1000 wierszy, a .limit() tego nie omija.
+  const data: Array<{ order_date: string; exchange_rate: number }> = [];
+  for (let offset = 0; offset < 50_000; offset += 1000) {
+    const { data: page } = await db
+      .from('fact_orders')
+      .select('order_date, exchange_rate')
+      .eq('currency', 'EUR')
+      .gte('order_date', dateFrom)
+      .lte('order_date', dateTo + 'T23:59:59')
+      .order('order_date', { ascending: true })
+      .order('order_id', { ascending: true })
+      .range(offset, offset + 999);
+    const rows = (page || []) as Array<{ order_date: string; exchange_rate: number }>;
+    data.push(...rows);
+    if (rows.length < 1000) break;
+  }
   const sums: Record<string, { sum: number; n: number }> = {};
-  for (const r of (data || []) as Array<{ order_date: string; exchange_rate: number }>) {
+  for (const r of data) {
     const d = String(r.order_date).substring(0, 10);
     const rate = Number(r.exchange_rate) || 0;
     if (rate <= 0) continue;

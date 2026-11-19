@@ -7,7 +7,7 @@
  */
 
 import type { FactOrder, FactOrderItem } from '@/types/database';
-import { getEurPlnRate } from '@/lib/currency';
+import { getNbpRateToPln } from '@/lib/currency';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -194,7 +194,8 @@ function detectSource(orderNumber: string, optionStr: string): { platform: strin
   if (num.startsWith('Shoper')) {
     if (num.endsWith('-1')) return { platform: 'shoper', shop: 'mybed.pl' };
     if (num.endsWith('-2')) return { platform: 'shoper', shop: 'mybed.de' };
-    // Shoper without -1/-2 suffix is an anomaly per ERP spec — flag it.
+    if (num.endsWith('-3')) return { platform: 'shoper', shop: 'mojepostel.cz' };
+    // Shoper without -1/-2/-3 suffix is an anomaly per ERP spec — flag it.
     return { platform: 'shoper', shop: 'shoper_unknown' };
   }
 
@@ -659,7 +660,9 @@ export async function parseErpCsv(rows: RawCsvRow[]): Promise<ParseResult> {
       }
 
       // Currency
-      const currency = ['mybed.de', 'amazon.de', 'kaufland.de'].includes(shop) ? 'EUR' : 'PLN';
+      const currency = ['mybed.de', 'amazon.de', 'kaufland.de'].includes(shop) ? 'EUR'
+        : shop === 'mojepostel.cz' ? 'CZK'
+        : 'PLN';
 
       // Date — convert ERP local time (Europe/Warsaw) to UTC. Fall back to now()
       // only if ERP did not provide a date at all (shouldn't happen for header row).
@@ -672,7 +675,7 @@ export async function parseErpCsv(rows: RawCsvRow[]): Promise<ParseResult> {
       const totalGross = parseDecimal((h['Suma'] || '').trim());
       const shippingCost = parseDecimal((h['Koszt dostawy'] || '').trim());
 
-      const exchangeRate = currency === 'EUR' ? await getEurPlnRate(orderDate.substring(0, 10)) : 1;
+      const exchangeRate = currency === 'PLN' ? 1 : await getNbpRateToPln(currency, orderDate.substring(0, 10));
       const totalGrossPln = currency === 'PLN' ? totalGross : (totalGross != null ? totalGross * exchangeRate : null);
       const shippingCostPln = currency === 'PLN' ? shippingCost : (shippingCost != null ? shippingCost * exchangeRate : null);
 

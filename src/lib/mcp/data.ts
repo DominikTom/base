@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { AD_ROW_COLUMNS, type AdRow } from './metrics';
+import { badRequest } from '@/lib/hub/core';
 
 // Dostęp do danych dla narzędzi MCP. Wszystkie zapytania stronicują po 1000
 // (limit PostgREST) i sortują po pełnym kluczu, żeby kolejne strony nie gubiły
@@ -34,7 +35,7 @@ export async function fetchAdRows(
     rows.push(...page);
     if (page.length < PAGE) return rows;
   }
-  throw new Error(`Za dużo wierszy (>${MAX_ROWS}) — zawęź zakres dat albo sklep.`);
+  throw badRequest(`Za dużo wierszy (>${MAX_ROWS}) — zawęź zakres dat albo sklep.`);
 }
 
 /** Ostatni dzień z danymi dla podanych kont (null, gdy brak). */

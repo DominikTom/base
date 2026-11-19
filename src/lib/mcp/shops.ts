@@ -1,4 +1,5 @@
 import { SHOP_TO_META_ACCOUNT } from '@/lib/marketing-constants';
+import { badRequest, forbidden } from '@/lib/hub/core';
 
 // Sklepy, które zna serwer MCP — te same nazwy co w Agents MyBed (marka = sklep).
 // mojepostel.cz nie ma jeszcze konta reklamowego Meta: zapytania o ten sklep
@@ -31,15 +32,15 @@ export interface ShopScope {
  */
 export function resolveShopScope(requested: string | undefined | null, allowed: readonly McpShop[]): ShopScope {
   if (allowed.length === 0) {
-    throw new Error('Twoje konto nie ma przypisanych sklepów — poproś admina o dostęp (dash: Dostęp MCP).');
+    throw forbidden('Twoje konto nie ma przypisanych sklepów — poproś admina o dostęp (dash: Dostęp MCP).');
   }
   let shops: McpShop[];
   if (requested) {
     if (!isMcpShop(requested)) {
-      throw new Error(`Nieznany sklep „${requested}”. Dozwolone: ${MCP_SHOPS.join(', ')}.`);
+      throw badRequest(`Nieznany sklep „${requested}”. Dozwolone: ${MCP_SHOPS.join(', ')}.`);
     }
     if (!allowed.includes(requested)) {
-      throw new Error(`Brak dostępu do sklepu ${requested}. Twój zakres: ${allowed.join(', ') || 'brak'}.`);
+      throw forbidden(`Brak dostępu do sklepu ${requested}. Twój zakres: ${allowed.join(', ') || 'brak'}.`);
     }
     shops = [requested];
   } else {
