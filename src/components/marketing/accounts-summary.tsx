@@ -10,6 +10,7 @@ export const SHOP_BADGE: Record<string, string> = {
   'mybed.de': 'bg-amber-500',
   'mittohome.pl': 'bg-emerald-500',
   'nomosleep.pl': 'bg-violet-500',
+  'mojepostel.cz': 'bg-rose-500',
 };
 
 export function shopInitials(shop: string): string {

@@ -8,9 +8,13 @@ Wszystkie kwoty są w PLN (kolumny *_pln). Dane analityczne, tylko do odczytu.
 
 ## fact_orders — zamówienia (ziarno: jedno zamówienie)
 - order_id (text, PK), order_date (timestamptz), expected_date, fulfillment_date
-- source_platform (text: woocommerce, amazon, allegro, kaufland, showroom...)
-- source_shop (text: mybed.pl, mybed.de, mittohome.pl, nomosleep.pl, showroom, amazon.de, allegro.pl, kaufland.de)
+- source_platform (text: shoper, shopify, nomo, amazon, allegro, kaufland, manual, unknown)
+- source_shop (text: mybed.pl, mybed.de, mojepostel.cz, mittohome.pl, nomosleep.pl, amazon.de, allegro.pl, kaufland.de,
+  manual = zamówienia ZAM/ z ERP (showroomy, magazyn), shoper_unknown = Shoper bez końcówki, unknown = testowe)
   (nomosleep.pl = marka NOMO / NomoSleep; zamówienia w ERP mają numery „NOMO-<nr>”)
+  (mojepostel.cz = sklep MyBed w Czechach, numery „Shoper<nr>-3”, waluta CZK; total_gross_pln przeliczone kursem NBP.
+   Zamówienia sprzed zmiany parsera z 19.11.2026 mogą jeszcze mieć source_shop = 'shoper_unknown'.)
+  Sprzedaż (przychód) = status IN ('zamówienie','zrealizowane'); 'oferta' i 'anulowane' nie są sprzedażą.
 - currency, total_gross (oryginalna waluta), total_gross_pln, shipping_cost_pln, exchange_rate
 - is_paid (bool), status (text), coupon_code, delivery_city, delivery_zip, delivery_method
 - supplier (text), production_batch, sales_person, marketplace_tag, operational_tags (text[])

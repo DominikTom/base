@@ -16,7 +16,8 @@ import {
   RefreshCw, CheckCircle, XCircle, ShoppingCart, Globe,
   PieChart, Megaphone, Layers, Clapperboard,
 } from 'lucide-react';
-import { SHOP_TO_META_ACCOUNT, type AttributionWindow } from '@/lib/marketing-constants';
+import { SHOP_TO_META_ACCOUNT, SHOPS_WITHOUT_AD_DATA, type AttributionWindow } from '@/lib/marketing-constants';
+import { shopFilterToList } from '@/lib/shop-filter';
 import type { AdsPayload } from '@/components/marketing/types';
 import { AccountsSummary } from '@/components/marketing/accounts-summary';
 import { CampaignTree } from '@/components/marketing/campaign-tree';
@@ -102,12 +103,22 @@ type MetaSubTab = 'przeglad' | 'konta' | 'kampanie' | 'kreacje';
 
 export default function MarketingPage() {
   const [tab, setTab] = useState<TabKey>('meta');
+  const { filters } = useDashboard();
+  const shopsWithoutAds = shopFilterToList(filters.shop).filter(s => SHOPS_WITHOUT_AD_DATA[s]);
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold tracking-tight text-ink">Marketing Performance</h1>
       </div>
+
+      {shopsWithoutAds.length > 0 && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          {shopsWithoutAds.map(s => (
+            <div key={s}><span className="font-medium">{s}</span>: {SHOPS_WITHOUT_AD_DATA[s]} — dane reklamowe dla tego sklepu będą puste.</div>
+          ))}
+        </div>
+      )}
 
       {/* Tabs — platformy */}
       <div className="flex items-center gap-1 border-b border-line">
