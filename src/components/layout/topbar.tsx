@@ -12,6 +12,7 @@ import { ThemeToggle } from '@/components/ui/theme-toggle';
 const SHOPS = [
   { value: 'mybed.pl', label: 'MyBed.pl' },
   { value: 'mybed.de', label: 'MyBed.de' },
+  { value: 'mojepostel.cz', label: 'MojePostel.cz' },
   { value: 'mittohome.pl', label: 'MittoHome.pl' },
   { value: 'nomosleep.pl', label: 'NomoSleep.pl' },
 ];

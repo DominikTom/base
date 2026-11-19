@@ -12,6 +12,13 @@ export const SHOP_TO_META_ACCOUNT: Record<string, string> = {
   'nomosleep.pl': 'act_1376753327967692',
 };
 
+// Sklepy bez podłączonych źródeł reklamowych w hurtowni — UI pokazuje komunikat
+// zamiast pustych wykresów. Po podłączeniu konta: wpis w SHOP_TO_META_ACCOUNT
+// (+ token w META_AD_ACCOUNTS_EXTRA) i usługa GA4 w src/lib/ga4.ts.
+export const SHOPS_WITHOUT_AD_DATA: Record<string, string> = {
+  'mojepostel.cz': 'brak konta Meta Ads i usługi GA4 (Google Ads) podłączonych do hurtowni',
+};
+
 export const FUNNEL_STAGES = ['TOFU', 'MOFU', 'BOFU', 'Retargeting', 'Retencja'] as const;
 export type FunnelStage = (typeof FUNNEL_STAGES)[number];
 

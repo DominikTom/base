@@ -215,6 +215,8 @@ export async function POST(request: NextRequest) {
         'mybed.de': ['mybed.de', 'mybed_de', 'mybedde', 'act_637792865917248'],
         'mittohome.pl': ['mittohome.pl', 'mittohome_pl', 'mittohomepl', 'act_797212915921530'],
         'nomosleep.pl': ['nomosleep.pl', 'nomosleep_pl', 'nomosleeppl', 'act_1376753327967692'],
+        // mojepostel.cz: brak konta Meta i usługi GA4 — dopasowanie po nazwie (kampanie z „mojepostel”).
+        'mojepostel.cz': ['mojepostel.cz', 'mojepostel_cz', 'mojepostelcz', 'mojepostel'],
         'showroom': ['showroom'],
         'amazon.de': ['amazon.de', 'amazon_de', 'amazonde'],
         'allegro.pl': ['allegro.pl', 'allegro_pl', 'allegropl'],
