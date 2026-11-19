@@ -1,7 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import { authenticateMcpRequest } from '@/lib/mcp/auth';
-import { registerTools } from '@/lib/mcp/tools';
+import { registerTools } from '@/lib/mcp/server';
 
 // Zdalny serwer MCP dash.mybed (Streamable HTTP, tylko odczyt).
 // Bezstanowy: każde żądanie dostaje świeży serwer i transport, odpowiedź JSON
@@ -33,9 +33,12 @@ async function handle(request: Request): Promise<Response> {
 
   const server = new McpServer(SERVER_INFO, {
     instructions:
-      'Dane reklam Meta MyBed Group (tylko odczyt). Kwoty w PLN, domyślna atrybucja 7d_click. ' +
+      'Data Hub MyBed (tylko odczyt): sprzedaż i produkty (ERP), ruch GA4, showroomy, reklamy Meta i kreacje. ' +
+      'Kwoty w PLN, dni w strefie Europe/Warsaw; przychód = zamówienia „Zamówienie sprzedaży” + „Zrealizowane” ' +
+      '(oferty i anulowane osobno); reklamy domyślnie w atrybucji 7d_click. ' +
       'Sklepy: mybed.pl, mybed.de, mojepostel.cz, mittohome.pl, nomosleep.pl. ' +
-      `Twój zakres: ${auth.allowedShops.join(', ')}. Zacznij od data_health, gdy dane wyglądają na stare.`,
+      `Twój zakres: ${auth.allowedShops.join(', ')}. Gdy dane wyglądają na stare, zacznij od data_health. ` +
+      'To samo jest dostępne jako REST: /api/v1 (specyfikacja /api/v1/openapi.json).',
   });
   registerTools(server, auth);
 

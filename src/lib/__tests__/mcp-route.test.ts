@@ -55,13 +55,14 @@ describe('/api/mcp', () => {
     expect(body.result.instructions).toContain('mybed.de');
   });
 
-  it('tools/list zwraca 7 narzędzi tylko do odczytu', async () => {
+  it('tools/list zwraca wszystkie zdolności Data Hub tylko do odczytu', async () => {
     const res = await POST(rpc('tools/list'));
     const body = await res.json();
     const names = body.result.tools.map((t: { name: string }) => t.name).sort();
     expect(names).toEqual([
       'ads_performance', 'assets_search', 'campaigns_list', 'creative_detail',
       'creative_fatigue', 'creatives_list', 'data_health',
+      'products_ranking', 'sales_summary', 'showrooms_summary', 'traffic_sources', 'traffic_summary',
     ]);
     for (const t of body.result.tools) expect(t.annotations.readOnlyHint).toBe(true);
     const ads = body.result.tools.find((t: { name: string }) => t.name === 'ads_performance');

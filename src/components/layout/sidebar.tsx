@@ -53,7 +53,7 @@ const NAV_SECTIONS = [
     label: 'Dane',
     items: [
       { href: '/dashboard/explorer', label: 'Eksplorator', icon: Compass, adminOnly: false },
-      { href: '/dashboard/mcp', label: 'Dostęp MCP', icon: KeyRound, adminOnly: false },
+      { href: '/dashboard/mcp', label: 'Dostęp API i MCP', icon: KeyRound, adminOnly: false },
       { href: '/dashboard/database', label: 'Baza danych', icon: Database, adminOnly: true },
       { href: '/dashboard/admin', label: 'ETL Admin', icon: Settings, adminOnly: true },
     ],

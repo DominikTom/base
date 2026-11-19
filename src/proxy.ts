@@ -26,7 +26,7 @@ import { NextResponse, type NextRequest } from 'next/server';
  */
 
 /** Reachable without a session. */
-const PUBLIC_PATHS = ['/login', '/auth/', '/api/health'];
+const PUBLIC_PATHS = ['/login', '/auth/', '/api/health', '/api/v1/openapi.json'];
 
 /** API namespaces that require a signed-in user or a valid bearer secret. */
 const PROTECTED_API_PREFIXES = [
@@ -39,8 +39,9 @@ const PROTECTED_API_PREFIXES = [
   '/api/kpi',
   '/api/insights',
   '/api/weather',
-  // Serwer MCP: bez Bearer odrzucany tutaj, token dmcp_… sprawdza handler.
+  // Serwer MCP i REST Data Hub: bez Bearer odrzucane tutaj, token dmcp_… sprawdza handler.
   '/api/mcp',
+  '/api/v1',
 ];
 
 export async function proxy(request: NextRequest) {
@@ -129,6 +130,8 @@ export const config = {
     '/api/insights/:path*',
     '/api/mcp',
     '/api/mcp/:path*',
+    '/api/v1',
+    '/api/v1/:path*',
     '/login',
   ],
 };

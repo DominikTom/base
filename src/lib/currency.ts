@@ -99,3 +99,37 @@ export function getExchangeRate(currency: string): number {
 export function convertToPln(amount: number, currency: string): number {
   return amount * getExchangeRate(currency);
 }
+
+// ── Kurs dowolnej waluty z tabeli A NBP (np. CZK dla mojepostel.cz) ──
+const NBP_TABLE_A = 'https://api.nbp.pl/api/exchangerates/rates/a';
+// Awaryjne kursy, gdy NBP nie odpowiada (jak EUR_TO_PLN_FALLBACK).
+const FALLBACK_TO_PLN: Record<string, number> = { CZK: 0.17 };
+const genericCache = new Map<string, number>();
+
+export async function getNbpRateToPln(code: string, date: string): Promise<number> {
+  const cur = code.toUpperCase();
+  if (cur === 'PLN') return 1;
+  if (cur === 'EUR') return getEurPlnRate(date);
+  const key = `${cur}|${date}`;
+  const cached = genericCache.get(key);
+  if (cached !== undefined) return cached;
+  for (let back = 0; back <= 5; back++) {
+    const d = new Date(`${date}T00:00:00Z`);
+    d.setUTCDate(d.getUTCDate() - back);
+    const probe = d.toISOString().slice(0, 10);
+    try {
+      const res = await fetch(`${NBP_TABLE_A}/${cur.toLowerCase()}/${probe}/?format=json`, { signal: AbortSignal.timeout(3000) });
+      if (!res.ok) continue;
+      const rate = (await res.json())?.rates?.[0]?.mid;
+      if (typeof rate === 'number') {
+        genericCache.set(key, rate);
+        return rate;
+      }
+    } catch { /* kolejny dzień wstecz */ }
+  }
+  const fallback = FALLBACK_TO_PLN[cur];
+  if (fallback == null) throw new Error(`NBP: brak kursu ${cur} dla ${date}`);
+  console.warn(`NBP: brak kursu ${cur} dla ${date} — kurs awaryjny ${fallback}`);
+  genericCache.set(key, fallback);
+  return fallback;
+}

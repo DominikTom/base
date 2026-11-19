@@ -122,6 +122,8 @@ export default function McpAccessPage() {
   const endpoint = `${origin}/api/mcp`;
   const tokenForSnippet = newToken || '<TWÓJ_TOKEN>';
   const claudeCode = `claude mcp add --transport http dash-mybed ${endpoint} --header "Authorization: Bearer ${tokenForSnippet}"`;
+  const restBase = `${origin}/api/v1`;
+  const curlExample = `curl -H "Authorization: Bearer ${tokenForSnippet}" "${restBase}/sales/summary?date_from=2026-11-01&date_to=2026-11-18&group_by=shop"`;
   const jsonConfig = JSON.stringify({
     mcpServers: { 'dash-mybed': { type: 'http', url: endpoint, headers: { Authorization: `Bearer ${tokenForSnippet}` } } },
   }, null, 2);
@@ -132,14 +134,16 @@ export default function McpAccessPage() {
     <div className="space-y-6">
       <div className="flex items-center gap-2">
         <KeyRound size={20} className="text-ink-soft" />
-        <h1 className="text-xl font-semibold tracking-tight text-ink">Dostęp MCP (Claude)</h1>
+        <h1 className="text-xl font-semibold tracking-tight text-ink">Dostęp API i MCP — Data Hub</h1>
       </div>
 
       {error && <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
 
-      <ChartCard title="Serwer MCP dash.mybed" subtitle="Dane reklam Meta tylko do odczytu: wyniki, kreacje, zmęczenie, kampanie, materiały, stan danych">
+      <ChartCard title="Data Hub MyBed" subtitle="Tylko odczyt: sprzedaż, produkty, ruch GA4, showroomy, reklamy Meta i kreacje, materiały, stan danych">
         <div className="space-y-2 text-sm text-ink-soft">
-          <div>Adres: <code className="font-mono text-ink break-all">{endpoint}</code></div>
+          <div>MCP (Claude): <code className="font-mono text-ink break-all">{endpoint}</code></div>
+          <div>REST API: <code className="font-mono text-ink break-all">{restBase}</code> — specyfikacja OpenAPI: <a className="text-primary underline" href="/api/v1/openapi.json" target="_blank" rel="noreferrer">/api/v1/openapi.json</a></div>
+          <div>Jeden token działa w obu — te same dane, uprawnienia i log wywołań.</div>
           <div>Twój zakres sklepów: <span className="text-ink">{data?.me.allowedShops.join(', ') || '—'}</span></div>
           <div>Token działa jak hasło do danych reklam — nie wklejaj go do czatu ani do repozytorium.</div>
         </div>
@@ -182,7 +186,14 @@ export default function McpAccessPage() {
             </div>
           </div>
           <div>
-            <div className="stat-label mb-1">Inne klienty (konfiguracja JSON)</div>
+            <div className="stat-label mb-1">REST (np. curl, Apps Script, n8n)</div>
+            <div className="flex items-start gap-2">
+              <code className="flex-1 break-all rounded-lg bg-surface px-3 py-2 font-mono text-xs text-ink">{curlExample}</code>
+              <button onClick={() => copy(curlExample, 'curl')} className="btn-secondary px-3 py-2 text-sm"><Copy size={14} />{copied === 'curl' ? 'Skopiowano' : 'Kopiuj'}</button>
+            </div>
+          </div>
+          <div>
+            <div className="stat-label mb-1">Inne klienty MCP (konfiguracja JSON)</div>
             <pre className="overflow-x-auto rounded-lg bg-surface px-3 py-2 font-mono text-xs text-ink">{jsonConfig}</pre>
           </div>
         </div>
