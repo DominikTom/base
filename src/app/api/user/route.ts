@@ -35,7 +35,7 @@ async function ensureProfile(supabase: ReturnType<typeof createServerClient>, us
     await supabase.from('user_profiles').insert({
       user_id: userId,
       email,
-      role: 'viewer',
+      // role: domyślnie 'viewer' w bazie (migracja 025 — tylko service role).
     });
   }
 }

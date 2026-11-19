@@ -1,6 +1,7 @@
 import { getSupabaseAdmin } from '@/lib/supabase';
 
-const MAX_REQUESTS_PER_WINDOW = 5;
+// Daily cron does ~2 calls per active sensor; this is a safety cap against runaway loops.
+const MAX_REQUESTS_PER_WINDOW = 100;
 const WINDOW_MS = 10 * 60 * 1000;
 
 export async function canFetchHistoricalData(): Promise<boolean> {

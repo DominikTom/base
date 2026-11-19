@@ -43,7 +43,11 @@ export async function getUserProfile(): Promise<UserProfile | null> {
       dashboard_layout: null,
     };
 
-    await supabase.from('user_profiles').insert(newProfile);
+    // role / allowed_shops ustawia tylko serwer (migracja 025) — bez nich w insercie.
+    await supabase.from('user_profiles').insert({
+      user_id: newProfile.user_id,
+      email: newProfile.email,
+    });
     return newProfile;
   } catch {
     return null;

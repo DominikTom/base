@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAdmin } from '@/lib/auth';
 import { getSupabaseAdmin } from '@/lib/supabase';
 import { fetchGA4Report, fetchGA4DailyTotals, getPropertyIds, getHostname } from '@/lib/ga4';
 
@@ -6,24 +7,34 @@ export const maxDuration = 60;
 
 // POST — manual trigger: 365 days of daily totals (fast, no ads)
 export async function POST() {
+  const _guard = await requireAdmin();
+  if (_guard) return _guard;
   return syncGA4({ daysBack: 365, totalsOnly: true });
 }
 
-// GET — Vercel Cron: totals + detail for last 7 days
+// GET — Vercel Cron: totals + detail for last 7 days.
+// ?property=<id>&days=N — backfill jednej usługi (np. nowej marki): kasuje
+// i nadpisuje wyłącznie wiersze jej hostname, inne sklepy zostają nietknięte.
 export async function GET(request: NextRequest) {
-  const authHeader = request.headers.get('authorization');
-  const cronSecret = process.env.ETL_CRON_SECRET;
-  const isVercelCron = request.headers.get('x-vercel-cron') === '1';
-  if (!isVercelCron && cronSecret && authHeader !== `Bearer ${cronSecret}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const _guard = await requireAdmin();
+  if (_guard) return _guard;
+  const { searchParams } = new URL(request.url);
+  const only = searchParams.get('property');
+  if (only) {
+    if (!getPropertyIds().includes(only)) {
+      return NextResponse.json({ error: `property ${only} not configured` }, { status: 400 });
+    }
+    const daysParam = parseInt(searchParams.get('days') || '90', 10);
+    const daysBack = Number.isFinite(daysParam) && daysParam > 0 && daysParam <= 400 ? daysParam : 90;
+    return syncGA4({ daysBack, totalsOnly: false, only });
   }
   return syncGA4({ daysBack: 7, totalsOnly: false });
 }
 
-async function syncGA4({ daysBack, totalsOnly }: { daysBack: number; totalsOnly: boolean }) {
+async function syncGA4({ daysBack, totalsOnly, only }: { daysBack: number; totalsOnly: boolean; only?: string }) {
   try {
     const db = getSupabaseAdmin();
-    const propertyIds = getPropertyIds();
+    const propertyIds = only ? [only] : getPropertyIds();
 
     if (propertyIds.length === 0) {
       return NextResponse.json({ error: 'GA4_PROPERTY_IDS not configured' }, { status: 500 });
@@ -48,7 +59,12 @@ async function syncGA4({ daysBack, totalsOnly }: { daysBack: number; totalsOnly:
       const dateToStr = fmt(dateTo);
 
       // Clean slate for manual sync, targeted delete for cron
-      if (totalsOnly) {
+      if (only) {
+        // Backfill jednej usługi: tylko jej hostname w zakresie dat
+        await db.from('fact_daily_traffic').delete()
+          .eq('hostname', getHostname(only))
+          .gte('date', dateFromStr).lte('date', dateToStr);
+      } else if (totalsOnly) {
         // Manual: delete ALL data, fresh start
         await db.from('fact_daily_traffic').delete().gte('date', '2020-01-01');
       } else {
@@ -106,15 +122,25 @@ async function syncGA4({ daysBack, totalsOnly }: { daysBack: number; totalsOnly:
         return { hostname: getHostname(propertyId), rows: propRows };
       });
 
-      const propResults = await Promise.all(promises);
-      for (const r of propResults) {
-        results[r.hostname] = r.rows;
-        totalRows += r.rows;
-      }
+      // allSettled: brak dostępu do jednej usługi (np. nowa marka bez konta
+      // serwisowego w GA4) nie może przerwać syncu pozostałych sklepów.
+      const settled = await Promise.allSettled(promises);
+      const errors: Record<string, string> = {};
+      settled.forEach((r, i) => {
+        if (r.status === 'fulfilled') {
+          results[r.value.hostname] = r.value.rows;
+          totalRows += r.value.rows;
+        } else {
+          errors[getHostname(propertyIds[i])] = String(r.reason).slice(0, 300);
+        }
+      });
+      const failed = Object.keys(errors).length;
+      if (failed === propertyIds.length) throw new Error(JSON.stringify(errors));
 
       if (etlLogId) {
         await db.from('etl_log').update({
-          status: 'success',
+          status: failed ? 'partial' : 'success',
+          error_message: failed ? JSON.stringify(errors).slice(0, 1000) : null,
           finished_at: new Date().toISOString(),
           rows_processed: totalRows,
           rows_inserted: totalRows,
@@ -124,8 +150,9 @@ async function syncGA4({ daysBack, totalsOnly }: { daysBack: number; totalsOnly:
       }
 
       return NextResponse.json({
-        success: true,
+        success: failed === 0,
         properties: results,
+        ...(failed ? { errors } : {}),
         totalRows,
         dateRange: { from: dateFromStr, to: dateToStr },
         mode: totalsOnly ? 'totals_only_90d' : 'full_7d',

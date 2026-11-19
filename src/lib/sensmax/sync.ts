@@ -1,7 +1,7 @@
 import { getSupabaseAdmin } from '@/lib/supabase';
 import { fetchSensMax, logSyncEvent } from './client';
 import { canFetchHistoricalData } from './rateLimiter';
-import type { SensMaxSensor, SensMaxSensorDataDay } from './types';
+import { SENSOR_SHOWROOM, type SensMaxSensor, type SensMaxSensorDataDay, type SensMaxUpdatedDates } from './types';
 
 export async function refreshSensorsList() {
   const sensors = await fetchSensMax<SensMaxSensor[]>('/sensors', 'sensor_list');
@@ -10,6 +10,7 @@ export async function refreshSensorsList() {
     name: s.name,
     description: s.description,
     group_id: s.group,
+    showroom: SENSOR_SHOWROOM[s.serial] ?? null,
     divide_two: Boolean(s.divideTwo),
     negative: Boolean(s.negative),
     staff: s.staff ?? 0,
@@ -17,13 +18,14 @@ export async function refreshSensorsList() {
   }));
 
   if (rows.length > 0) {
-    await getSupabaseAdmin().from('sensmax_sensors').upsert(rows, { onConflict: 'serial' });
+    const { error } = await getSupabaseAdmin().from('sensmax_sensors').upsert(rows, { onConflict: 'serial' });
+    if (error) throw error;
   }
 
   return rows.length;
 }
 
-export async function syncHistorical() {
+export async function syncHistorical(daysBack = 35) {
   const db = getSupabaseAdmin();
   const { data: sensors, error } = await db
     .from('sensmax_sensors')
@@ -38,28 +40,41 @@ export async function syncHistorical() {
   let rateLimited = false;
   let errors = 0;
 
+  const minDate = new Date();
+  minDate.setUTCDate(minDate.getUTCDate() - daysBack);
+  const minIso = minDate.toISOString().slice(0, 10);
+
   for (const sensor of sensors ?? []) {
-    const allowed = await canFetchHistoricalData();
-    if (!allowed) {
+    if (!(await canFetchHistoricalData())) {
       rateLimited = true;
       await logSyncEvent({ kind: 'historical', serial: sensor.serial, status: 'rate_limited', message: 'Historical token bucket exhausted' });
       break;
     }
 
     try {
-      const updatedDatesResponse = await fetchSensMax<{ updated_data_dates?: string[] }>(`/sensor/${sensor.serial}/updateddates`, 'historical', sensor.serial);
-      const minDate = new Date();
-      minDate.setDate(minDate.getDate() - 30);
-      const dates = (updatedDatesResponse.updated_data_dates ?? []).filter((d) => new Date(d) >= minDate).sort();
-
-      if (dates.length === 0) continue;
+      const updatedDatesResponse = await fetchSensMax<SensMaxUpdatedDates>(
+        `/sensor/${sensor.serial}/updateddates`,
+        'historical',
+        { serial: sensor.serial },
+      );
+      const dates = (updatedDatesResponse.updated_data_dates ?? []).filter((d) => d >= minIso).sort();
+      if (dates.length === 0) {
+        sensorsSynced += 1;
+        continue;
+      }
 
       const start = dates[0];
       const end = dates[dates.length - 1];
-      const data = await fetchSensMax<SensMaxSensorDataDay[]>(`/sensor/${sensor.serial}/data?start=${start}&end=${end}`, 'historical', sensor.serial);
+      const data = await fetchSensMax<SensMaxSensorDataDay[]>(
+        `/sensor/${sensor.serial}/data?start=${start}&end=${end}`,
+        'historical',
+        { serial: sensor.serial },
+      );
 
       const upserts: Array<Record<string, unknown>> = [];
       for (const day of data) {
+        const visitsTotal = (day.visits ?? []).reduce((acc, v) => acc + (Number.parseInt(v, 10) || 0), 0);
+        const haveTimes = visitsTotal > 0;
         for (let hour = 0; hour < 24; hour += 1) {
           upserts.push({
             serial: sensor.serial,
@@ -68,8 +83,8 @@ export async function syncHistorical() {
             visits: Number.parseInt(day.visits?.[hour] ?? '0', 10) || 0,
             errors: Number.parseInt(day.errors?.[hour] ?? '0', 10) || 0,
             battery: day.battery,
-            first_entry_time: day.firstEntryTime || null,
-            last_entry_time: day.lastEntryTime || null,
+            first_entry_time: haveTimes && day.firstEntryTime && day.firstEntryTime !== '00:00:00' ? day.firstEntryTime : null,
+            last_entry_time: haveTimes && day.lastEntryTime && day.lastEntryTime !== '00:00:00' ? day.lastEntryTime : null,
             fetched_at: new Date().toISOString(),
           });
         }

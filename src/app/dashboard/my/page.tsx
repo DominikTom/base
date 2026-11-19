@@ -1,6 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import 'react-grid-layout/css/styles.css';
+import 'react-resizable/css/styles.css';
+import { useCallback, useEffect, useLayoutEffect, useState } from 'react';
+import { Responsive as ResponsiveGridLayout, type Layout, type LayoutItem } from 'react-grid-layout';
 import { useDashboard } from '@/lib/dashboard-context';
 import { WidgetRenderer } from '@/components/dashboard/widget-renderer';
 import { WidgetLibrary } from '@/components/dashboard/widget-library';
@@ -13,18 +16,49 @@ import {
   type WidgetInstance,
   type DashboardLayout,
   type DashboardData,
+  type LayoutFilters,
 } from '@/lib/dashboard-store';
-import { Plus, RotateCcw, X, Save, Star, Trash2, Pencil, Check } from 'lucide-react';
+import type { CompareMode } from '@/types/database';
 
-type AdvancedFilter = { field: string; operator: string; value: string; value_to?: string };
-type SchemaDimension = { field: string; label: string; type: string; operators: string[] };
+import { Plus, RotateCcw, X, Save, Star, Trash2, Pencil, Check } from 'lucide-react';
+import { InsightsCard } from '@/components/dashboard/insights-card';
+import { LayoutFilterBar } from '@/components/dashboard/layout-filter-bar';
 
 const MAX_LAYOUTS = 5;
 
 export default function MyDashboardPage() {
-  const { crossFilters, removeCrossFilter, clearCrossFilters } = useDashboard();
+  const {
+    filters: ctxFilters, crossFilters, removeCrossFilter, clearCrossFilters,
+    setDateRange, setShop, setCompare,
+  } = useDashboard();
   const [dashData, setDashData] = useState<DashboardData | null>(null);
   const [activeLayoutId, setActiveLayoutId] = useState<string>('');
+  // Czy aktywujemy zakładkę z filtrami z bazy — wtedy NIE chcemy by
+  // ten apply propagował się z powrotem jako „zmiana usera" do zapisu.
+  const [applyingFromLayout, setApplyingFromLayout] = useState(false);
+  // Szerokość gridu (D&D). Callback ref + useLayoutEffect — wcześniejszy
+  // pattern z useRef+useEffect odpalał się raz, na placeholderze loadingu
+  // (gdy ref był null), więc nigdy nie łapał faktycznej szerokości po mounted.
+  // setState trigger callback ref → effect re-fires → ResizeObserver get się
+  // właściwego elementu.
+  const [gridEl, setGridEl] = useState<HTMLDivElement | null>(null);
+  const [gridWidth, setGridWidth] = useState(0);
+  useLayoutEffect(() => {
+    if (!gridEl) return;
+    const update = () => {
+      // Mierzymy parent, NIE wrapper — RGL ustawia explicit `width` na swoim
+      // root divie, co potrafi „przykryć" rzeczywistą szerokość wrappera
+      // i zamrozić pomiar na początkowej wartości.
+      const target = gridEl.parentElement ?? gridEl;
+      const w = target.getBoundingClientRect().width;
+      if (w > 0) setGridWidth(w);
+    };
+    update();
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(update) : null;
+    ro?.observe(gridEl.parentElement ?? gridEl);
+    window.addEventListener('resize', update);
+    return () => { ro?.disconnect(); window.removeEventListener('resize', update); };
+  }, [gridEl]);
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
@@ -34,29 +68,6 @@ export default function MyDashboardPage() {
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [saveError, setSaveError] = useState<string | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
-  const [customWidgetDialogOpen, setCustomWidgetDialogOpen] = useState(false);
-  const [customWidgetDraft, setCustomWidgetDraft] = useState({
-    title: 'Własny widget',
-    chart_type: 'bar',
-    x_axis: 'date',
-    y_axis: 'revenue_gross',
-    group_by: '',
-    granularity: 'day',
-    filters_advanced: [] as AdvancedFilter[],
-  });
-  const [schemaDimensions, setSchemaDimensions] = useState<SchemaDimension[]>([]);
-
-  useEffect(() => {
-    async function loadSchema() {
-      try {
-        const res = await fetch('/api/dashboard/schema');
-        if (!res.ok) return;
-        const json = await res.json();
-        setSchemaDimensions(json.dimensions || []);
-      } catch {}
-    }
-    loadSchema();
-  }, []);
 
   // Load from DB on mount
   useEffect(() => {
@@ -84,6 +95,41 @@ export default function MyDashboardPage() {
   }, []);
 
   const activeLayout = dashData?.layouts.find(l => l.id === activeLayoutId) || dashData?.layouts[0] || null;
+
+  // (1) Apply filtrów zakładki do kontekstu przy przełączeniu zakładki.
+  // Robi to bez zaznaczania „unsaved changes" — to NIE jest user-edit, tylko
+  // odtworzenie zapisanego stanu.
+  useEffect(() => {
+    if (!mounted || !activeLayout?.filters) return;
+    setApplyingFromLayout(true);
+    const f = activeLayout.filters;
+    setDateRange(f.dateFrom, f.dateTo);
+    setShop(f.shop);
+    setCompare(f.compare as CompareMode);
+    // Zwolnij flagę po następnym tick — żeby watcher poniżej nie zareagował.
+    const t = setTimeout(() => setApplyingFromLayout(false), 0);
+    return () => clearTimeout(t);
+  }, [activeLayoutId, mounted, activeLayout?.filters, setDateRange, setShop, setCompare]);
+
+  // (2) Watcher: gdy user RĘCZNIE zmienił filtr (topbar), zapisz do bieżącej
+  // zakładki jako jej snapshot. Debounce żeby nie spamić save'em przy
+  // przesuwaniu daty.
+  useEffect(() => {
+    if (!mounted || !activeLayout || applyingFromLayout) return;
+    const next: LayoutFilters = {
+      dateFrom: ctxFilters.dateFrom,
+      dateTo: ctxFilters.dateTo,
+      shop: ctxFilters.shop,
+      compare: ctxFilters.compare,
+    };
+    const cur = activeLayout.filters;
+    if (cur && cur.dateFrom === next.dateFrom && cur.dateTo === next.dateTo && cur.shop === next.shop && cur.compare === next.compare) return;
+    const handle = setTimeout(() => {
+      updateLayout({ ...activeLayout, filters: next, updatedAt: new Date().toISOString() });
+    }, 400);
+    return () => clearTimeout(handle);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ctxFilters.dateFrom, ctxFilters.dateTo, ctxFilters.shop, ctxFilters.compare, mounted, applyingFromLayout, activeLayoutId]);
 
   // Persist to DB with feedback
   const saveToDB = useCallback(async (data: DashboardData, showFeedback = false) => {
@@ -123,7 +169,7 @@ export default function MyDashboardPage() {
     setHasUnsavedChanges(true);
   }, [dashData]);
 
-  const handleAddWidget = useCallback((type: string) => {
+  const handleAddWidget = useCallback((type: string, config?: Record<string, unknown>) => {
     if (!activeLayout) return;
     const def = getWidgetDef(type);
     if (!def) return;
@@ -134,29 +180,14 @@ export default function MyDashboardPage() {
       y: Infinity,
       w: def.defaultSize.w,
       h: def.defaultSize.h,
-      config: type === 'custom_explorer' ? { ...customWidgetDraft } : undefined,
+      config,
     };
     updateLayout({
       ...activeLayout,
       widgets: [...activeLayout.widgets, newWidget],
       updatedAt: new Date().toISOString(),
     });
-    if (type === 'custom_explorer') {
-      setCustomWidgetDialogOpen(true);
-    }
-  }, [activeLayout, updateLayout, customWidgetDraft]);
-
-  const handleUpdateCustomWidgetConfig = useCallback(() => {
-    if (!activeLayout) return;
-    const lastCustomWidget = [...activeLayout.widgets].reverse().find(w => w.type === 'custom_explorer');
-    if (!lastCustomWidget) return;
-    updateLayout({
-      ...activeLayout,
-      widgets: activeLayout.widgets.map(w => w.id === lastCustomWidget.id ? { ...w, config: { ...customWidgetDraft } } : w),
-      updatedAt: new Date().toISOString(),
-    });
-    setCustomWidgetDialogOpen(false);
-  }, [activeLayout, updateLayout, customWidgetDraft]);
+  }, [activeLayout, updateLayout]);
 
   const handleRemoveWidget = useCallback((id: string) => {
     if (!activeLayout) return;
@@ -192,32 +223,6 @@ export default function MyDashboardPage() {
   }, [activeLayout, updateLayout]);
 
 
-
-  const addAdvancedFilter = useCallback(() => {
-    const first = schemaDimensions[0];
-    if (!first) return;
-    setCustomWidgetDraft(v => ({
-      ...v,
-      filters_advanced: [
-        ...(v.filters_advanced as AdvancedFilter[]),
-        { field: first.field, operator: first.operators[0] || 'eq', value: '' },
-      ],
-    }));
-  }, [schemaDimensions]);
-
-  const updateAdvancedFilter = useCallback((index: number, patch: Partial<AdvancedFilter>) => {
-    setCustomWidgetDraft(v => ({
-      ...v,
-      filters_advanced: (v.filters_advanced as AdvancedFilter[]).map((f, i) => i === index ? { ...f, ...patch } : f),
-    }));
-  }, []);
-
-  const removeAdvancedFilter = useCallback((index: number) => {
-    setCustomWidgetDraft(v => ({
-      ...v,
-      filters_advanced: (v.filters_advanced as AdvancedFilter[]).filter((_, i) => i !== index),
-    }));
-  }, []);
 
   // Explicit save button handler
   const handleExplicitSave = useCallback(() => {
@@ -297,7 +302,7 @@ export default function MyDashboardPage() {
   if (!dashData || !mounted) {
     return (
       <div className="flex items-center justify-center h-96">
-        <div className="animate-pulse text-zinc-500">Ładowanie dashboardu...</div>
+        <div className="animate-pulse text-ink-faint">Ładowanie dashboardu...</div>
       </div>
     );
   }
@@ -320,17 +325,20 @@ export default function MyDashboardPage() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
+      {/* AI Wskazówki — nad resztą dashboardu */}
+      <InsightsCard />
+
       {/* Layout tabs */}
-      <div className="flex items-center gap-1 border-b border-zinc-800 pb-0">
+      <div className="flex items-center gap-1 border-b border-line pb-0">
         {dashData.layouts.map(l => (
           <button
             key={l.id}
             onClick={() => setActiveLayoutId(l.id)}
-            className={`group relative flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium rounded-t-lg transition-colors ${
+            className={`group relative flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium rounded-t-xl transition-colors ${
               l.id === activeLayoutId
-                ? 'bg-zinc-800 text-zinc-100 border border-zinc-700 border-b-zinc-800 -mb-px'
-                : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50'
+                ? 'bg-surface-2 text-ink border border-line border-b-surface-2 -mb-px'
+                : 'text-ink-muted hover:text-ink-soft hover:bg-surface-2'
             }`}
           >
             {dashData.defaultLayoutId === l.id && (
@@ -341,7 +349,7 @@ export default function MyDashboardPage() {
               <span className="flex items-center gap-0.5 ml-1 opacity-0 group-hover:opacity-100 transition-opacity">
                 <button
                   onClick={(e) => { e.stopPropagation(); setRenameId(l.id); setRenameName(l.name); }}
-                  className="p-0.5 text-zinc-500 hover:text-zinc-300"
+                  className="p-0.5 text-ink-faint hover:text-ink"
                   title="Zmień nazwę"
                 >
                   <Pencil size={10} />
@@ -349,7 +357,7 @@ export default function MyDashboardPage() {
                 {dashData.defaultLayoutId !== l.id && (
                   <button
                     onClick={(e) => { e.stopPropagation(); handleSetDefault(l.id); }}
-                    className="p-0.5 text-zinc-500 hover:text-amber-400"
+                    className="p-0.5 text-ink-faint hover:text-amber-600"
                     title="Ustaw jako domyślny"
                   >
                     <Star size={10} />
@@ -357,7 +365,7 @@ export default function MyDashboardPage() {
                 )}
                 <button
                   onClick={(e) => { e.stopPropagation(); handleDeleteLayout(l.id); }}
-                  className="p-0.5 text-zinc-500 hover:text-red-400"
+                  className="p-0.5 text-ink-faint hover:text-red-600"
                   title="Usuń"
                 >
                   <Trash2 size={10} />
@@ -369,7 +377,7 @@ export default function MyDashboardPage() {
         {dashData.layouts.length < MAX_LAYOUTS && (
           <button
             onClick={() => { setSaveDialogOpen(true); setNewLayoutName(''); }}
-            className="flex items-center gap-1 px-3 py-2.5 text-xs text-zinc-600 hover:text-zinc-400 transition-colors"
+            className="flex items-center gap-1 px-3 py-2.5 text-xs text-ink-faint hover:text-ink-muted transition-colors"
             title="Zapisz jako nowy dashboard"
           >
             <Plus size={14} />
@@ -377,110 +385,54 @@ export default function MyDashboardPage() {
         )}
       </div>
 
+      {/* Per-layout filter bar — daty, sklep, porównanie per zakładka.
+          Zmiana tu zapisuje się jako snapshot aktywnej zakładki (debounce w
+          watcherze na górze pliku). */}
+      <LayoutFilterBar />
+
       {/* Rename dialog */}
       {renameId && (
-        <div className="flex items-center gap-2 p-3 rounded-lg bg-zinc-800/50 border border-zinc-700">
-          <span className="text-xs text-zinc-400">Nowa nazwa:</span>
+        <div className="card flex items-center gap-2 p-3">
+          <span className="text-xs text-ink-muted">Nowa nazwa:</span>
           <input
             type="text"
             value={renameName}
             onChange={e => setRenameName(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && handleRename()}
-            className="px-3 py-1.5 rounded bg-zinc-900 border border-zinc-700 text-sm text-zinc-200 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className="rounded-xl border border-line bg-surface px-3 py-1.5 text-sm text-ink focus:border-primary/50 focus:outline-none focus:ring-4 focus:ring-primary/10"
             autoFocus
           />
-          <button onClick={handleRename} className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded transition-colors">
+          <button onClick={handleRename} className="btn-primary px-3 py-1.5 text-xs">
             Zapisz
           </button>
-          <button onClick={() => setRenameId(null)} className="px-3 py-1.5 text-zinc-500 hover:text-zinc-300 text-xs">
+          <button onClick={() => setRenameId(null)} className="btn-ghost px-3 py-1.5 text-xs">
             Anuluj
           </button>
         </div>
       )}
 
       {/* Save as dialog */}
-      {customWidgetDialogOpen && (
-        <div className="p-3 rounded-lg bg-zinc-800/50 border border-zinc-700 space-y-3">
-          <div className="text-sm font-medium text-zinc-200">Kreator własnego widgetu</div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-            <input value={customWidgetDraft.title} onChange={e => setCustomWidgetDraft(v => ({ ...v, title: e.target.value }))} placeholder="Nazwa widgetu" className="px-3 py-2 rounded bg-zinc-900 border border-zinc-700 text-sm text-zinc-200" />
-            <select value={customWidgetDraft.chart_type} onChange={e => setCustomWidgetDraft(v => ({ ...v, chart_type: e.target.value }))} className="px-3 py-2 rounded bg-zinc-900 border border-zinc-700 text-sm text-zinc-200">
-              <option value="bar">Słupkowy</option><option value="line">Liniowy</option><option value="area">Warstwowy</option><option value="pie">Kołowy</option><option value="table">Tabela</option>
-            </select>
-            <select value={customWidgetDraft.granularity} onChange={e => setCustomWidgetDraft(v => ({ ...v, granularity: e.target.value }))} className="px-3 py-2 rounded bg-zinc-900 border border-zinc-700 text-sm text-zinc-200">
-              <option value="day">Dzień</option><option value="week">Tydzień</option><option value="month">Miesiąc</option><option value="quarter">Kwartał</option>
-            </select>
-            <select value={customWidgetDraft.x_axis} onChange={e => setCustomWidgetDraft(v => ({ ...v, x_axis: e.target.value }))} className="px-3 py-2 rounded bg-zinc-900 border border-zinc-700 text-sm text-zinc-200">
-              <option value="date">Data</option><option value="source_shop">Sklep</option><option value="product_category">Kategoria produktu</option><option value="supplier">Dostawca</option><option value="source_platform">Platforma</option>
-            </select>
-            <select value={customWidgetDraft.y_axis} onChange={e => setCustomWidgetDraft(v => ({ ...v, y_axis: e.target.value }))} className="px-3 py-2 rounded bg-zinc-900 border border-zinc-700 text-sm text-zinc-200">
-              <option value="revenue_gross">Revenue brutto</option><option value="orders_count">Liczba zamówień</option><option value="avg_order_value">Średnia wartość zamówienia</option>
-            </select>
-            <select value={customWidgetDraft.group_by} onChange={e => setCustomWidgetDraft(v => ({ ...v, group_by: e.target.value }))} className="px-3 py-2 rounded bg-zinc-900 border border-zinc-700 text-sm text-zinc-200">
-              <option value="">Bez grupowania</option><option value="source_shop">Sklep</option><option value="product_category">Kategoria</option><option value="supplier">Dostawca</option><option value="source_platform">Platforma</option>
-            </select>
-          </div>
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <div className="text-xs text-zinc-400">Filtry zaawansowane (Looker-style)</div>
-              <button onClick={addAdvancedFilter} className="text-xs px-2 py-1 rounded bg-zinc-700 hover:bg-zinc-600">+ filtr</button>
-            </div>
-            {(customWidgetDraft.filters_advanced as AdvancedFilter[]).map((f, idx) => {
-              const dim = schemaDimensions.find(d => d.field === f.field) || schemaDimensions[0];
-              const operators = dim?.operators || ['eq'];
-              const hideValue = f.operator === 'is_null' || f.operator === 'not_null';
-              const needsTo = f.operator === 'between';
-              const isIn = f.operator === 'in';
-              return (
-                <div key={idx} className="grid grid-cols-1 md:grid-cols-12 gap-2 items-center">
-                  <select value={f.field} onChange={e => updateAdvancedFilter(idx, { field: e.target.value, operator: (schemaDimensions.find(d => d.field === e.target.value)?.operators?.[0]) || 'eq', value: '', value_to: '' })} className="md:col-span-3 px-3 py-2 rounded bg-zinc-900 border border-zinc-700 text-xs text-zinc-200">
-                    {schemaDimensions.map(d => <option key={d.field} value={d.field}>{d.label}</option>)}
-                  </select>
-                  <select value={f.operator} onChange={e => updateAdvancedFilter(idx, { operator: e.target.value })} className="md:col-span-2 px-3 py-2 rounded bg-zinc-900 border border-zinc-700 text-xs text-zinc-200">
-                    {operators.map(op => <option key={op} value={op}>{op}</option>)}
-                  </select>
-                  {!hideValue && (
-                    <input value={f.value || ''} onChange={e => updateAdvancedFilter(idx, { value: e.target.value })} placeholder={isIn ? 'np. sofa, łóżko, materac' : 'wartość'} className="md:col-span-3 px-3 py-2 rounded bg-zinc-900 border border-zinc-700 text-xs text-zinc-200" />
-                  )}
-                  {needsTo && (
-                    <input value={f.value_to || ''} onChange={e => updateAdvancedFilter(idx, { value_to: e.target.value })} placeholder="do" className="md:col-span-2 px-3 py-2 rounded bg-zinc-900 border border-zinc-700 text-xs text-zinc-200" />
-                  )}
-                  {hideValue && <div className="md:col-span-5 text-[11px] text-zinc-500">Ten operator nie wymaga wartości.</div>}
-                  <button onClick={() => removeAdvancedFilter(idx)} className="md:col-span-2 px-3 py-2 rounded bg-red-950/50 border border-red-800 text-xs text-red-300">Usuń</button>
-                </div>
-              );
-            })}
-            <p className="text-[11px] text-zinc-500">Tip: dla operatora "in" podaj wiele wartości oddzielone przecinkiem.</p>
-          </div>
-          <div className="flex gap-2">
-            <button onClick={handleUpdateCustomWidgetConfig} className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded">Zapisz konfigurację</button>
-            <button onClick={() => setCustomWidgetDialogOpen(false)} className="px-3 py-1.5 text-zinc-500 hover:text-zinc-300 text-xs">Anuluj</button>
-          </div>
-        </div>
-      )}
-
-      {/* Save as dialog */}
       {saveDialogOpen && (
-        <div className="flex items-center gap-2 p-3 rounded-lg bg-zinc-800/50 border border-zinc-700">
-          <Save size={16} className="text-zinc-400" />
-          <span className="text-xs text-zinc-400">Nazwa dashboardu:</span>
+        <div className="card flex items-center gap-2 p-3">
+          <Save size={16} className="text-ink-muted" />
+          <span className="text-xs text-ink-muted">Nazwa dashboardu:</span>
           <input
             type="text"
             value={newLayoutName}
             onChange={e => setNewLayoutName(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && handleSaveAs()}
             placeholder="np. Marketing, Finanse..."
-            className="flex-1 px-3 py-1.5 rounded bg-zinc-900 border border-zinc-700 text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className="flex-1 rounded-xl border border-line bg-surface px-3 py-1.5 text-sm text-ink placeholder:text-ink-faint focus:border-primary/50 focus:outline-none focus:ring-4 focus:ring-primary/10"
             autoFocus
           />
           <button
             onClick={handleSaveAs}
             disabled={!newLayoutName.trim()}
-            className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded transition-colors disabled:opacity-50"
+            className="btn-primary px-3 py-1.5 text-xs"
           >
             Zapisz
           </button>
-          <button onClick={() => setSaveDialogOpen(false)} className="px-3 py-1.5 text-zinc-500 hover:text-zinc-300 text-xs">
+          <button onClick={() => setSaveDialogOpen(false)} className="btn-ghost px-3 py-1.5 text-xs">
             Anuluj
           </button>
         </div>
@@ -488,40 +440,40 @@ export default function MyDashboardPage() {
 
       {/* Header */}
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-zinc-100">
+        <h1 className="text-xl font-semibold tracking-tight text-ink">
           {activeLayout?.name || 'Dashboard'}
-          {hasUnsavedChanges && <span className="ml-2 text-xs text-amber-500 font-normal">(niezapisane)</span>}
+          {hasUnsavedChanges && <span className="ml-2 text-xs text-amber-600 font-normal">(niezapisane)</span>}
         </h1>
         <div className="flex items-center gap-2">
           <button
             onClick={handleExplicitSave}
             disabled={saveStatus === 'saving'}
-            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+            className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-xl transition-colors ${
               saveStatus === 'saved'
-                ? 'bg-emerald-600 text-white'
+                ? 'bg-emerald-100 text-emerald-700'
                 : saveStatus === 'error'
-                ? 'bg-red-600 text-white'
+                ? 'bg-red-100 text-red-700'
                 : hasUnsavedChanges
-                ? 'bg-blue-600 hover:bg-blue-700 text-white'
-                : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800'
+                ? 'bg-primary hover:bg-primary-ink text-white'
+                : 'text-ink-muted hover:text-ink hover:bg-surface-2'
             }`}
           >
             {saveStatus === 'saved' ? <Check size={16} /> : <Save size={16} />}
             {saveStatus === 'saving' ? 'Zapisywanie...' : saveStatus === 'saved' ? 'Zapisano!' : saveStatus === 'error' ? 'Błąd zapisu' : 'Zapisz'}
           </button>
           {saveError && (
-            <span className="text-[10px] text-red-400 max-w-48 truncate" title={saveError}>{saveError}</span>
+            <span className="text-[10px] text-red-600 max-w-48 truncate" title={saveError}>{saveError}</span>
           )}
           <button
             onClick={handleReset}
-            className="flex items-center gap-2 px-3 py-2 text-sm text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 rounded-lg transition-colors"
+            className="flex items-center gap-2 px-3 py-2 text-sm text-ink-muted hover:text-ink hover:bg-surface-2 rounded-xl transition-colors"
           >
             <RotateCcw size={16} />
             Reset
           </button>
           <button
             onClick={() => setLibraryOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+            className="btn-primary px-4 py-2"
           >
             <Plus size={16} />
             Dodaj widget
@@ -531,13 +483,13 @@ export default function MyDashboardPage() {
 
       {/* Active cross-filters */}
       {crossFilters.length > 0 && (
-        <div className="flex items-center gap-2 flex-wrap p-3 rounded-lg bg-blue-950/30 border border-blue-800/30">
-          <span className="text-xs text-blue-400 font-medium">Filtry:</span>
+        <div className="flex items-center gap-2 flex-wrap p-3 rounded-xl bg-primary-soft border border-primary/20">
+          <span className="text-xs text-primary-ink font-medium">Filtry:</span>
           {crossFilters.map(cf => (
             <button
-              key={cf.field}
-              onClick={() => removeCrossFilter(cf.field)}
-              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-blue-600/20 text-blue-300 text-xs hover:bg-blue-600/40 transition-colors"
+              key={`${cf.field}|${cf.value}`}
+              onClick={() => removeCrossFilter(cf.field, cf.value)}
+              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-primary/15 text-primary-ink text-xs hover:bg-primary/25 transition-colors"
             >
               {cf.label}
               <X size={12} />
@@ -545,7 +497,7 @@ export default function MyDashboardPage() {
           ))}
           <button
             onClick={clearCrossFilters}
-            className="text-xs text-zinc-500 hover:text-zinc-300 ml-2"
+            className="text-xs text-ink-muted hover:text-ink-soft ml-2"
           >
             Wyczyść wszystkie
           </button>
@@ -554,30 +506,65 @@ export default function MyDashboardPage() {
 
       {/* Grid */}
       {!activeLayout || activeLayout.widgets.length === 0 ? (
-        <div className="flex flex-col items-center justify-center h-96 gap-4 border-2 border-dashed border-zinc-800 rounded-xl">
-          <p className="text-zinc-500">Twój dashboard jest pusty</p>
+        <div className="flex flex-col items-center justify-center h-96 gap-4 border-2 border-dashed border-line rounded-2xl">
+          <p className="text-ink-muted">Twój dashboard jest pusty</p>
           <button
             onClick={() => setLibraryOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+            className="btn-primary px-4 py-2"
           >
             <Plus size={16} />
             Dodaj widgety
           </button>
         </div>
       ) : (
-        <div className="grid grid-cols-12 gap-3">
-          {activeLayout.widgets.map((w, i) => (
-            <div key={w.id} className={`${widgetSpan(w.w)} ${widgetHeight(w.h)}`}>
+        <div ref={setGridEl} style={{ width: '100%' }}>
+        {gridWidth > 0 && <ResponsiveGridLayout
+          className="layout"
+          width={gridWidth}
+          layouts={{
+            lg: activeLayout.widgets.map(w => ({ i: w.id, x: w.x, y: w.y, w: w.w, h: w.h, minW: 3, minH: 2 })),
+            md: activeLayout.widgets.map(w => ({ i: w.id, x: w.x, y: w.y, w: w.w, h: w.h, minW: 3, minH: 2 })),
+            sm: activeLayout.widgets.map(w => ({ i: w.id, x: 0, y: w.y, w: 12, h: w.h, minW: 3, minH: 2 })),
+          }}
+          breakpoints={{ lg: 1200, md: 996, sm: 0 }}
+          cols={{ lg: 12, md: 12, sm: 12 }}
+          rowHeight={64}
+          margin={[16, 16]}
+          containerPadding={[0, 0]}
+          dragConfig={{
+            enabled: true,
+            bounded: false,
+            handle: '.widget-drag-handle',
+            cancel: '.widget-no-drag',
+            threshold: 3,
+          }}
+          onLayoutChange={(newLayout: Layout) => {
+            if (!activeLayout) return;
+            const map = new Map<string, LayoutItem>(newLayout.map(l => [l.i, l]));
+            let changed = false;
+            const newWidgets = activeLayout.widgets.map(w => {
+              const l = map.get(w.id);
+              if (!l) return w;
+              if (l.x !== w.x || l.y !== w.y || l.w !== w.w || l.h !== w.h) {
+                changed = true;
+                return { ...w, x: l.x, y: l.y, w: l.w, h: l.h };
+              }
+              return w;
+            });
+            if (changed) updateLayout({ ...activeLayout, widgets: newWidgets, updatedAt: new Date().toISOString() });
+          }}
+        >
+          {activeLayout.widgets.map(w => (
+            <div key={w.id}>
               <WidgetRenderer
                 widgetType={w.type}
                 widgetConfig={w.config}
                 onRemove={() => handleRemoveWidget(w.id)}
-                onMoveUp={i > 0 ? () => handleMove(w.id, -1) : undefined}
-                onMoveDown={i < activeLayout.widgets.length - 1 ? () => handleMove(w.id, 1) : undefined}
                 onResize={(delta) => handleResize(w.id, delta)}
               />
             </div>
           ))}
+        </ResponsiveGridLayout>}
         </div>
       )}
 

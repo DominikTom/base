@@ -60,26 +60,32 @@ export function getDateRange(preset: string): { from: string; to: string } {
   }
 }
 
+// Palety serii — odcienie primary (fiolet). Sklepy/kategorie zachowują
+// własne kolory (ich identyfikacja), ale teraz w spójnej rodzinie.
+// Kolory serii danych na wykresach — odcienie 500 z rodzin statusowych
+// design systemu (wspólne dla light/dark). Recharts nie czyta zmiennych
+// CSS w atrybutach SVG, stąd wartości zebrane tutaj, w jednym miejscu.
 export const SHOP_COLORS: Record<string, string> = {
-  'mybed.pl': '#3b82f6',
-  'mybed.de': '#f59e0b',
-  'mittohome.pl': '#10b981',
-  'showroom': '#8b5cf6',
-  'amazon.de': '#f97316',
-  'allegro.pl': '#ef4444',
-  'kaufland.de': '#06b6d4',
+  'mybed.pl':     '#4F46E5',  // indygo (primary) — główny sklep
+  'mybed.de':     '#06B6D4',  // cyjan (accent)
+  'mittohome.pl': '#8B5CF6',  // violet
+  'nomosleep.pl': '#10B981',  // emerald
+  'showroom':     '#14B8A6',  // teal
+  'amazon.de':    '#F59E0B',  // amber
+  'allegro.pl':   '#F97316',  // orange
+  'kaufland.de':  '#0EA5E9',  // sky
 };
 
 export const CATEGORY_COLORS: Record<string, string> = {
-  'łóżko': '#3b82f6',
-  'materac': '#10b981',
-  'kołdra': '#f59e0b',
-  'poduszka': '#8b5cf6',
-  'sofa': '#ef4444',
-  'fotel': '#f97316',
-  'pufa': '#06b6d4',
-  'meble': '#84cc16',
-  'koc': '#ec4899',
-  'dekoracje': '#14b8a6',
-  'inne': '#6b7280',
+  'łóżko':      '#4F46E5',  // indygo (primary)
+  'materac':    '#06B6D4',  // cyjan (accent)
+  'kołdra':     '#8B5CF6',  // violet
+  'poduszka':   '#0EA5E9',  // sky
+  'sofa':       '#14B8A6',  // teal
+  'fotel':      '#F59E0B',  // amber
+  'pufa':       '#F97316',  // orange
+  'meble':      '#10B981',  // emerald
+  'koc':        '#3B82F6',  // blue
+  'dekoracje':  '#EF4444',  // red
+  'inne':       '#6B7280',  // gray
 };

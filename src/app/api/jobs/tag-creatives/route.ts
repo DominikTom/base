@@ -1,12 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAdmin } from '@/lib/auth';
 import { getSupabaseAdmin } from '@/lib/supabase';
 import { classifyCreative, insightsToTags } from '@/lib/creative-tagger';
+import { publicThumbUrl } from '@/lib/creative-thumbs';
 
 export const maxDuration = 60;
 
 // POST — manual trigger (default batch 10)
 // ?limit=N to override, ?retry_failed=1 to also pick 'failed' rows
 export async function POST(request: NextRequest) {
+  const _guard = await requireAdmin();
+  if (_guard) return _guard;
   const { searchParams } = new URL(request.url);
   const limitParam = parseInt(searchParams.get('limit') || '10', 10);
   const limit = Number.isFinite(limitParam) && limitParam > 0 && limitParam <= 50
@@ -16,19 +20,19 @@ export async function POST(request: NextRequest) {
 }
 
 // GET — cron-safe (sprawdza ETL_CRON_SECRET)
-export async function GET(request: NextRequest) {
-  const isVercelCron = request.headers.get('x-vercel-cron') === '1';
-  const cronSecret = process.env.ETL_CRON_SECRET;
-  const authHeader = request.headers.get('authorization');
-  if (!isVercelCron && cronSecret && authHeader !== `Bearer ${cronSecret}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-  return runTagging(10, false);
+export async function GET() {
+  const _guard = await requireAdmin();
+  if (_guard) return _guard;
+  // Vercel Cron co 10 min — 20 kreacji na przebieg (4 równolegle mieści się w 60 s).
+  return runTagging(20, false);
 }
+
+const CONCURRENCY = 4;
 
 interface CreativeRow {
   creative_id: string;
   thumbnail_url: string | null;
+  thumb_storage_path: string | null;
   body: string | null;
   title: string | null;
   format: string | null;
@@ -53,9 +57,9 @@ async function runTagging(limit: number, retryFailed: boolean) {
       const statusFilter = retryFailed ? ['pending', 'failed'] : ['pending'];
       const { data: pending, error } = await db
         .from('dim_creatives')
-        .select('creative_id, thumbnail_url, body, title, format')
+        .select('creative_id, thumbnail_url, thumb_storage_path, body, title, format')
         .in('ai_tag_status', statusFilter)
-        .not('thumbnail_url', 'is', null)
+        .or('thumbnail_url.not.is.null,thumb_storage_path.not.is.null')
         .order('first_seen_at', { ascending: false })
         .limit(limit);
 
@@ -83,20 +87,22 @@ async function runTagging(limit: number, retryFailed: boolean) {
       let succeeded = 0;
       let failed = 0;
 
-      for (const row of rows) {
-        if (!row.thumbnail_url) {
+      async function tagOne(row: CreativeRow) {
+        // Kopia w Storage ma pierwszeństwo — link fbcdn mógł już wygasnąć.
+        const imageUrl = row.thumb_storage_path ? publicThumbUrl(db, row.thumb_storage_path) : row.thumbnail_url;
+        if (!imageUrl) {
           await db.from('dim_creatives').update({
             ai_tag_status: 'skipped',
             ai_tag_error: 'no thumbnail_url',
             ai_tagged_at: new Date().toISOString(),
           }).eq('creative_id', row.creative_id);
           failed += 1;
-          continue;
+          return;
         }
 
         try {
           const insights = await classifyCreative({
-            thumbnailUrl: row.thumbnail_url,
+            thumbnailUrl: imageUrl,
             adBody: row.body,
             adTitle: row.title,
             format: row.format,
@@ -109,7 +115,7 @@ async function runTagging(limit: number, retryFailed: boolean) {
               ai_tagged_at: new Date().toISOString(),
             }).eq('creative_id', row.creative_id);
             failed += 1;
-            continue;
+            return;
           }
 
           const tags = insightsToTags(insights);
@@ -130,6 +136,10 @@ async function runTagging(limit: number, retryFailed: boolean) {
           }).eq('creative_id', row.creative_id);
           failed += 1;
         }
+      }
+
+      for (let i = 0; i < rows.length; i += CONCURRENCY) {
+        await Promise.all(rows.slice(i, i + CONCURRENCY).map(tagOne));
       }
 
       // Policz ile pending zostało

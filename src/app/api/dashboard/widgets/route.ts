@@ -1,26 +1,71 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdmin } from '@/lib/supabase';
 import { isInWarsawDateRange, shiftDate, warsawDateKey } from '@/lib/warsaw-date';
+import { fetchEurRatesByDate, gaToPln } from '@/lib/ad-cost';
+import { shopFilterToList, applyShopFilter } from '@/lib/shop-filter';
 
 export async function POST(request: NextRequest) {
   try {
-    const { widget, dateFrom, dateTo, shop = 'all', limit = 20, crossFilters = [] } = await request.json();
+    const { widget, dateFrom, dateTo, shop = 'all', limit = 20, crossFilters: rawCrossFilters = [] } = await request.json();
     const db = getSupabaseAdmin();
     const fetchFrom = shiftDate(dateFrom, -1);
     const fetchTo = shiftDate(dateTo, 1);
     const CANCELLED_STATUS = 'anulowane';
 
+    // EUR currency tylko gdy WSZYSTKIE wybrane sklepy są EUR (multi-select
+    // mix mybed.pl + mybed.de → PLN bo nie ma jednej waluty).
     const EUR_SHOPS = ['mybed.de', 'amazon.de', 'kaufland.de'];
-    const isEurShop = shop !== 'all' && EUR_SHOPS.includes(shop);
+    const shopList = shopFilterToList(shop);
+    const isEurShop = shopList.length > 0 && shopList.every(s => EUR_SHOPS.includes(s));
     const currency = isEurShop ? 'EUR' : 'PLN';
 
     const orderCrossFields = ['supplier', 'delivery_city', 'coupon_code', 'source_shop'];
     const itemCrossFields = ['product_name', 'product_category', 'fabric', 'fabric_collection', 'bed_size', 'mattress_type', 'headboard_height', 'storage_type'];
 
+    // Widget NIE filtruje sam siebie: gdy ranking_models jest źródłem cross-filtru
+    // `product_name`, ten widget musi widzieć WSZYSTKIE modele żeby user mógł
+    // wybrać kolejny. Inaczej po pierwszym kliku tabela zwija się do 1 wiersza
+    // i nie da się zaznaczyć drugiego.
+    const WIDGET_SOURCE_FIELD: Record<string, string> = {
+      ranking_models: 'product_name',
+      ranking_fabric_collections: 'fabric_collection',
+      ranking_fabrics: 'fabric',
+      ranking_cities: 'delivery_city',
+      ranking_suppliers: 'supplier',
+      ranking_coupons: 'coupon_code',
+      ranking_bed_sizes: 'bed_size',
+      ranking_headboard_heights: 'headboard_height',
+      ranking_storage_types: 'storage_type',
+    };
+    const widgetSourceField = WIDGET_SOURCE_FIELD[widget];
+    const crossFilters = widgetSourceField
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ? (rawCrossFilters as Array<{ field: string; value: string }>).filter((cf: any) => cf.field !== widgetSourceField)
+      : rawCrossFilters;
+
+    // Cross-filtry: grupuj po polu, w obrębie pola = OR (multi-select);
+    // między polami = AND. Dla coupon_code ILIKE (case-insensitive — w bazie
+    // np. „Merve7", w rankingu pokazywany jako „MERVE7").
+    const ILIKE_FIELDS = new Set(['coupon_code']);
+    function escapeIlike(s: string): string {
+      return String(s).replace(/[\\%_,()]/g, m => `\\${m}`);
+    }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     function applyCross(q: any, allowedFields: string[]): any {
+      const byField: Record<string, string[]> = {};
       for (const cf of crossFilters) {
-        if (allowedFields.includes(cf.field)) q = q.eq(cf.field, cf.value);
+        if (!allowedFields.includes(cf.field)) continue;
+        (byField[cf.field] ||= []).push(String(cf.value));
+      }
+      for (const [field, values] of Object.entries(byField)) {
+        if (ILIKE_FIELDS.has(field)) {
+          const ors = values.map(v => `${field}.ilike.${escapeIlike(v)}`).join(',');
+          q = q.or(ors);
+        } else if (values.length === 1) {
+          q = q.eq(field, values[0]);
+        } else {
+          q = q.in(field, values);
+        }
       }
       return q;
     }
@@ -30,7 +75,7 @@ export async function POST(request: NextRequest) {
       const withDate = select.includes('order_date') ? select : `${select}, order_date`;
       let q = db.from('fact_orders').select(withDate)
         .gte('order_date', fetchFrom).lte('order_date', fetchTo + 'T23:59:59');
-      if (shop !== 'all') q = q.eq('source_shop', shop);
+      q = applyShopFilter(q, shop);
       q = applyCross(q, orderCrossFields);
       return q;
     }
@@ -40,7 +85,7 @@ export async function POST(request: NextRequest) {
       const withDate = select.includes('order_date') ? select : `${select}, order_date`;
       let q = db.from('fact_orders').select(withDate)
         .gte('order_date', fetchFrom).lte('order_date', fetchTo + 'T23:59:59');
-      if (shop !== 'all') q = q.eq('source_shop', shop);
+      q = applyShopFilter(q, shop);
       q = applyCross(q, orderCrossFields);
       return q;
     }
@@ -82,7 +127,7 @@ export async function POST(request: NextRequest) {
       function buildQ() {
         let q = db.from('fact_orders').select('order_id, order_date')
           .gte('order_date', fetchFrom).lte('order_date', fetchTo + 'T23:59:59');
-        if (shop !== 'all') q = q.eq('source_shop', shop);
+        q = applyShopFilter(q, shop);
         q = applyCross(q, orderCrossFields);
         return q;
       }
@@ -114,7 +159,8 @@ export async function POST(request: NextRequest) {
         const chunk = validIds.slice(i, i + CHUNK);
 
         function buildItemQ() {
-          let q = db.from('fact_order_items')
+          // v_order_items = fact_order_items + wyliczona flaga is_sample
+          let q = db.from('v_order_items')
             .select(select + ', order_id')
             .in('order_id', chunk);
           if (extraFilters?.eq) {
@@ -160,10 +206,15 @@ export async function POST(request: NextRequest) {
     function shopTokens(selectedShop: string): string[] {
       if (selectedShop === 'all') return [];
       const normalized = selectedShop.toLowerCase();
+      // account_id Mety dla każdego sklepu — bez tego filtr sklepu na widgetach
+      // Meta (kpi_meta_spend, kpi_mer, kpi_total_marketing_cost) zwracał 0,
+      // bo nazwy kampanii często nie zawierają „mybed.de" itd., a samo account_id
+      // jest jedynym pewnym powiązaniem z konkretnym kontem reklamowym.
       const map: Record<string, string[]> = {
-        'mybed.pl': ['mybed.pl', 'mybed_pl', 'mybedpl'],
-        'mybed.de': ['mybed.de', 'mybed_de', 'mybedde'],
-        'mittohome.pl': ['mittohome.pl', 'mittohome_pl', 'mittohomepl'],
+        'mybed.pl': ['mybed.pl', 'mybed_pl', 'mybedpl', 'act_1681802382204753'],
+        'mybed.de': ['mybed.de', 'mybed_de', 'mybedde', 'act_637792865917248'],
+        'mittohome.pl': ['mittohome.pl', 'mittohome_pl', 'mittohomepl', 'act_797212915921530'],
+        'nomosleep.pl': ['nomosleep.pl', 'nomosleep_pl', 'nomosleeppl', 'act_1376753327967692'],
         'showroom': ['showroom'],
         'amazon.de': ['amazon.de', 'amazon_de', 'amazonde'],
         'allegro.pl': ['allegro.pl', 'allegro_pl', 'allegropl'],
@@ -232,14 +283,13 @@ export async function POST(request: NextRequest) {
         const paymentRate = totals.orders > 0 ? (totals.ordersPaid / totals.orders) * 100 : 0;
 
         let bedOrders = 0, sampleOrders = 0, bedQty = 0, sampleQty = 0;
-        const bedPattern = /łóżko|łożko|bett|boxspring/i;
-        const samplePattern = /próbk|muster|sample/i;
 
         if (widget === 'kpi_orders_beds' || widget === 'kpi_qty_beds') {
-          const items = await iqSafe('product_name, quantity');
+          // Łóżko = realny produkt (is_sample=false) w kategorii 'łóżko'.
+          const items = await iqSafe('product_category, is_sample, quantity');
           const bedOrderIds = new Set<string>();
           for (const i of items) {
-            if (bedPattern.test(i.product_name || '')) {
+            if (!i.is_sample && String(i.product_category || '') === 'łóżko') {
               bedOrderIds.add(i.order_id);
               bedQty += (i.quantity || 1);
             }
@@ -248,10 +298,11 @@ export async function POST(request: NextRequest) {
           Object.assign(debug, { query: widget === 'kpi_qty_beds' ? 'SUM(quantity)' : 'COUNT DISTINCT order_id', itemsFound: items.length, uniqueOrders: bedOrders, totalQty: bedQty, ordersInRange: (await getValidOrderIds()).length });
         }
         if (widget === 'kpi_orders_samples' || widget === 'kpi_qty_samples') {
-          const items = await iqSafe('product_name, product_category, quantity');
+          // Próbki = v_order_items.is_sample (flaga z migracji 011).
+          const items = await iqSafe('is_sample, quantity');
           const sampleOrderIds = new Set<string>();
           for (const i of items) {
-            if (i.product_category === 'próbki' || samplePattern.test(i.product_name || '')) {
+            if (i.is_sample) {
               sampleOrderIds.add(i.order_id);
               sampleQty += (i.quantity || 1);
             }
@@ -265,10 +316,10 @@ export async function POST(request: NextRequest) {
           kpi_revenue_paid: { value: totals.paid, format: 'currency', debugQuery: 'SUM(total_gross_pln) for paid orders' },
           kpi_revenue_unpaid: { value: unpaid, format: 'currency', debugQuery: 'revenue - paid' },
           kpi_orders: { value: totals.orders, format: 'number', debugQuery: 'COUNT(*) from fact_orders' },
-          kpi_orders_beds: { value: bedOrders, format: 'number', debugQuery: 'COUNT DISTINCT order_id WHERE product_name contains łóżko/bett/boxspring' },
-          kpi_qty_beds: { value: bedQty, format: 'number', debugQuery: 'SUM(quantity) WHERE product_name contains łóżko/bett/boxspring' },
-          kpi_orders_samples: { value: sampleOrders, format: 'number', debugQuery: 'COUNT DISTINCT order_id WHERE product_name contains próbk/muster/sample' },
-          kpi_qty_samples: { value: sampleQty, format: 'number', debugQuery: 'SUM(quantity) WHERE product_name contains próbk/muster/sample' },
+          kpi_orders_beds: { value: bedOrders, format: 'number', debugQuery: 'COUNT DISTINCT order_id WHERE is_sample=false AND product_category=łóżko' },
+          kpi_qty_beds: { value: bedQty, format: 'number', debugQuery: 'SUM(quantity) WHERE is_sample=false AND product_category=łóżko' },
+          kpi_orders_samples: { value: sampleOrders, format: 'number', debugQuery: 'COUNT DISTINCT order_id WHERE is_sample=true' },
+          kpi_qty_samples: { value: sampleQty, format: 'number', debugQuery: 'SUM(quantity) WHERE is_sample=true' },
           kpi_aov: { value: aov, format: 'currency', debugQuery: 'revenue / orders' },
           kpi_payment_rate: { value: paymentRate, format: 'percent', debugQuery: 'ordersPaid / orders * 100' },
         };
@@ -278,45 +329,22 @@ export async function POST(request: NextRequest) {
 
       // ── Rankings ──
       case 'ranking_models': {
-        const items = await iqSafe('product_name, product_category, item_type, fabric, fabric_collection, quantity');
+        // Realne produkty = v_order_items.is_sample = false (flaga z migracji 011
+        // wyodrębnia próbki tkanin niezależnie od niespójnej kategoryzacji).
+        const items = await iqSafe('product_name, item_type, is_sample, quantity');
         const map: Record<string, number> = {};
-        const samplePattern = /próbk|probk|muster|sample|swatch|tkanin/i;
-        const sampleCategories = new Set(['próbki', 'probki', 'sample']);
-        const excludedItemTypes = new Set(['shipping', 'service', 'surcharge']);
-        const placeholderProductPattern = /produkt\s+indywidualny|individual\s+product|pozycja\s+indywidualna/i;
-        const knownFabricPrefixes = new Set<string>();
-        for (const row of items) {
-          const f = String(row.fabric || '').trim().toLowerCase();
-          const fc = String(row.fabric_collection || '').trim().toLowerCase();
-          if (f) knownFabricPrefixes.add(f.split(/\s+/)[0]);
-          if (fc) knownFabricPrefixes.add(fc.split(/\s+/)[0]);
-        }
+        const placeholderProductPattern = /produkt\s+indywidualny|individual\s+product|pozycja\s+indywidualna|niezidentyfikowany/i;
         for (const i of items) {
           const name = String(i.product_name || '').trim();
           if (!name) continue;
-          const category = String(i.product_category || '').trim().toLowerCase();
-          const itemType = String(i.item_type || '').trim().toLowerCase();
-          const fabric = String(i.fabric || '').trim().toLowerCase();
-          const fabricCollection = String(i.fabric_collection || '').trim().toLowerCase();
-          const normalizedName = name.toLowerCase();
-          const looksLikeFabricSwatchName = /^[a-ząćęłńóśźż0-9\- ]+\s+\d{1,3}$/i.test(name);
-          const firstToken = normalizedName.split(/\s+/)[0];
-
-          if (excludedItemTypes.has(itemType)) continue;
-          if (sampleCategories.has(category)) continue;
-          if (samplePattern.test(name)) continue;
+          if (i.is_sample) continue;
+          if (String(i.item_type || '') !== 'product') continue;
           if (placeholderProductPattern.test(name)) continue;
-          if (looksLikeFabricSwatchName && knownFabricPrefixes.has(firstToken)) continue;
-          if (looksLikeFabricSwatchName && (
-            (fabric && normalizedName.startsWith(fabric)) ||
-            (fabricCollection && normalizedName.startsWith(fabricCollection))
-          )) continue;
-
           map[name] = (map[name] || 0) + (i.quantity || 1);
         }
         const ranked = Object.entries(map).sort(([,a],[,b]) => b - a).slice(0, limit);
         const total = ranked.reduce((s,[,v]) => s + v, 0);
-        return NextResponse.json({ type: 'ranking', data: ranked.map(([name, value]) => ({ name, value: Math.round(value) })), total, debug: { ...debug, query: 'fact_order_items excluding samples/service/shipping, swatches and placeholder products, grouped by product_name, SUM(quantity)', itemsFound: items.length } });
+        return NextResponse.json({ type: 'ranking', data: ranked.map(([name, value]) => ({ name, value: Math.round(value) })), total, debug: { ...debug, query: 'v_order_items WHERE is_sample=false AND item_type=product, grouped by product_name, SUM(quantity)', itemsFound: items.length } });
       }
 
       case 'ranking_fabric_collections': {
@@ -566,11 +594,17 @@ export async function POST(request: NextRequest) {
         const metaSpend = metaScoped.reduce((s, r) => s + (r.spend || 0), 0);
 
         const googleData = await fetchAllRows(
-          db.from('fact_daily_traffic').select('ad_cost, hostname, campaign, source')
+          db.from('fact_daily_traffic').select('date, ad_cost, hostname, campaign, source')
             .eq('source', '__total__').gte('date', dateFrom).lte('date', dateTo)
         );
         const googleScoped = filterRowsByShopHint(googleData || [], shop, ['hostname', 'campaign', 'source']);
-        const googleSpend = googleScoped.reduce((s, r) => s + (r.ad_cost || 0), 0);
+        // ad_cost dla mybed.de jest w EUR (waluta property GA4) — konwersja na PLN
+        // przez kursy z fact_orders.exchange_rate.
+        const eurRates = await fetchEurRatesByDate(db, dateFrom, dateTo);
+        const googleSpend = googleScoped.reduce(
+          (s, r) => s + gaToPln(r.hostname, Number(r.ad_cost) || 0, String(r.date), eurRates),
+          0,
+        );
 
         const { data: agencyData } = await db.from('fact_agency_costs').select('month, amount_pln').limit(500);
         let agencyCost = 0;
@@ -595,6 +629,142 @@ export async function POST(request: NextRequest) {
           return NextResponse.json({ type: 'kpi', value: valMap[widget].value, format: 'mer', debug: { ...debug, query: 'revenue / (meta + google + agency)' } });
         }
         return NextResponse.json({ type: 'kpi', ...valMap[widget], debug });
+      }
+
+      // ── Geo heatmap (PL+DE, normalizacja Warszawa/WARSZAWA/Warsaw) ──
+      case 'geo_heatmap': {
+        // Pobieramy dim_cities raz (~120 wpisów). Aliasy w pamięci — DB-side
+        // OR przez funkcję immutable jest za wolny dla 41k zamówień.
+        const { data: cities, error: cityErr } = await db
+          .from('dim_cities')
+          .select('slug, display_name, country, lat, lon, aliases');
+        if (cityErr) return NextResponse.json({ error: cityErr.message }, { status: 500 });
+
+        // Slug + alias lookup map.
+        const lookup = new Map<string, { slug: string; name: string; country: string; lat: number; lon: number }>();
+        for (const c of cities || []) {
+          const entry = { slug: c.slug, name: c.display_name, country: c.country, lat: Number(c.lat), lon: Number(c.lon) };
+          lookup.set(c.slug, entry);
+          for (const a of (c.aliases as string[]) || []) lookup.set(a, entry);
+        }
+
+        // Ta sama logika co normalize_city() w SQL — utrzymujemy synchronicznie.
+        function normalize(raw: string | null): string | null {
+          if (raw == null) return null;
+          let s = raw.trim().toLowerCase();
+          if (s.length < 2 || ['test', 'brak', '-', 'n/a', 'xxx', 'aaa', '.', '..', '...'].includes(s)) return null;
+          s = s.replace(/ß/g, 'ss').replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue');
+          s = s.replace(/[ąćęłńóśźż]/g, ch => ({ ą:'a', ć:'c', ę:'e', ł:'l', ń:'n', ó:'o', ś:'s', ź:'z', ż:'z' })[ch] || ch);
+          s = s.replace(/[^a-z0-9 \-]/g, '');
+          s = s.replace(/\s+/g, ' ').trim();
+          return s.length < 2 ? null : s;
+        }
+
+        const orders = await fetchAllRows(
+          orderQuery('delivery_city, total_gross_pln, is_paid')
+            .not('delivery_city', 'is', null)
+        );
+        const scoped = scopeOrdersByWarsawDate(orders);
+
+        // Agreguj per miasto. Niedopasowane do dim_cities idą do `unmatched`.
+        const perCity = new Map<string, { name: string; country: string; lat: number; lon: number; orders: number; revenue: number }>();
+        let totalMatched = 0;
+        let totalUnmatched = 0;
+        for (const o of scoped) {
+          const norm = normalize(o.delivery_city);
+          const city = norm ? lookup.get(norm) : null;
+          if (!city) { totalUnmatched++; continue; }
+          totalMatched++;
+          const existing = perCity.get(city.slug);
+          const rev = Number(o.total_gross_pln) || 0;
+          if (existing) {
+            existing.orders += 1;
+            existing.revenue += rev;
+          } else {
+            perCity.set(city.slug, { name: city.name, country: city.country, lat: city.lat, lon: city.lon, orders: 1, revenue: rev });
+          }
+        }
+
+        const points = [...perCity.values()]
+          .map(p => ({ ...p, revenue: Math.round(p.revenue) }))
+          .sort((a, b) => b.orders - a.orders);
+
+        return NextResponse.json({
+          type: 'geo_heatmap',
+          data: points,
+          stats: {
+            matched: totalMatched,
+            unmatched: totalUnmatched,
+            coverage: totalMatched + totalUnmatched > 0
+              ? Math.round((totalMatched / (totalMatched + totalUnmatched)) * 1000) / 10
+              : 0,
+          },
+          debug: { ...debug, query: 'aggregate by normalize_city(delivery_city) → dim_cities' },
+        });
+      }
+
+      // ── Tabela: sprzedaż per miasto (PL+DE, ta sama normalizacja co heatmap) ──
+      case 'table_cities_geo': {
+        const { data: cities, error: cityErr } = await db
+          .from('dim_cities')
+          .select('slug, display_name, country, aliases');
+        if (cityErr) return NextResponse.json({ error: cityErr.message }, { status: 500 });
+
+        const lookup = new Map<string, { slug: string; name: string; country: string }>();
+        for (const c of cities || []) {
+          const entry = { slug: c.slug, name: c.display_name, country: c.country };
+          lookup.set(c.slug, entry);
+          for (const a of (c.aliases as string[]) || []) lookup.set(a, entry);
+        }
+
+        function normalize(raw: string | null): string | null {
+          if (raw == null) return null;
+          let s = raw.trim().toLowerCase();
+          if (s.length < 2 || ['test', 'brak', '-', 'n/a', 'xxx', 'aaa', '.', '..', '...'].includes(s)) return null;
+          s = s.replace(/ß/g, 'ss').replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue');
+          s = s.replace(/[ąćęłńóśźż]/g, ch => ({ ą:'a', ć:'c', ę:'e', ł:'l', ń:'n', ó:'o', ś:'s', ź:'z', ż:'z' })[ch] || ch);
+          s = s.replace(/[^a-z0-9 \-]/g, '');
+          s = s.replace(/\s+/g, ' ').trim();
+          return s.length < 2 ? null : s;
+        }
+
+        const orders = await fetchAllRows(
+          orderQuery('delivery_city, total_gross_pln')
+            .not('delivery_city', 'is', null)
+        );
+        const scoped = scopeOrdersByWarsawDate(orders);
+
+        const perCity = new Map<string, { name: string; country: string; orders: number; revenue: number }>();
+        for (const o of scoped) {
+          const norm = normalize(o.delivery_city);
+          const city = norm ? lookup.get(norm) : null;
+          if (!city) continue;
+          const existing = perCity.get(city.slug);
+          const rev = Number(o.total_gross_pln) || 0;
+          if (existing) {
+            existing.orders += 1;
+            existing.revenue += rev;
+          } else {
+            perCity.set(city.slug, { name: city.name, country: city.country, orders: 1, revenue: rev });
+          }
+        }
+
+        const columns = ['Miasto', 'Kraj', 'Zamówienia', 'Revenue (PLN)'];
+        const dataRows = [...perCity.values()]
+          .sort((a, b) => b.orders - a.orders)
+          .map(p => ({
+            x: p.name,
+            'Kraj': p.country,
+            'Zamówienia': p.orders,
+            'Revenue (PLN)': Math.round(p.revenue),
+          }));
+
+        return NextResponse.json({
+          type: 'table',
+          columns,
+          dataRows,
+          debug: { ...debug, query: 'aggregate by normalize_city(delivery_city) → dim_cities, return as table' },
+        });
       }
 
       default:

@@ -73,19 +73,19 @@ export function DataTable<T>({ data, columns, pageSize = 20, className, onRowCli
         placeholder="Szukaj..."
         value={search}
         onChange={e => { setSearch(e.target.value); setPage(0); }}
-        className="w-full max-w-xs px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-sm text-zinc-200 placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+        className="input max-w-xs"
       />
-      <div className="overflow-x-auto rounded-lg border border-zinc-800">
+      <div className="card overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-zinc-800 bg-zinc-900/80">
+            <tr className="border-b border-line bg-surface-2/60">
               {columns.map(col => (
                 <th
                   key={col.key}
                   className={cn(
-                    'px-4 py-3 font-medium text-zinc-400 whitespace-nowrap',
+                    'px-4 py-2.5 text-xs font-medium text-ink-muted whitespace-nowrap',
                     col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left',
-                    col.sortable !== false && 'cursor-pointer hover:text-zinc-200 select-none',
+                    col.sortable !== false && 'cursor-pointer hover:text-ink select-none',
                     col.className
                   )}
                   onClick={() => col.sortable !== false && handleSort(col.key)}
@@ -107,7 +107,7 @@ export function DataTable<T>({ data, columns, pageSize = 20, className, onRowCli
               <tr
                 key={i}
                 className={cn(
-                  'border-b border-zinc-800/50 hover:bg-zinc-800/40 transition-colors',
+                  'border-b border-line/60 last:border-b-0 hover:bg-surface-2/60 transition-colors',
                   onRowClick && 'cursor-pointer'
                 )}
                 onClick={() => onRowClick?.(row)}
@@ -119,8 +119,8 @@ export function DataTable<T>({ data, columns, pageSize = 20, className, onRowCli
                     <td
                       key={col.key}
                       className={cn(
-                        'px-4 py-3 text-zinc-300 whitespace-nowrap',
-                        col.align === 'right' ? 'text-right' : col.align === 'center' ? 'text-center' : 'text-left',
+                        'px-4 py-2.5 text-[13px] text-ink-soft whitespace-nowrap',
+                        col.align === 'right' ? 'text-right font-mono' : col.align === 'center' ? 'text-center' : 'text-left',
                         col.className
                       )}
                     >
@@ -132,7 +132,7 @@ export function DataTable<T>({ data, columns, pageSize = 20, className, onRowCli
             ))}
             {paged.length === 0 && (
               <tr>
-                <td colSpan={columns.length} className="px-4 py-8 text-center text-zinc-500">
+                <td colSpan={columns.length} className="px-4 py-8 text-center text-ink-faint">
                   Brak danych
                 </td>
               </tr>
@@ -141,21 +141,21 @@ export function DataTable<T>({ data, columns, pageSize = 20, className, onRowCli
         </table>
       </div>
       {totalPages > 1 && (
-        <div className="flex items-center justify-between text-sm text-zinc-400">
+        <div className="flex items-center justify-between text-xs text-ink-muted">
           <span>{sorted.length} wyników</span>
           <div className="flex items-center gap-2">
             <button
               onClick={() => setPage(p => Math.max(0, p - 1))}
               disabled={page === 0}
-              className="px-3 py-1 rounded bg-zinc-800 hover:bg-zinc-700 disabled:opacity-30 disabled:cursor-not-allowed"
+              className="btn-secondary px-2.5 py-1 text-xs"
             >
               Poprzednia
             </button>
-            <span>{page + 1} / {totalPages}</span>
+            <span className="font-mono">{page + 1} / {totalPages}</span>
             <button
               onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
               disabled={page >= totalPages - 1}
-              className="px-3 py-1 rounded bg-zinc-800 hover:bg-zinc-700 disabled:opacity-30 disabled:cursor-not-allowed"
+              className="btn-secondary px-2.5 py-1 text-xs"
             >
               Następna
             </button>

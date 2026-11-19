@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { requireAdmin } from '@/lib/auth';
 import { getSupabaseAdmin } from '@/lib/supabase';
 import { getMonthlyRates, EUR_TO_PLN_FALLBACK } from '@/lib/currency';
 
@@ -6,6 +7,8 @@ export const maxDuration = 60;
 
 export async function POST() {
   try {
+    const _guard = await requireAdmin();
+    if (_guard) return _guard;
     const db = getSupabaseAdmin();
     const PAGE = 1000;
 
@@ -131,6 +134,8 @@ export async function POST() {
 // GET — show current EUR/PLN rate from NBP
 export async function GET() {
   try {
+    const _guard = await requireAdmin();
+    if (_guard) return _guard;
     const res = await fetch('https://api.nbp.pl/api/exchangerates/rates/a/eur/?format=json', { signal: AbortSignal.timeout(3000) });
     if (res.ok) {
       const json = await res.json();

@@ -1,16 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
+import { requireAdmin } from '@/lib/auth';
 import { refreshSensorsList, syncHistorical } from '@/lib/sensmax/sync';
 
-export async function POST(request: NextRequest) {
-  const auth = request.headers.get('authorization');
-  const cron = request.headers.get('x-vercel-cron');
-  const secret = process.env.SENSMAX_CRON_SECRET;
+export const maxDuration = 120;
 
-  const allowed = cron === '1' || (Boolean(secret) && auth === `Bearer ${secret}`);
-  if (!allowed) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-
+async function runSync() {
   try {
     const sensors_refreshed = await refreshSensorsList();
     const summary = await syncHistorical();
@@ -18,4 +12,18 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });
   }
+}
+
+// Vercel Cron triggers a GET request (with the x-vercel-cron header).
+export async function GET() {
+  const _guard = await requireAdmin();
+  if (_guard) return _guard;
+  return runSync();
+}
+
+// Manual trigger (matches the unauthenticated pattern of /api/etl/* manual POSTs).
+export async function POST() {
+  const _guard = await requireAdmin();
+  if (_guard) return _guard;
+  return runSync();
 }

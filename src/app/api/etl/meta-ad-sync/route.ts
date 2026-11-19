@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAdmin } from '@/lib/auth';
 import { getSupabaseAdmin } from '@/lib/supabase';
-import { fetchAdInsights, fetchCreativeMeta, getAdAccountIds } from '@/lib/meta-ads';
+import { fetchAdInsights, fetchCampaigns, fetchCreativeIdsForAds, fetchCreativeMeta, getAdAccountIds } from '@/lib/meta-ads';
 import { getEurPlnRates } from '@/lib/nbp';
+import { storeCreativeImages } from '@/lib/creative-thumbs';
 
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 // POST — manual trigger.
 // ?days=N (default 14) or ?since=YYYY-MM-DD&until=YYYY-MM-DD.
@@ -11,42 +13,43 @@ export const maxDuration = 60;
 //   Bez tego: wszystkie konta sequential (może timeoutować przy 3+ kontach).
 //   Z tym: jedno konto na call, frontend orchestruje per-shop sync.
 export async function POST(request: NextRequest) {
+  const _guard = await requireAdmin();
+  if (_guard) return _guard;
   const { searchParams } = new URL(request.url);
   const since = searchParams.get('since');
   const until = searchParams.get('until');
   const accountFilter = searchParams.get('account');
+  // ?campaigns=0 — pomiń sync dim_campaigns (frontend robi go tylko przy
+  // pierwszym chunku konta; kolejne chunki nie palą limitu API na to samo)
+  const syncCampaigns = searchParams.get('campaigns') !== '0';
 
   if (since && until && /^\d{4}-\d{2}-\d{2}$/.test(since) && /^\d{4}-\d{2}-\d{2}$/.test(until)) {
-    return syncAdsRange(since, until, accountFilter);
+    return syncAdsRange(since, until, accountFilter, syncCampaigns);
   }
 
   const daysParam = parseInt(searchParams.get('days') || '14', 10);
   const days = Number.isFinite(daysParam) && daysParam > 0 && daysParam <= 400 ? daysParam : 14;
-  return syncAdsDays(days, accountFilter);
+  return syncAdsDays(days, accountFilter, syncCampaigns);
 }
 
 // GET — Vercel Cron daily at 7:00 UTC
 export async function GET(request: NextRequest) {
-  const isVercelCron = request.headers.get('x-vercel-cron') === '1';
-  const cronSecret = process.env.ETL_CRON_SECRET;
-  const authHeader = request.headers.get('authorization');
-  if (!isVercelCron && cronSecret && authHeader !== `Bearer ${cronSecret}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-  return syncAdsDays(7, null);
+  const _guard = await requireAdmin();
+  if (_guard) return _guard;
+  return syncAdsDays(7, null, true);
 }
 
-async function syncAdsDays(daysBack: number, accountFilter: string | null) {
+async function syncAdsDays(daysBack: number, accountFilter: string | null, syncCampaigns: boolean) {
   const today = new Date();
   const dateTo = new Date(today);
   dateTo.setDate(dateTo.getDate() - 1);
   const dateFrom = new Date(today);
   dateFrom.setDate(dateFrom.getDate() - daysBack);
   const fmt = (d: Date) => d.toISOString().split('T')[0];
-  return syncAdsRange(fmt(dateFrom), fmt(dateTo), accountFilter);
+  return syncAdsRange(fmt(dateFrom), fmt(dateTo), accountFilter, syncCampaigns);
 }
 
-async function syncAdsRange(dateFromStr: string, dateToStr: string, accountFilter: string | null) {
+async function syncAdsRange(dateFromStr: string, dateToStr: string, accountFilter: string | null, syncCampaigns: boolean) {
   try {
     const db = getSupabaseAdmin();
     let accountIds = getAdAccountIds();
@@ -70,17 +73,85 @@ async function syncAdsRange(dateFromStr: string, dateToStr: string, accountFilte
     const etlLogId = etlLog?.id;
 
     try {
-      // Delete existing data in range — insert będzie świeży
-      await db.from('fact_daily_ad_performance').delete()
-        .gte('date', dateFromStr)
-        .lte('date', dateToStr);
-
+      // UWAGA: żadnego globalnego DELETE tutaj! Kasowanie całego zakresu
+      // przed pobraniem danych z Meta powodowało utratę danych przy timeout
+      // (delete przeszedł, insert już nie). Delete jest teraz per konto,
+      // scoped i wykonywany dopiero PO udanym fetchu z Meta API — patrz niżej.
       let totalRows = 0;
       let newCreatives = 0;
+      let campaignsSynced = 0;
       const results: Record<string, number> = {};
 
       for (const accountId of accountIds) {
+        // Wymiar kampanii (objective, status, budżety). Upsert TYLKO kolumn z API —
+        // pola manualne (purpose, funnel_stage, notes) zostają nietknięte.
+        // Pomijany przy ?campaigns=0 (kolejne chunki tego samego konta).
+        if (syncCampaigns) {
+          try {
+            const campaigns = await fetchCampaigns(accountId);
+            if (campaigns.length > 0) {
+              const campaignRows = campaigns.map(c => ({
+                campaign_id: c.campaignId,
+                account_id: c.accountId,
+                name: c.name,
+                objective: c.objective,
+                status: c.status,
+                effective_status: c.effectiveStatus,
+                buying_type: c.buyingType,
+                daily_budget: c.dailyBudget,
+                lifetime_budget: c.lifetimeBudget,
+                start_time: c.startTime,
+                stop_time: c.stopTime,
+                last_seen_at: new Date().toISOString(),
+              }));
+              for (let i = 0; i < campaignRows.length; i += 500) {
+                const { error } = await db.from('dim_campaigns').upsert(
+                  campaignRows.slice(i, i + 500),
+                  { onConflict: 'campaign_id' }
+                );
+                if (error) throw new Error(error.message);
+              }
+              campaignsSynced += campaigns.length;
+            }
+          } catch (err) {
+            // Non-fatal: brak dim_campaigns nie blokuje syncu metryk
+            console.warn(`dim_campaigns sync failed for ${accountId}:`, err);
+          }
+        }
+
         const rows = await fetchAdInsights(accountId, dateFromStr, dateToStr);
+
+        // creative_id: mapowanie ad→creative jest stałe, więc najpierw
+        // odzyskujemy znane pary z bazy (0 calli do Mety), a tylko brakujące
+        // dociągamy batchem ?ids= (50/call). Wcześniejsze paginowanie CAŁEJ
+        // listy /ads konta przy każdym chunku wyżerało rate limit.
+        const uniqueAdIds = Array.from(new Set(rows.map(r => r.adId).filter(Boolean)));
+        const creativeByAd = new Map<string, string>();
+        // Batch 50 id + sort po dacie malejąco: PostgREST i tak tnie wynik do
+        // 1000 wierszy, a najnowsze daty zawierają komplet aktywnych reklam.
+        for (let i = 0; i < uniqueAdIds.length; i += 50) {
+          const { data: known } = await db
+            .from('fact_daily_ad_performance')
+            .select('ad_id, creative_id')
+            .eq('account_id', accountId)
+            .not('creative_id', 'is', null)
+            .in('ad_id', uniqueAdIds.slice(i, i + 50))
+            .order('date', { ascending: false })
+            .limit(1000);
+          for (const k of known || []) {
+            if (k.creative_id) creativeByAd.set(k.ad_id as string, k.creative_id as string);
+          }
+        }
+        const missingAdIds = uniqueAdIds.filter(id => !creativeByAd.has(id));
+        if (missingAdIds.length > 0) {
+          try {
+            const fetched = await fetchCreativeIdsForAds(accountId, missingAdIds);
+            for (const [adId, creativeId] of fetched) creativeByAd.set(adId, creativeId);
+          } catch (err) {
+            console.warn(`fetchCreativeIdsForAds failed for ${accountId}:`, err);
+          }
+        }
+        for (const r of rows) r.creativeId = creativeByAd.get(r.adId) || null;
         const isEurAccount = rows[0]?.currency === 'EUR';
         const rateByDate = isEurAccount
           ? await getEurPlnRates(rows.map(r => r.date))
@@ -107,6 +178,13 @@ async function syncAdsRange(dateFromStr: string, dateToStr: string, accountFilte
           original_currency: r.currency,
           conversions: r.conversions,
           conversion_value: Math.round(r.conversionValue * rate * 100) / 100,
+          leads: r.leads,
+          conversions_1d_click: r.conversions1dClick,
+          conversions_7d_click: r.conversions7dClick,
+          conversions_1d_view: r.conversions1dView,
+          conversion_value_1d_click: Math.round(r.conversionValue1dClick * rate * 100) / 100,
+          conversion_value_7d_click: Math.round(r.conversionValue7dClick * rate * 100) / 100,
+          conversion_value_1d_view: Math.round(r.conversionValue1dView * rate * 100) / 100,
           cpc: r.cpc > 0 ? Math.round(r.cpc * rate * 10000) / 10000 : null,
           cpm: r.cpm > 0 ? Math.round(r.cpm * rate * 10000) / 10000 : null,
           ctr: r.ctr > 0 ? r.ctr : null,
@@ -122,6 +200,17 @@ async function syncAdsRange(dateFromStr: string, dateToStr: string, accountFilte
           data_source: 'etl',
           };
         });
+
+        // Dane z Meta już pobrane — dopiero teraz czyścimy stare wiersze tego
+        // konta w zakresie (usuwa reklamy, które zniknęły z Meta) i wstawiamy
+        // świeże. Okno między delete a insertem jest minimalne, a timeout
+        // podczas fetchu niczego nie kasuje.
+        const { error: delErr } = await db.from('fact_daily_ad_performance').delete()
+          .eq('platform', 'meta')
+          .eq('account_id', accountId)
+          .gte('date', dateFromStr)
+          .lte('date', dateToStr);
+        if (delErr) throw new Error(`delete fact_daily_ad_performance: ${delErr.message}`);
 
         for (let i = 0; i < dbRows.length; i += 500) {
           const { error } = await db.from('fact_daily_ad_performance').upsert(
@@ -160,7 +249,11 @@ async function syncAdsRange(dateFromStr: string, dateToStr: string, accountFilte
           for (const creativeId of toFetch) {
             const meta = await fetchCreativeMeta(creativeId, accountId);
             if (!meta) continue;
+            // Kopia miniatury w Storage od razu przy pierwszym zobaczeniu —
+            // świeży link fbcdn jeszcze działa (później wygasa).
+            const storagePatch = await storeCreativeImages(db, meta.creativeId, meta.thumbnailUrl, meta.imageUrl);
             await db.from('dim_creatives').upsert({
+              ...storagePatch,
               creative_id: meta.creativeId,
               account_id: meta.accountId,
               title: meta.title,
@@ -212,6 +305,7 @@ async function syncAdsRange(dateFromStr: string, dateToStr: string, accountFilte
         accounts: results,
         totalRows,
         newCreatives,
+        campaignsSynced,
         dateRange: { from: dateFromStr, to: dateToStr },
       });
     } catch (err) {

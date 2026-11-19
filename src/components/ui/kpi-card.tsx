@@ -14,7 +14,7 @@ interface KpiCardProps {
   className?: string;
 }
 
-function MiniSparkline({ data, positive }: { data: number[]; positive: boolean }) {
+function MiniSparkline({ data }: { data: number[] }) {
   if (!data.length) return null;
   const max = Math.max(...data);
   const min = Math.min(...data);
@@ -28,10 +28,10 @@ function MiniSparkline({ data, positive }: { data: number[]; positive: boolean }
   }).join(' ');
 
   return (
-    <svg width={w} height={h} className="ml-auto opacity-60">
+    <svg width={w} height={h} className="ml-auto text-primary opacity-50">
       <polyline
         fill="none"
-        stroke={positive ? '#10b981' : '#ef4444'}
+        stroke="currentColor"
         strokeWidth="2"
         points={points}
       />
@@ -39,44 +39,40 @@ function MiniSparkline({ data, positive }: { data: number[]; positive: boolean }
   );
 }
 
-export function KpiCard({ title, value, change, changeLabel, subLabel, icon, sparkline, className }: KpiCardProps) {
+// Płaski kafel KPI: label + liczba (Geist Mono, kolor ink). Bez ikon
+// i akcentowych kolorów liczb — status niosą wyłącznie delty.
+export function KpiCard({ title, value, change, changeLabel, subLabel, sparkline, className }: KpiCardProps) {
   const isPositive = (change ?? 0) >= 0;
   const isNeutral = change === null || change === undefined;
 
   return (
-    <div className={cn(
-      'rounded-xl border border-zinc-800 bg-zinc-900/50 p-5 flex flex-col gap-2',
-      className
-    )}>
-      <div className="flex items-center justify-between">
-        <span className="text-sm font-medium text-zinc-400">{title}</span>
-        {icon && <span className="text-zinc-500">{icon}</span>}
-      </div>
+    <div className={cn('card p-4 flex flex-col gap-1.5', className)}>
+      <span className="stat-label">{title}</span>
       <div className="flex items-end justify-between gap-4">
         <div>
-          <div className="text-2xl font-bold text-zinc-100">{value}</div>
+          <div className="font-mono text-2xl font-semibold tracking-tight text-ink">{value}</div>
           {subLabel && (
-            <div className="text-xs text-zinc-500 mt-0.5">{subLabel}</div>
+            <div className="text-xs text-ink-faint mt-0.5">{subLabel}</div>
           )}
           {!isNeutral && (
             <div className={cn(
-              'flex items-center gap-1 text-sm mt-1',
-              isPositive ? 'text-emerald-400' : 'text-red-400'
+              'flex items-center gap-1 text-[13px] mt-1',
+              isPositive ? 'text-emerald-600' : 'text-red-600'
             )}>
-              {isPositive ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
-              <span>{change! >= 0 ? '+' : ''}{change!.toFixed(1)}%</span>
-              {changeLabel && <span className="text-zinc-500 ml-1">{changeLabel}</span>}
+              {isPositive ? <TrendingUp size={13} /> : <TrendingDown size={13} />}
+              <span className="font-mono">{change! >= 0 ? '+' : ''}{change!.toFixed(1)}%</span>
+              {changeLabel && <span className="text-ink-faint ml-1 font-sans">{changeLabel}</span>}
             </div>
           )}
           {isNeutral && changeLabel && (
-            <div className="flex items-center gap-1 text-sm mt-1 text-zinc-500">
-              <Minus size={14} />
+            <div className="flex items-center gap-1 text-[13px] mt-1 text-ink-faint">
+              <Minus size={13} />
               <span>{changeLabel}</span>
             </div>
           )}
         </div>
         {sparkline && sparkline.length > 1 && (
-          <MiniSparkline data={sparkline} positive={isPositive} />
+          <MiniSparkline data={sparkline} />
         )}
       </div>
     </div>

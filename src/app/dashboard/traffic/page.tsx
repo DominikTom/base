@@ -1,13 +1,16 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { useDashboard } from '@/lib/dashboard-context';
+import { shopFilterToList, shopFilterLabel } from '@/lib/shop-filter';
 import { KpiCard } from '@/components/ui/kpi-card';
 import { ChartCard } from '@/components/charts/chart-card';
 import { SimplePieChart } from '@/components/charts/pie-chart';
 import { SimpleBarChart } from '@/components/charts/bar-chart';
 import { DataTable, type Column } from '@/components/ui/data-table';
 import { formatNumber, formatCurrency, SHOP_COLORS } from '@/lib/utils';
+import { useChartTheme, CHART_ACCENT, CHART_SERIES } from '@/lib/chart-theme';
+import { previousPeriod, pctChange, COMPARE_LABEL } from '@/lib/period-compare';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { Users, Globe, MousePointerClick, ShoppingCart, Eye, TrendingUp, RefreshCw, CheckCircle, XCircle, DollarSign, MousePointer } from 'lucide-react';
 
@@ -48,7 +51,13 @@ interface TrafficData {
 
 export default function TrafficPage() {
   const { filters } = useDashboard();
+  const chart = useChartTheme();
+  // „Opadający" gradient serii; ID gradientu unikalne per instancja (useId)
+  const uid = useId().replace(/:/g, '');
+  const hostColor = (i: number) => Object.values(SHOP_COLORS)[i] || CHART_SERIES[i % CHART_SERIES.length];
+  const gradId = (c: string) => `tr-grad-${uid}-${c.replace('#', '')}`;
   const [data, setData] = useState<TrafficData | null>(null);
+  const [prevKpis, setPrevKpis] = useState<TrafficData['kpis'] | null>(null);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<{ ok: boolean; message: string } | null>(null);
@@ -75,30 +84,32 @@ export default function TrafficPage() {
     }
   }
 
-  // Map shop filter to hostname for GA4
-  const shopToHostname: Record<string, string> = {
-    'mybed.pl': 'mybed.pl',
-    'mybed.de': 'mybed.de',
-    'mittohome.pl': 'mittohome.pl',
-  };
-  const hostnameFilter = filters.shop === 'all'
+  // Map shop filter to hostname for GA4. Multi-select: CSV jako URL param —
+  // endpoint /api/dashboard/marketing/google sam zrobi IN. Tutaj 'all' gdy nic
+  // nie wybrano, single hostname gdy 1 sklep, CSV gdy multi.
+  const shopList = shopFilterToList(filters.shop);
+  const hostnameFilter = shopList.length === 0
     ? 'all'
-    : (shopToHostname[filters.shop] || '__none__');
+    : shopList.length === 1
+      ? (shopList[0] || '__none__')
+      : shopList.join(',');
 
   useEffect(() => {
     async function fetchData() {
       setLoading(true);
       try {
-        const params = new URLSearchParams({
-          date_from: filters.dateFrom,
-          date_to: filters.dateTo,
-          hostname: hostnameFilter,
-        });
-        const res = await fetch(`/api/dashboard/traffic?${params}`);
-        const json = await res.json();
-        setData(json);
+        const prev = previousPeriod(filters.dateFrom, filters.dateTo);
+        const mk = (df: string, dt: string) => new URLSearchParams({ date_from: df, date_to: dt, hostname: hostnameFilter });
+        const [curRes, prevRes] = await Promise.all([
+          fetch(`/api/dashboard/traffic?${mk(filters.dateFrom, filters.dateTo)}`),
+          fetch(`/api/dashboard/traffic?${mk(prev.from, prev.to)}`),
+        ]);
+        const cur = await curRes.json();
+        const prv = prevRes.ok ? await prevRes.json() : null;
+        setData(cur);
+        setPrevKpis(prv?.kpis ?? null);
       } catch {
-        setData(null);
+        setData(null); setPrevKpis(null);
       } finally {
         setLoading(false);
       }
@@ -109,7 +120,7 @@ export default function TrafficPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-96">
-        <div className="animate-pulse text-zinc-500">Ładowanie danych...</div>
+        <div className="animate-pulse text-ink-faint">Ładowanie danych...</div>
       </div>
     );
   }
@@ -118,21 +129,21 @@ export default function TrafficPage() {
     return (
       <div className="space-y-6">
         <div className="flex items-center justify-between">
-          <h1 className="text-xl font-semibold text-zinc-100">Ruch (GA4)</h1>
+          <h1 className="text-xl font-semibold tracking-tight text-ink">Ruch (GA4)</h1>
           <button onClick={handleSync} disabled={syncing}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50">
+            className="btn-primary">
             {syncing ? <RefreshCw size={16} className="animate-spin" /> : <RefreshCw size={16} />}
             {syncing ? 'Synchronizacja...' : 'Sync GA4'}
           </button>
         </div>
         {syncResult && (
-          <div className={`rounded-lg p-3 flex items-center gap-2 text-sm ${syncResult.ok ? 'bg-emerald-900/20 border border-emerald-800 text-emerald-400' : 'bg-red-900/20 border border-red-800 text-red-400'}`}>
+          <div className={`rounded-xl p-3 flex items-center gap-2 text-sm ${syncResult.ok ? 'bg-emerald-50 border border-emerald-200 text-emerald-700' : 'bg-red-50 border border-red-200 text-red-700'}`}>
             {syncResult.ok ? <CheckCircle size={16} /> : <XCircle size={16} />}
             {syncResult.message}
           </div>
         )}
-        <div className="flex flex-col items-center justify-center h-72 gap-4 border-2 border-dashed border-zinc-800 rounded-xl">
-          <p className="text-zinc-500">Brak danych GA4. Kliknij "Sync GA4" żeby pobrać dane z Google Analytics.</p>
+        <div className="flex flex-col items-center justify-center h-72 gap-4 border-2 border-dashed border-line rounded-2xl">
+          <p className="text-ink-muted">Brak danych GA4. Kliknij "Sync GA4" żeby pobrać dane z Google Analytics.</p>
         </div>
       </div>
     );
@@ -149,15 +160,15 @@ export default function TrafficPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-zinc-100">Ruch (GA4)</h1>
+        <h1 className="text-xl font-semibold tracking-tight text-ink">Ruch (GA4)</h1>
         <button onClick={handleSync} disabled={syncing}
-          className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-sm font-medium rounded-lg transition-colors disabled:opacity-50">
+          className="btn-secondary">
           {syncing ? <RefreshCw size={16} className="animate-spin" /> : <RefreshCw size={16} />}
           {syncing ? 'Synchronizacja...' : 'Sync GA4'}
         </button>
       </div>
       {syncResult && (
-        <div className={`rounded-lg p-3 flex items-center gap-2 text-sm ${syncResult.ok ? 'bg-emerald-900/20 border border-emerald-800 text-emerald-400' : 'bg-red-900/20 border border-red-800 text-red-400'}`}>
+        <div className={`rounded-xl p-3 flex items-center gap-2 text-sm ${syncResult.ok ? 'bg-emerald-50 border border-emerald-200 text-emerald-700' : 'bg-red-50 border border-red-200 text-red-700'}`}>
           {syncResult.ok ? <CheckCircle size={16} /> : <XCircle size={16} />}
           {syncResult.message}
         </div>
@@ -165,60 +176,78 @@ export default function TrafficPage() {
 
       {/* Data range info */}
       {data.dataInfo?.oldestDate && (
-        <div className="text-xs text-zinc-500 flex items-center gap-4">
-          <span>Dane GA4 w bazie: <span className="text-zinc-300">{data.dataInfo.oldestDate}</span> — <span className="text-zinc-300">{data.dataInfo.newestDate}</span></span>
+        <div className="text-xs text-ink-faint flex items-center gap-4">
+          <span>Dane GA4 w bazie: <span className="font-mono text-ink-soft">{data.dataInfo.oldestDate}</span> — <span className="font-mono text-ink-soft">{data.dataInfo.newestDate}</span></span>
           <span>({data.dataInfo.totalRowsInDb} dni, {data.dataInfo.detailRowsInDb} wierszy detail)</span>
         </div>
       )}
 
       {/* Active filter label */}
       {hostnameFilter !== 'all' && hostnameFilter !== '__none__' && (
-        <div className="text-sm text-zinc-400">
-          Dane dla: <span className="text-zinc-200 font-medium">{hostnameFilter}</span>
+        <div className="text-sm text-ink-soft">
+          Dane dla: <span className="text-ink font-medium">{hostnameFilter}</span>
         </div>
       )}
       {hostnameFilter === '__none__' && (
-        <div className="text-sm text-amber-400">
-          Brak mapowania sklepu <span className="font-medium">{filters.shop}</span> do GA4 hostname.
+        <div className="text-sm text-amber-600">
+          Brak mapowania sklepu <span className="font-medium">{shopFilterLabel(filters.shop)}</span> do GA4 hostname.
         </div>
       )}
 
       {/* KPIs — Traffic */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
-        <KpiCard title="Sesje" value={formatNumber(data.kpis.sessions)} icon={<Globe size={18} />} />
-        <KpiCard title="Użytkownicy" value={formatNumber(data.kpis.users)} icon={<Users size={18} />} />
-        <KpiCard title="Nowi użytkownicy" value={formatNumber(data.kpis.newUsers)} icon={<Users size={18} />} />
-        <KpiCard title="Odsłony" value={formatNumber(data.kpis.pageviews)} icon={<Eye size={18} />} />
-        <KpiCard title="Conv. Rate" value={`${data.kpis.conversionRate}%`} icon={<TrendingUp size={18} />} />
+        <KpiCard title="Sesje" value={formatNumber(data.kpis.sessions)} icon={<Globe size={18} />}
+          change={pctChange(data.kpis.sessions, prevKpis?.sessions)} changeLabel={COMPARE_LABEL} />
+        <KpiCard title="Użytkownicy" value={formatNumber(data.kpis.users)} icon={<Users size={18} />}
+          change={pctChange(data.kpis.users, prevKpis?.users)} changeLabel={COMPARE_LABEL} />
+        <KpiCard title="Nowi użytkownicy" value={formatNumber(data.kpis.newUsers)} icon={<Users size={18} />}
+          change={pctChange(data.kpis.newUsers, prevKpis?.newUsers)} changeLabel={COMPARE_LABEL} />
+        <KpiCard title="Odsłony" value={formatNumber(data.kpis.pageviews)} icon={<Eye size={18} />}
+          change={pctChange(data.kpis.pageviews, prevKpis?.pageviews)} changeLabel={COMPARE_LABEL} />
+        <KpiCard title="Conv. Rate" value={`${data.kpis.conversionRate}%`} icon={<TrendingUp size={18} />}
+          change={pctChange(data.kpis.conversionRate, prevKpis?.conversionRate)} changeLabel={COMPARE_LABEL} />
       </div>
 
       {/* KPIs — Revenue & Ads */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
-        <KpiCard title="Revenue (GA4)" value={formatCurrency(data.kpis.revenue)} icon={<DollarSign size={18} />} changeLabel="wg. Google Analytics" />
-        <KpiCard title="Transakcje (GA4)" value={formatNumber(data.kpis.transactions)} icon={<ShoppingCart size={18} />} />
-        <KpiCard title="Google Ads Spend" value={formatCurrency(data.kpis.adCost)} icon={<DollarSign size={18} />} changeLabel="wydatki na reklamy Google" />
-        <KpiCard title="Ads Clicks" value={formatNumber(data.kpis.adClicks)} icon={<MousePointer size={18} />} />
-        <KpiCard title="Ads Impressions" value={formatNumber(data.kpis.adImpressions)} icon={<Eye size={18} />} />
+        <KpiCard title="Revenue (GA4)" value={formatCurrency(data.kpis.revenue)} icon={<DollarSign size={18} />}
+          change={pctChange(data.kpis.revenue, prevKpis?.revenue)} changeLabel={COMPARE_LABEL} />
+        <KpiCard title="Transakcje (GA4)" value={formatNumber(data.kpis.transactions)} icon={<ShoppingCart size={18} />}
+          change={pctChange(data.kpis.transactions, prevKpis?.transactions)} changeLabel={COMPARE_LABEL} />
+        <KpiCard title="Google Ads Spend" value={formatCurrency(data.kpis.adCost)} icon={<DollarSign size={18} />}
+          change={pctChange(data.kpis.adCost, prevKpis?.adCost)} changeLabel={COMPARE_LABEL} />
+        <KpiCard title="Ads Clicks" value={formatNumber(data.kpis.adClicks)} icon={<MousePointer size={18} />}
+          change={pctChange(data.kpis.adClicks, prevKpis?.adClicks)} changeLabel={COMPARE_LABEL} />
+        <KpiCard title="Ads Impressions" value={formatNumber(data.kpis.adImpressions)} icon={<Eye size={18} />}
+          change={pctChange(data.kpis.adImpressions, prevKpis?.adImpressions)} changeLabel={COMPARE_LABEL} />
       </div>
 
       {/* Sessions over time */}
       {/* Google Ads charts — like agency dashboard */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <ChartCard title="Google Ads — Koszt" subtitle={`Total: ${formatCurrency(data.kpis.adCost)}`}>
-          <SimpleBarChart data={data.charts.adCostDaily} barColor="#3b82f6" valueFormatter={v => formatCurrency(v)} />
+          <SimpleBarChart data={data.charts.adCostDaily} valueFormatter={v => formatCurrency(v)} />
         </ChartCard>
         <ChartCard title="Revenue (GA4)" subtitle={`Total: ${formatCurrency(data.kpis.revenue)}`}>
-          <SimpleBarChart data={data.charts.revDaily} barColor="#10b981" valueFormatter={v => formatCurrency(v)} />
+          <SimpleBarChart data={data.charts.revDaily} barColor={CHART_ACCENT} valueFormatter={v => formatCurrency(v)} />
         </ChartCard>
       </div>
 
       <ChartCard title="Sesje w czasie" subtitle="Podział na hostname">
         <ResponsiveContainer width="100%" height={320}>
           <AreaChart data={data.charts.sessionsTimeSeries} margin={{ top: 5, right: 5, bottom: 5, left: 5 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#27272a" />
-            <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#71717a' }} tickLine={false} />
-            <YAxis tick={{ fontSize: 11, fill: '#71717a' }} tickLine={false} axisLine={false} />
-            <Tooltip contentStyle={{ backgroundColor: '#18181b', border: '1px solid #3f3f46', borderRadius: '8px', fontSize: '12px' }} />
+            <defs>
+              {[...new Set(data.hostnames.map((_, i) => hostColor(i)))].map(c => (
+                <linearGradient key={c} id={gradId(c)} x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={c} stopOpacity={0.55} />
+                  <stop offset="100%" stopColor={c} stopOpacity={0.12} />
+                </linearGradient>
+              ))}
+            </defs>
+            <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} />
+            <XAxis dataKey="date" tick={{ fontSize: 11, fill: chart.tick }} tickLine={false} />
+            <YAxis tick={{ fontSize: 11, fill: chart.tickFaint }} tickLine={false} axisLine={false} />
+            <Tooltip contentStyle={chart.tooltip} labelStyle={chart.tooltipLabel} />
             <Legend />
             {data.hostnames.map((host, i) => (
               <Area
@@ -227,9 +256,8 @@ export default function TrafficPage() {
                 dataKey={host}
                 name={host}
                 stackId="stack"
-                stroke={Object.values(SHOP_COLORS)[i] || '#6b7280'}
-                fill={Object.values(SHOP_COLORS)[i] || '#6b7280'}
-                fillOpacity={0.6}
+                stroke={hostColor(i)}
+                fill={`url(#${gradId(hostColor(i))})`}
                 strokeWidth={2}
               />
             ))}

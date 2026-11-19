@@ -7,6 +7,8 @@ import { SimpleBarChart } from '@/components/charts/bar-chart';
 import { SimplePieChart } from '@/components/charts/pie-chart';
 import { KpiCard } from '@/components/ui/kpi-card';
 import { formatNumber } from '@/lib/utils';
+import { CHART_ACCENT } from '@/lib/chart-theme';
+import { previousPeriod, pctChange, COMPARE_LABEL } from '@/lib/period-compare';
 import { Package } from 'lucide-react';
 
 interface ProductsData {
@@ -23,22 +25,25 @@ interface ProductsData {
 export default function ProductsPage() {
   const { filters } = useDashboard();
   const [data, setData] = useState<ProductsData | null>(null);
+  const [prevData, setPrevData] = useState<ProductsData | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function fetchData() {
       setLoading(true);
       try {
-        const params = new URLSearchParams({
-          date_from: filters.dateFrom,
-          date_to: filters.dateTo,
-          shop: filters.shop,
-        });
-        const res = await fetch(`/api/dashboard/products?${params}`);
-        const json = await res.json();
-        setData(json);
+        const prev = previousPeriod(filters.dateFrom, filters.dateTo);
+        const mk = (df: string, dt: string) => new URLSearchParams({ date_from: df, date_to: dt, shop: filters.shop });
+        const [curRes, prevRes] = await Promise.all([
+          fetch(`/api/dashboard/products?${mk(filters.dateFrom, filters.dateTo)}`),
+          fetch(`/api/dashboard/products?${mk(prev.from, prev.to)}`),
+        ]);
+        const cur = await curRes.json();
+        const prv = prevRes.ok ? await prevRes.json() : null;
+        setData(cur);
+        setPrevData(prv);
       } catch {
-        setData(null);
+        setData(null); setPrevData(null);
       } finally {
         setLoading(false);
       }
@@ -49,7 +54,7 @@ export default function ProductsPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-96">
-        <div className="animate-pulse text-zinc-500">Ładowanie danych...</div>
+        <div className="animate-pulse text-ink-faint">Ładowanie danych...</div>
       </div>
     );
   }
@@ -57,20 +62,22 @@ export default function ProductsPage() {
   if (!data) {
     return (
       <div className="flex flex-col items-center justify-center h-96 gap-4">
-        <p className="text-zinc-500">Brak danych produktowych.</p>
+        <p className="text-ink-muted">Brak danych produktowych.</p>
       </div>
     );
   }
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-semibold text-zinc-100">Analityka Produktów</h1>
+      <h1 className="text-xl font-semibold tracking-tight text-ink">Analityka Produktów</h1>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <KpiCard
           title="Unikalne produkty"
           value={formatNumber(data.totalProducts)}
           icon={<Package size={18} />}
+          change={pctChange(data.totalProducts, prevData?.totalProducts)}
+          changeLabel={COMPARE_LABEL}
         />
         <KpiCard
           title="Top produkt (wg ilości)"
@@ -87,10 +94,10 @@ export default function ProductsPage() {
       {/* Top products */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <ChartCard title="Top 20 produktów wg ilości">
-          <SimpleBarChart data={data.topByQuantity} layout="horizontal" height={500} barColor="#3b82f6" />
+          <SimpleBarChart data={data.topByQuantity} layout="horizontal" height={500} />
         </ChartCard>
         <ChartCard title="Top 20 produktów wg zamówień">
-          <SimpleBarChart data={data.topByOrders} layout="horizontal" height={500} barColor="#8b5cf6" />
+          <SimpleBarChart data={data.topByOrders} layout="horizontal" height={500} barColor={CHART_ACCENT} />
         </ChartCard>
       </div>
 
@@ -105,19 +112,171 @@ export default function ProductsPage() {
           <SimplePieChart data={data.fabricChart} height={320} />
         </ChartCard>
         <ChartCard title="Rozkład rozmiarów łóżek">
-          <SimpleBarChart data={data.sizeChart} barColor="#10b981" />
+          <SimpleBarChart data={data.sizeChart} />
         </ChartCard>
       </div>
 
       {/* Mattress + Headboard */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <ChartCard title="Typ materaca">
-          <SimpleBarChart data={data.mattressChart} barColor="#f59e0b" />
+          <SimpleBarChart data={data.mattressChart} />
         </ChartCard>
         <ChartCard title="Wysokość wezgłowia">
-          <SimpleBarChart data={data.headboardChart} barColor="#ec4899" />
+          <SimpleBarChart data={data.headboardChart} barColor={CHART_ACCENT} />
         </ChartCard>
       </div>
+
+      {/* Attach rate materacy — nowy konfigurator dodaje materac jako osobną
+          pozycję zamówienia; tu mierzymy ile zamówień łóżek idzie z materacem. */}
+      <MattressAttachSection />
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Materac przy łóżku (attach rate)
+// ─────────────────────────────────────────────────────────────────
+interface AttachStats {
+  orders: number;
+  withMattressItem: number;     // nowy konfigurator: materac jako osobna pozycja
+  withMattressVariant: number;  // stary konfigurator: materac jako wariant łóżka
+  withoutMattress: number;
+  attachRate: number;           // (item + variant) / orders
+}
+interface AttachModelRow extends AttachStats { model: string }
+interface AttachResponse {
+  totals: AttachStats;
+  perModel: AttachModelRow[];
+  availableModels: Array<{ name: string; orders: number }>;
+  error?: string;
+}
+
+function MattressAttachSection() {
+  const { filters } = useDashboard();
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [data, setData] = useState<AttachResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    const params = new URLSearchParams({
+      date_from: filters.dateFrom,
+      date_to: filters.dateTo,
+      shop: filters.shop,
+    });
+    if (selected.size > 0) params.set('models', [...selected].join(','));
+    fetch(`/api/dashboard/mattress-attach?${params}`)
+      .then(r => r.json())
+      .then(j => { if (!cancelled) setData(j); })
+      .catch(() => { if (!cancelled) setData(null); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [filters.dateFrom, filters.dateTo, filters.shop, selected]);
+
+  function toggleModel(name: string) {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name); else next.add(name);
+      return next;
+    });
+  }
+
+  const totals = data?.totals;
+  // Picker: top 20 modeli żeby nie zalać UI; reszta i tak ma znikome wolumeny.
+  const pickerModels = (data?.availableModels || []).slice(0, 20);
+
+  return (
+    <ChartCard
+      title="Materac przy łóżku (attach rate)"
+      subtitle="Zamówienia wybranych łóżek z materacem jako osobną pozycją (nowy konfigurator) vs bez. Klikaj modele, aby filtrować — brak wyboru = wszystkie łóżka."
+    >
+      <div className="space-y-4">
+        {/* Picker modeli */}
+        <div className="flex flex-wrap gap-1.5">
+          {pickerModels.map(m => {
+            const active = selected.has(m.name);
+            return (
+              <button
+                key={m.name}
+                onClick={() => toggleModel(m.name)}
+                className={`px-2.5 py-1 rounded-xl text-[11px] font-medium border transition-colors ${
+                  active
+                    ? 'bg-primary border-transparent text-white'
+                    : 'bg-surface-2 border-line text-ink-soft hover:text-ink'
+                }`}
+              >
+                {m.name} <span className="opacity-60">({m.orders})</span>
+              </button>
+            );
+          })}
+          {selected.size > 0 && (
+            <button onClick={() => setSelected(new Set())} className="px-2.5 py-1 text-[11px] text-ink-muted hover:text-ink-soft">
+              Wyczyść
+            </button>
+          )}
+        </div>
+
+        {loading ? (
+          <div className="text-sm text-ink-faint py-6">Liczenie…</div>
+        ) : !data || data.error ? (
+          <div className="text-sm text-red-600 py-3">Błąd: {data?.error || 'brak danych'}</div>
+        ) : (
+          <>
+            {/* KPI — rozdzielamy oba konfiguratory: osobna pozycja (nowy) vs wariant (stary) */}
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+              <AttachKpi label="Zamówienia łóżek" value={formatNumber(totals?.orders ?? 0)} />
+              <AttachKpi label="Materac — osobna poz." value={formatNumber(totals?.withMattressItem ?? 0)} accent="text-primary-ink" />
+              <AttachKpi label="Materac — wariant" value={formatNumber(totals?.withMattressVariant ?? 0)} accent="text-emerald-600" />
+              <AttachKpi label="Bez materaca" value={formatNumber(totals?.withoutMattress ?? 0)} accent="text-ink-muted" />
+              <AttachKpi label="Attach rate (łącznie)" value={`${(totals?.attachRate ?? 0).toFixed(1)}%`} accent="text-ink" />
+            </div>
+
+            {/* Tabela per model */}
+            <div className="overflow-auto rounded-xl border border-line max-h-96">
+              <table className="w-full text-xs">
+                <thead className="bg-surface sticky top-0">
+                  <tr className="text-ink-muted">
+                    <th className="px-3 py-2 text-left font-medium">Model</th>
+                    <th className="px-3 py-2 text-right font-medium">Zamówienia</th>
+                    <th className="px-3 py-2 text-right font-medium">Osobna poz.</th>
+                    <th className="px-3 py-2 text-right font-medium">Wariant</th>
+                    <th className="px-3 py-2 text-right font-medium">Bez</th>
+                    <th className="px-3 py-2 text-right font-medium">Attach %</th>
+                    <th className="px-3 py-2 w-32"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.perModel.map(row => (
+                    <tr key={row.model} className="border-t border-line hover:bg-surface-2/60">
+                      <td className="px-3 py-1.5 text-ink-soft">{row.model}</td>
+                      <td className="px-3 py-1.5 text-right text-ink font-mono tabular-nums">{formatNumber(row.orders)}</td>
+                      <td className="px-3 py-1.5 text-right text-primary-ink font-mono tabular-nums">{formatNumber(row.withMattressItem)}</td>
+                      <td className="px-3 py-1.5 text-right text-emerald-600 font-mono tabular-nums">{formatNumber(row.withMattressVariant)}</td>
+                      <td className="px-3 py-1.5 text-right text-ink-muted font-mono tabular-nums">{formatNumber(row.withoutMattress)}</td>
+                      <td className="px-3 py-1.5 text-right font-semibold text-ink font-mono tabular-nums">{row.attachRate.toFixed(1)}%</td>
+                      <td className="px-3 py-1.5">
+                        <div className="h-2 bg-surface-2 rounded-full overflow-hidden">
+                          <div className="h-full bg-primary rounded-full" style={{ width: `${Math.min(100, row.attachRate)}%` }} />
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+      </div>
+    </ChartCard>
+  );
+}
+
+function AttachKpi({ label, value, accent }: { label: string; value: string; accent?: string }) {
+  return (
+    <div className="rounded-xl border border-line bg-surface-2/50 p-3">
+      <div className="stat-label">{label}</div>
+      <div className={`font-mono text-xl font-semibold tracking-tight mt-0.5 ${accent || 'text-ink'}`}>{value}</div>
     </div>
   );
 }
