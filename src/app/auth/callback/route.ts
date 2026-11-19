@@ -56,7 +56,8 @@ export async function GET(request: Request) {
           await supabase.from('user_profiles').insert({
             user_id: user.id,
             email: user.email || '',
-            role: 'viewer',
+            // role: domyślnie 'viewer' w bazie — kolumna nie jest zapisywalna
+            // kluczem użytkownika (migracja 025).
           });
         }
       }

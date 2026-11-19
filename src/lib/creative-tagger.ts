@@ -1,80 +1,84 @@
 import Anthropic from '@anthropic-ai/sdk';
 
-// Taksonomia tagów dla kreacji e-commerce (mybed.pl / .de / mittohome / nomosleep).
-// Trzymana osobno, bo używana dwukrotnie: w system prompcie (jako instrukcja
-// dla modelu) i w walidacji odpowiedzi.
+// Taksonomia tagów kreacji — ta sama co w skillu meta-ads-intel (serwer MCP
+// /api/mcp zwraca te tagi w creatives_list / creative_detail). Używana w
+// schemacie structured outputs, w system prompcie i w walidacji odpowiedzi.
 export const CREATIVE_TAG_TAXONOMY = {
-  style: ['ugc', 'studio', 'lifestyle', 'packshot', 'render', 'mixed', 'unknown'] as const,
   angle: [
-    'pain-point', 'benefit', 'social-proof', 'promo',
-    'personalization', 'comfort', 'premium', 'design', 'education', 'unknown',
+    'cena-promocja', 'jakosc-materialy', 'komfort-sen', 'design-aranzacja',
+    'personalizacja-wymiary', 'dostawa-montaz-zwrot', 'opinie-social-proof',
+    'ugc-tworcy', 'made-in-poland',
   ] as const,
-  tone: ['energetic', 'calm', 'authoritative', 'friendly', 'urgent', 'aspirational', 'unknown'] as const,
-  color_palette: ['neutral', 'warm', 'cool', 'bold', 'monochrome', 'unknown'] as const,
-  product_focus: ['bed', 'mattress', 'bedding', 'pillow', 'accessory', 'bedroom-scene', 'logo-only', 'unknown'] as const,
+  style: ['packshot-biale-tlo', 'lifestyle', 'ugc', 'motion', 'typografia'] as const,
+  offer: ['brak', 'rabat-%', 'darmowa-dostawa', 'raty-0', 'gratis', 'kod'] as const,
+  product: ['łóżko', 'materac', 'pościel', 'sofa', 'inne', 'nieznany'] as const,
 };
 
+type Angle = typeof CREATIVE_TAG_TAXONOMY.angle[number];
+type Style = typeof CREATIVE_TAG_TAXONOMY.style[number];
+type Offer = typeof CREATIVE_TAG_TAXONOMY.offer[number];
+type Product = typeof CREATIVE_TAG_TAXONOMY.product[number];
+
 export interface CreativeAIInsights {
-  style: typeof CREATIVE_TAG_TAXONOMY.style[number];
-  angle: typeof CREATIVE_TAG_TAXONOMY.angle[number];
-  tone: typeof CREATIVE_TAG_TAXONOMY.tone[number];
-  color_palette: typeof CREATIVE_TAG_TAXONOMY.color_palette[number];
-  product_focus: typeof CREATIVE_TAG_TAXONOMY.product_focus[number];
-  has_person: boolean;
-  has_text_overlay: boolean;
-  has_pricing: boolean;
-  rationale: string;  // jedno zdanie "dlaczego te tagi"
+  angle: Angle[];             // 1–2 kąty komunikacji, najważniejszy pierwszy
+  hook: string;               // pierwsze 3 s / pierwsze zdanie — krótki opis
+  style: Style | null;
+  offer: Offer[];             // ['brak'], gdy nie ma oferty
+  product: Product;
+  product_collection: string; // np. „Lila”, pusty gdy nierozpoznawalna
+  rationale: string;          // jedno zdanie „dlaczego te tagi”
+  taxonomy_version: 'meta-ads-intel-1';
 }
 
-const SYSTEM_PROMPT = `Jesteś analitykiem kreacji reklamowych dla brandu sypialnianego (łóżka, materace, pościel).
-Twoje zadanie: przeanalizuj MINIATURĘ kreacji reklamowej Meta Ads + opcjonalnie tekst reklamy, i sklasyfikuj ją po kilku osiach.
+// JSON Schema dla output_config.format (structured outputs) — odpowiedź modelu
+// zawsze pasuje do schematu; sanitizeInsights() i tak przycina wartości.
+const OUTPUT_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['angle', 'hook', 'style', 'offer', 'product', 'product_collection', 'rationale'],
+  properties: {
+    angle: { type: 'array', items: { type: 'string', enum: [...CREATIVE_TAG_TAXONOMY.angle] } },
+    hook: { type: 'string' },
+    style: { type: 'string', enum: [...CREATIVE_TAG_TAXONOMY.style] },
+    offer: { type: 'array', items: { type: 'string', enum: [...CREATIVE_TAG_TAXONOMY.offer] } },
+    product: { type: 'string', enum: [...CREATIVE_TAG_TAXONOMY.product] },
+    product_collection: { type: 'string' },
+    rationale: { type: 'string' },
+  },
+} as const;
 
-ODPOWIADAJ WYŁĄCZNIE CZYSTYM JSON bez markdown, bez \`\`\`json\`\`\`, bez komentarzy, bez wyjaśnień.
-JSON musi zawierać dokładnie te pola:
-{
-  "style": "ugc|studio|lifestyle|packshot|render|mixed|unknown",
-  "angle": "pain-point|benefit|social-proof|promo|personalization|comfort|premium|design|education|unknown",
-  "tone": "energetic|calm|authoritative|friendly|urgent|aspirational|unknown",
-  "color_palette": "neutral|warm|cool|bold|monochrome|unknown",
-  "product_focus": "bed|mattress|bedding|pillow|accessory|bedroom-scene|logo-only|unknown",
-  "has_person": true|false,
-  "has_text_overlay": true|false,
-  "has_pricing": true|false,
-  "rationale": "jedno zdanie po polsku, max 20 słów"
-}
+const SYSTEM_PROMPT = `Jesteś analitykiem kreacji reklamowych Meta Ads marek sypialnianych MyBed, MittoHome i NOMO (łóżka, materace, pościel, sofy).
+Dostajesz miniaturę kreacji (dla wideo: klatkę) oraz opcjonalnie tytuł i tekst reklamy. Sklasyfikuj kreację według poniższych osi.
 
-Zasady:
-- Jeśli czegoś nie widać/nie da się ocenić, użyj "unknown". Nie zgaduj.
-- rationale: jedno zdanie po polsku (max 20 słów).
+ANGLE — kąt komunikacji (1–2 wartości, najważniejszy pierwszy):
+- cena-promocja: cena, rabat, wyprzedaż, okazja
+- jakosc-materialy: tkaniny, wykonanie, trwałość, materiały
+- komfort-sen: wygoda, wysypianie się, zdrowie kręgosłupa
+- design-aranzacja: wygląd, styl wnętrza, aranżacja sypialni
+- personalizacja-wymiary: wybór rozmiaru, tkaniny, koloru, konfigurator
+- dostawa-montaz-zwrot: dostawa, wniesienie, montaż, zwrot, czas realizacji
+- opinie-social-proof: opinie, oceny, liczba klientów, nagrody
+- ugc-tworcy: twórcy, influencerzy, nagrania klientów
+- made-in-poland: polska produkcja, rzemiosło
 
-Osie klasyfikacji:
+HOOK — jedno krótkie zdanie po polsku: co przyciąga uwagę w pierwszych 3 sekundach albo w pierwszym zdaniu tekstu.
 
-STYLE — charakter wizualny:
-- ugc: amatorski, selfie-style, handheld, autentyczny (telefon)
-- studio: profesjonalna produkcja, czyste tło, oświetlenie
-- lifestyle: ludzie używający produktu w realnym otoczeniu
-- packshot: produkt na neutralnym tle (białe, gradient), bez kontekstu
-- render: 3D/CGI, sztucznie wyrenderowane
-- mixed: łączy kilka stylów
-- unknown: nie da się ocenić
+STYLE — styl wizualny (jedna wartość):
+- packshot-biale-tlo: produkt na neutralnym/białym tle
+- lifestyle: produkt w aranżowanym wnętrzu, sceny z życia
+- ugc: amatorskie ujęcie z telefonu, autentyczne
+- motion: animacja, grafika ruchoma, montaż wideo z efektami
+- typografia: dominuje tekst/grafika z napisami
 
-ANGLE — kąt komunikacyjny:
-- pain-point: "bolą Cię plecy?", adresuje problem
-- benefit: "lepszy sen", obietnica korzyści
-- social-proof: opinie, rating, liczby klientów
-- promo: wyprzedaż, rabat, kod promocyjny, cena
-- personalization: "dopasowane do Ciebie", customization
-- comfort: "miękko", "jak chmura", odczucia
-- premium: luksus, jakość, prestiż
-- design: estetyka, stylistyka wnętrza
-- education: "jak wybrać materac", poradnikowe
-- unknown
+OFFER — oferta widoczna na kreacji lub w tekście (może być kilka; „brak”, gdy nie ma żadnej):
+rabat-% | darmowa-dostawa | raty-0 | gratis | kod
 
-TONE: energetic, calm, authoritative, friendly, urgent, aspirational, unknown
-COLOR_PALETTE: neutral (beż/szary), warm (ciepłe), cool (zimne niebieskie/zielone), bold (mocne kontrasty), monochrome, unknown
-PRODUCT_FOCUS: bed, mattress, bedding, pillow, accessory, bedroom-scene, logo-only, unknown
+PRODUCT — główny produkt: łóżko | materac | pościel | sofa | inne | nieznany.
+PRODUCT_COLLECTION — nazwa modelu/kolekcji, tylko gdy da się ją odczytać z obrazu lub tekstu (np. „Lila”); w przeciwnym razie pusty string.
 
-Booleany: has_person (czy widać człowieka), has_text_overlay (czy jest nałożony tekst), has_pricing (czy widać cenę lub % rabatu).`;
+RATIONALE — jedno zdanie po polsku (max 20 słów), dlaczego te tagi.
+
+Nie zgaduj: jeśli produktu nie widać, wybierz „nieznany”.`;
 
 let cachedClient: Anthropic | null = null;
 
@@ -93,27 +97,26 @@ export interface CreativeTagInput {
   format?: string | null;  // 'video' | 'image' | ...
 }
 
-// Post-parse walidator — wpadający JSON wrzucamy przez ten filtr zanim
-// zapiszemy do DB. Nieznane enumy → 'unknown', nie-boolean → false.
-function sanitizeInsights(raw: Record<string, unknown>): CreativeAIInsights {
-  const pick = <T extends readonly string[]>(
-    value: unknown,
-    allowed: T
-  ): T[number] => {
-    return typeof value === 'string' && (allowed as readonly string[]).includes(value)
-      ? (value as T[number])
-      : ('unknown' as T[number]);
-  };
+// Walidator odpowiedzi — przycina wartości do taksonomii zanim trafią do bazy.
+export function sanitizeInsights(raw: Record<string, unknown>): CreativeAIInsights {
+  const inList = <T extends readonly string[]>(v: unknown, allowed: T): v is T[number] =>
+    typeof v === 'string' && (allowed as readonly string[]).includes(v);
+  const listOf = <T extends readonly string[]>(v: unknown, allowed: T, max: number): T[number][] =>
+    Array.isArray(v) ? [...new Set(v.filter((x): x is T[number] => inList(x, allowed)))].slice(0, max) : [];
+
+  let offer = listOf(raw.offer, CREATIVE_TAG_TAXONOMY.offer, 5);
+  if (offer.length > 1) offer = offer.filter(o => o !== 'brak');
+  if (offer.length === 0) offer = ['brak'];
+
   return {
-    style: pick(raw.style, CREATIVE_TAG_TAXONOMY.style),
-    angle: pick(raw.angle, CREATIVE_TAG_TAXONOMY.angle),
-    tone: pick(raw.tone, CREATIVE_TAG_TAXONOMY.tone),
-    color_palette: pick(raw.color_palette, CREATIVE_TAG_TAXONOMY.color_palette),
-    product_focus: pick(raw.product_focus, CREATIVE_TAG_TAXONOMY.product_focus),
-    has_person: raw.has_person === true,
-    has_text_overlay: raw.has_text_overlay === true,
-    has_pricing: raw.has_pricing === true,
+    angle: listOf(raw.angle, CREATIVE_TAG_TAXONOMY.angle, 2),
+    hook: typeof raw.hook === 'string' ? raw.hook.trim().slice(0, 200) : '',
+    style: inList(raw.style, CREATIVE_TAG_TAXONOMY.style) ? raw.style : null,
+    offer,
+    product: inList(raw.product, CREATIVE_TAG_TAXONOMY.product) ? raw.product : 'nieznany',
+    product_collection: typeof raw.product_collection === 'string' ? raw.product_collection.trim().slice(0, 60) : '',
     rationale: typeof raw.rationale === 'string' ? raw.rationale.slice(0, 300) : '',
+    taxonomy_version: 'meta-ads-intel-1',
   };
 }
 
@@ -154,6 +157,8 @@ export async function classifyCreative(input: CreativeTagInput): Promise<Creativ
         cache_control: { type: 'ephemeral' },
       },
     ],
+    // Structured outputs: odpowiedź zawsze jest JSON-em zgodnym ze schematem.
+    output_config: { format: { type: 'json_schema', schema: OUTPUT_SCHEMA } },
     messages: [
       {
         role: 'user',
@@ -168,35 +173,29 @@ export async function classifyCreative(input: CreativeTagInput): Promise<Creativ
     ],
   });
 
-  // Model został zinstruowany w system prompcie żeby zwracać WYŁĄCZNIE czysty JSON.
-  // Bierzemy pierwszy text block i próbujemy sparsować. Jeśli model wbrew instrukcji
-  // owinął JSON w ```json ... ```, ekstraktujemy przez match.
+  if (response.stop_reason === 'refusal') {
+    throw new Error(`model odmówił klasyfikacji (${response.stop_details?.category ?? 'bez kategorii'})`);
+  }
   const textBlock = response.content.find(b => b.type === 'text');
   if (!textBlock || textBlock.type !== 'text') return null;
 
-  let jsonStr = textBlock.text.trim();
-  const fenceMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (fenceMatch) jsonStr = fenceMatch[1].trim();
-
   try {
-    const parsed = JSON.parse(jsonStr) as Record<string, unknown>;
-    return sanitizeInsights(parsed);
+    return sanitizeInsights(JSON.parse(textBlock.text) as Record<string, unknown>);
   } catch (err) {
-    console.warn('classifyCreative JSON parse failed:', err, jsonStr.slice(0, 200));
+    console.warn('classifyCreative JSON parse failed:', err, textBlock.text.slice(0, 200));
     return null;
   }
 }
 
-// Konwersja insightów → lista tagów (flat array dla kolumny ai_tags[])
+// Konwersja insightów → lista tagów (kolumna ai_tags[]), format „oś:wartość”.
 export function insightsToTags(insights: CreativeAIInsights): string[] {
   const tags: string[] = [];
-  if (insights.style !== 'unknown') tags.push(`style:${insights.style}`);
-  if (insights.angle !== 'unknown') tags.push(`angle:${insights.angle}`);
-  if (insights.tone !== 'unknown') tags.push(`tone:${insights.tone}`);
-  if (insights.color_palette !== 'unknown') tags.push(`palette:${insights.color_palette}`);
-  if (insights.product_focus !== 'unknown') tags.push(`focus:${insights.product_focus}`);
-  if (insights.has_person) tags.push('has-person');
-  if (insights.has_text_overlay) tags.push('has-text');
-  if (insights.has_pricing) tags.push('has-pricing');
+  for (const a of insights.angle) tags.push(`angle:${a}`);
+  if (insights.style) tags.push(`style:${insights.style}`);
+  for (const o of insights.offer) tags.push(`offer:${o}`);
+  if (insights.product !== 'nieznany') {
+    tags.push(`product:${insights.product}`);
+    if (insights.product_collection) tags.push(`product:${insights.product}:${insights.product_collection.toLowerCase()}`);
+  }
   return tags;
 }

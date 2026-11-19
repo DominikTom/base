@@ -249,8 +249,18 @@ export async function fetchCreativeIdsForAds(
       `${META_BASE_URL}/?ids=${batch.join(',')}&fields=creative%7Bid%7D&access_token=${token}`
     );
     if (!res.ok) {
-      // non-fatal: brak creative_id nie blokuje zapisu metryk
-      console.warn(`fetchCreativeIdsForAds batch failed for ${accountId}: ${(await res.text()).slice(0, 200)}`);
+      // Graph API odrzuca CAŁE zapytanie ?ids=, gdy choć jedna reklama jest
+      // usunięta/niedostępna — wtedy cała paczka 50 zostawała bez creative_id.
+      // Ponawiamy pojedynczo; brak creative_id nadal nie blokuje zapisu metryk.
+      console.warn(`fetchCreativeIdsForAds batch failed for ${accountId}: ${(await res.text()).slice(0, 200)} — retrying one by one`);
+      for (const adId of batch) {
+        try {
+          const one = await fetch(`${META_BASE_URL}/${adId}?fields=creative%7Bid%7D&access_token=${token}`);
+          if (!one.ok) continue;
+          const ad = await one.json() as { creative?: { id?: string } };
+          if (ad?.creative?.id) map.set(adId, ad.creative.id);
+        } catch { /* pojedyncza reklama — pomijamy */ }
+      }
       continue;
     }
     const json = await res.json();

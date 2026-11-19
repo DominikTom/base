@@ -39,6 +39,8 @@ const PROTECTED_API_PREFIXES = [
   '/api/kpi',
   '/api/insights',
   '/api/weather',
+  // Serwer MCP: bez Bearer odrzucany tutaj, token dmcp_… sprawdza handler.
+  '/api/mcp',
 ];
 
 export async function proxy(request: NextRequest) {
@@ -125,6 +127,8 @@ export const config = {
     '/api/kpi/:path*',
     '/api/insights',
     '/api/insights/:path*',
+    '/api/mcp',
+    '/api/mcp/:path*',
     '/login',
   ],
 };

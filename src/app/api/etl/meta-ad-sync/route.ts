@@ -3,6 +3,7 @@ import { requireAdmin } from '@/lib/auth';
 import { getSupabaseAdmin } from '@/lib/supabase';
 import { fetchAdInsights, fetchCampaigns, fetchCreativeIdsForAds, fetchCreativeMeta, getAdAccountIds } from '@/lib/meta-ads';
 import { getEurPlnRates } from '@/lib/nbp';
+import { storeCreativeImages } from '@/lib/creative-thumbs';
 
 export const maxDuration = 300;
 
@@ -248,7 +249,11 @@ async function syncAdsRange(dateFromStr: string, dateToStr: string, accountFilte
           for (const creativeId of toFetch) {
             const meta = await fetchCreativeMeta(creativeId, accountId);
             if (!meta) continue;
+            // Kopia miniatury w Storage od razu przy pierwszym zobaczeniu —
+            // świeży link fbcdn jeszcze działa (później wygasa).
+            const storagePatch = await storeCreativeImages(db, meta.creativeId, meta.thumbnailUrl, meta.imageUrl);
             await db.from('dim_creatives').upsert({
+              ...storagePatch,
               creative_id: meta.creativeId,
               account_id: meta.accountId,
               title: meta.title,

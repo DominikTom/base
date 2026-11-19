@@ -44,6 +44,18 @@
     {
       "path": "/api/sensmax/sales-sync",
       "schedule": "30 4 * * *"
+    },
+    {
+      "path": "/api/jobs/tag-creatives",
+      "schedule": "*/10 * * * *"
+    },
+    {
+      "path": "/api/jobs/refresh-thumbnails",
+      "schedule": "5-55/10 * * * *"
+    },
+    {
+      "path": "/api/jobs/backfill-creative-ids",
+      "schedule": "30 7 * * *"
     }
   ]
 }
