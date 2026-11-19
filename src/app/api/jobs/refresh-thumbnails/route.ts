@@ -127,7 +127,15 @@ async function refresh(creatives: CreativeRef[]) {
         return;
       }
       succeeded += 1;
-      if (storagePatch.thumb_storage_path) stored += 1;
+      if (storagePatch.thumb_storage_path) {
+        stored += 1;
+        // Tagowanie AI mogło wcześniej paść na wygasłym linku fbcdn — teraz jest
+        // stała kopia, więc kreacja wraca do kolejki tagowania.
+        await db.from('dim_creatives')
+          .update({ ai_tag_status: 'pending', ai_tag_error: null })
+          .eq('creative_id', c.creative_id)
+          .eq('ai_tag_status', 'failed');
+      }
     } catch (err) {
       failed += 1;
       errors.push(`${c.creative_id}: ${err instanceof Error ? err.message : String(err)}`);
