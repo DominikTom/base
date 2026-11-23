@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Check, ImagePlus, Sparkles } from 'lucide-react';
+import { Check, ImagePlus, Sparkles, X } from 'lucide-react';
 import { RoomIcon } from '@/components/studio/room-icon';
 import { useToast } from '@/components/studio/toast';
 import { Badge, Button, Card, PageTitle, Spinner, labelForStrength } from '@/components/studio/ui';
@@ -253,7 +253,10 @@ export default function NewVisualizationPage() {
         cameraShot,
         cameraAngle,
         lighting,
-        imageSize: models.includes('nano-banana-pro') && imageSize === '4K' ? '4K' : undefined,
+        imageSize:
+          models.some((id) => STUDIO_MODELS.find((m) => m.id === id)?.supports4K) && imageSize === '4K'
+            ? '4K'
+            : undefined,
         models,
         variants,
         async: true,
@@ -763,41 +766,58 @@ export default function NewVisualizationPage() {
             Możesz zaznaczyć kilka modeli ({MAX_BATCH_MODELS} maks.) — ta sama scena wygeneruje się
             na każdym z nich do porównania.
           </p>
-          <div className="grid gap-3 sm:grid-cols-3">
-            {STUDIO_MODELS.map((m) => {
-              const active = models.includes(m.id);
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            {models.map((id) => {
+              const m = STUDIO_MODELS.find((x) => x.id === id);
               return (
-                <button
-                  key={m.id}
-                  onClick={() =>
-                    setModels((prev) => {
-                      if (prev.includes(m.id)) {
-                        return prev.length > 1 ? prev.filter((id) => id !== m.id) : prev;
-                      }
-                      if (prev.length >= MAX_BATCH_MODELS) return prev;
-                      return [...prev, m.id];
-                    })
-                  }
-                  className={cn(
-                    'flex flex-col gap-1.5 rounded-xl border-2 p-4 text-left transition-all',
-                    active
-                      ? 'border-studio-accent bg-studio-accent-soft'
-                      : 'border-studio-border hover:border-studio-accent/50'
-                  )}
+                <span
+                  key={id}
+                  className="inline-flex items-center gap-1.5 rounded-full border-2 border-studio-accent bg-studio-accent-soft px-3 py-1.5 text-sm font-medium"
+                  title={m?.description}
                 >
-                  <div className="flex items-center justify-between">
-                    <span className="font-semibold">{m.label}</span>
-                    {m.id === DEFAULT_GENERATION_MODEL && <Badge tone="accent">domyślny</Badge>}
-                  </div>
-                  <span className="text-xs text-studio-muted">{m.vendor}</span>
-                  <span className="text-xs leading-snug text-studio-ink/80">{m.description}</span>
-                  <span className="mt-1 text-xs font-medium text-studio-accent-dark">
-                    {m.whenToUse}
-                  </span>
-                </button>
+                  {m?.label ?? id}
+                  <button
+                    onClick={() =>
+                      setModels((prev) => (prev.length > 1 ? prev.filter((x) => x !== id) : prev))
+                    }
+                    disabled={models.length === 1}
+                    className="rounded-full text-studio-accent-dark/70 transition-colors hover:text-studio-accent-dark disabled:opacity-30"
+                    aria-label={`Usuń ${m?.label ?? id}`}
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </span>
               );
             })}
+            {models.length < MAX_BATCH_MODELS && (
+              <select
+                value=""
+                onChange={(e) => {
+                  const id = e.target.value as StudioModelId;
+                  if (id && !models.includes(id)) setModels((prev) => [...prev, id]);
+                }}
+                className="rounded-xl border border-studio-border bg-white px-3 py-2 text-sm outline-none focus:border-studio-accent"
+              >
+                <option value="">+ Dodaj model z listy…</option>
+                {STUDIO_MODELS.filter((m) => !models.includes(m.id)).map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.label} ({m.vendor}){m.legacy ? ' — starszy' : ''}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
+          <ul className="space-y-1 text-xs text-studio-muted">
+            {models.map((id) => {
+              const m = STUDIO_MODELS.find((x) => x.id === id);
+              return m ? (
+                <li key={id}>
+                  <span className="font-medium text-studio-ink">{m.label}:</span> {m.description}{' '}
+                  <span className="text-studio-accent-dark">{m.whenToUse}</span>
+                </li>
+              ) : null;
+            })}
+          </ul>
 
           <div className="mt-5 grid gap-4 sm:grid-cols-2">
             <ChipRow
@@ -809,9 +829,9 @@ export default function NewVisualizationPage() {
               value={String(variants)}
               onChange={(v) => setVariants(Number(v))}
             />
-            {models.includes('nano-banana-pro') && (
+            {models.some((id) => STUDIO_MODELS.find((m) => m.id === id)?.supports4K) && (
               <ChipRow
-                label="Rozdzielczość (Nano Banana Pro)"
+                label="Rozdzielczość (linia Pro)"
                 options={[
                   { id: '2K', labelPl: 'Standard (2K)' },
                   { id: '4K', labelPl: 'Maksymalna (4K, wolniejsza)' },

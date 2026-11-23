@@ -652,30 +652,35 @@ export function MaskEditor({
           <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-studio-muted">
             Model edycji
           </p>
-          <div className="space-y-2">
+          <select
+            value={model}
+            onChange={(e) => setModel(e.target.value as StudioModelId)}
+            className="w-full rounded-xl border border-studio-border bg-white px-3 py-2.5 text-sm outline-none focus:border-studio-accent"
+          >
             {editModels.map((m) => (
-              <button
-                key={m.id}
-                onClick={() => setModel(m.id)}
-                className={cn(
-                  'flex w-full flex-col gap-0.5 rounded-xl border-2 p-3 text-left transition-all',
-                  model === m.id
-                    ? 'border-studio-accent bg-studio-accent-soft'
-                    : 'border-studio-border hover:border-studio-accent/50'
-                )}
-              >
-                <span className="flex items-center justify-between text-sm font-semibold">
-                  {m.label}
+              <option key={m.id} value={m.id}>
+                {m.label} ({m.vendor}){m.legacy ? ' — starszy' : ''}
+              </option>
+            ))}
+          </select>
+          {(() => {
+            const m = editModels.find((x) => x.id === model);
+            if (!m) return null;
+            return (
+              <div className="mt-2 space-y-1">
+                <div>
                   {m.supportsNativeMask ? (
                     <Badge tone="accent">natywna maska</Badge>
                   ) : (
                     <Badge>technika adnotacji</Badge>
                   )}
-                </span>
-                <span className="text-xs text-studio-muted">{m.whenToUse}</span>
-              </button>
-            ))}
-          </div>
+                </div>
+                <p className="text-xs text-studio-muted">
+                  {m.description} <span className="text-studio-accent-dark">{m.whenToUse}</span>
+                </p>
+              </div>
+            );
+          })()}
         </Card>
 
         <Button onClick={handleSubmit} disabled={busy} className="w-full py-3">

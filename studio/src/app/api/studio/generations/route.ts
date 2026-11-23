@@ -1,7 +1,7 @@
 import { after, NextResponse, type NextRequest } from 'next/server';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { isStudioModelId, type StudioModelId } from '@/lib/studio/models';
+import { getModelMeta, isStudioModelId, type StudioModelId } from '@/lib/studio/models';
 import { buildGenerationPrompt } from '@/lib/studio/prompts';
 import { runGeneration } from '@/lib/studio/run-generation';
 import { requireStudioUser } from '@/lib/studio/supabase-server';
@@ -166,7 +166,7 @@ export async function POST(request: NextRequest) {
           camera_shot: input.cameraShot === 'auto' ? null : input.cameraShot,
           camera_angle: input.cameraAngle === 'auto' ? null : input.cameraAngle,
           lighting: input.lighting === 'auto' ? null : input.lighting,
-          image_size: model === 'nano-banana-pro' ? (input.imageSize ?? null) : null,
+          image_size: getModelMeta(model)?.supports4K ? (input.imageSize ?? null) : null,
           batch_id: batchId,
           model,
           full_prompt_sent: fullPrompt,

@@ -25,16 +25,19 @@ i `NEXT_PUBLIC_SUPABASE_ANON_KEY` ustawione w Vercel mają pierwszeństwo.
 
 ## Modele generacji
 
+Rejestr modeli jest data-driven: `src/lib/studio/models.ts` (dodanie modelu =
+jeden wpis; identyfikator API nadpisywalny env varem z pola `envVar`).
+Stan na XI 2026:
+
 | Model | ID API | Kiedy używać |
 |---|---|---|
-| Nano Banana Pro (domyślny) | `gemini-3-pro-image` | finalne wizualizacje, najlepszy fotorealizm tkanin |
-| Nano Banana 2 | `gemini-3.1-flash-image` | szkice i szybkie iteracje |
-| GPT Image 2 | `gpt-image-2` | chirurgiczne poprawki pędzlem (natywna maska) |
-
-Identyfikatory można nadpisać env varami `GEMINI_PRO_IMAGE_MODEL`,
-`GEMINI_FLASH_IMAGE_MODEL`, `OPENAI_IMAGE_MODEL` (gdy dostawca zmieni nazwy).
-Warstwa abstrakcji: `src/lib/studio/providers/` (interfejs `ImageProvider` —
-dodanie kolejnego modelu, np. FLUX Fill, to jedna klasa + wpis w rejestrze).
+| Nano Banana Pro (domyślny do generacji) | `gemini-3-pro-image` | finalne wizualizacje, 2K/4K |
+| Nano Banana 2.1 | `gemini-nano-banana-2.1` | szybkie, dobre iteracje |
+| Nano Banana 2 | `gemini-3.1-flash-image` | najtańsze szkice |
+| GPT Image 2.6 Sunburst (domyślny do edycji) | `gpt-image-2.6-sunburst` | precyzyjne poprawki pędzlem (maska) |
+| GPT Image 2.6 Flare | `gpt-image-2.6-flare` | szybka generacja OpenAI |
+| GPT Image 2.5 Sunburst / Flare | `gpt-image-2.5-…` | starsze odpowiedniki 2.6 |
+| GPT Image 2 | `gpt-image-2` | legacy |
 
 ## Wiele packshotów w jednej wizualizacji
 

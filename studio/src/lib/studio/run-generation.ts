@@ -1,7 +1,7 @@
 import { imageSize } from 'image-size';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { providerErrorToPolish } from './errors';
-import { isStudioModelId } from './models';
+import { getModelMeta, isStudioModelId } from './models';
 import {
   buildGeminiAnnotatedEditPrompt,
   buildOpenAiMaskEditPrompt,
@@ -81,7 +81,7 @@ export async function runGeneration(
         references: [...packshotImages.slice(1), ...references],
         imageSize:
           (generation.image_size as '1K' | '2K' | '4K' | null) ??
-          (generation.model === 'nano-banana-pro' ? '2K' : '1K'),
+          (getModelMeta(generation.model)?.supports4K ? '2K' : '1K'),
         aspectRatio: generation.aspect_ratio ?? undefined,
       });
     }
