@@ -7,7 +7,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   viewportFit: "cover",
   interactiveWidget: "resizes-content",
-  themeColor: "#faf8f5",
+  themeColor: "#09090b",
 };
 
 const geistSans = Geist({

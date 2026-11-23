@@ -4,16 +4,25 @@ import { requireStudioUser } from '@/lib/studio/supabase-server';
 import { studioFileUrl } from '@/lib/studio/storage';
 import type { PackshotRow } from '@/lib/studio/types';
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const auth = await requireStudioUser();
   if (auth instanceof NextResponse) return auth;
 
-  const { data, error } = await auth.supabase
+  const params = request.nextUrl.searchParams;
+  const limit = Math.min(Math.max(Number(params.get('limit') ?? 200) || 200, 1), 500);
+  let query = auth.supabase
     .from('packshots')
     .select('*')
     .is('deleted_at', null)
     .order('created_at', { ascending: false })
-    .limit(200);
+    .limit(limit);
+
+  const q = params.get('q')?.trim();
+  if (q) {
+    query = query.ilike('original_filename', `%${q.replaceAll('%', '\\%')}%`);
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     return NextResponse.json({ error: `Nie udało się pobrać packshotów: ${error.message}` }, { status: 500 });

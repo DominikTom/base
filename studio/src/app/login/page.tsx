@@ -74,7 +74,7 @@ export default function LoginPage() {
                 onChange={e => setEmail(e.target.value)}
                 placeholder="imie@mybed.pl"
                 required
-                className="w-full px-4 py-3 rounded-lg bg-white border border-studio-border text-studio-ink placeholder-studio-muted/50 focus:outline-none focus:ring-2 focus:ring-studio-accent focus:border-transparent"
+                className="w-full px-4 py-3 rounded-lg bg-studio-surface border border-studio-border text-studio-ink placeholder-studio-muted/50 focus:outline-none focus:ring-2 focus:ring-studio-accent focus:border-transparent"
               />
             </div>
 
@@ -86,7 +86,7 @@ export default function LoginPage() {
                 onChange={e => setPassword(e.target.value)}
                 placeholder="••••••••"
                 required
-                className="w-full px-4 py-3 rounded-lg bg-white border border-studio-border text-studio-ink placeholder-studio-muted/50 focus:outline-none focus:ring-2 focus:ring-studio-accent focus:border-transparent"
+                className="w-full px-4 py-3 rounded-lg bg-studio-surface border border-studio-border text-studio-ink placeholder-studio-muted/50 focus:outline-none focus:ring-2 focus:ring-studio-accent focus:border-transparent"
               />
             </div>
 
@@ -99,7 +99,7 @@ export default function LoginPage() {
             </button>
 
             {error && (
-              <p className="text-sm text-red-600 text-center">{error}</p>
+              <p className="text-sm text-red-400 text-center">{error}</p>
             )}
           </form>
         </div>

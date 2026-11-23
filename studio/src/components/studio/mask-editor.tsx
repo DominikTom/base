@@ -17,6 +17,7 @@ import {
 import { useToast } from '@/components/studio/toast';
 import { Badge, Button, Card, Spinner } from '@/components/studio/ui';
 import { DEFAULT_EDIT_MODEL, STUDIO_MODELS, type StudioModelId } from '@/lib/studio/models';
+import { validateImageFile } from '@/lib/studio/upload-limits';
 import { cn } from '@/lib/utils';
 
 type Tool = 'brush' | 'eraser';
@@ -61,15 +62,23 @@ export function MaskEditor({
   onSubmit,
   busy,
   defaultModel = DEFAULT_EDIT_MODEL,
+  initialMaskUrl,
+  initialInstruction,
 }: {
   imageUrl: string;
   onSubmit: (payload: MaskEditorSubmit) => void | Promise<void>;
   busy: boolean;
   defaultModel?: StudioModelId;
+  /** Maska z wcześniejszej edycji (format OpenAI) — wczytywana jako baza do poprawek. */
+  initialMaskUrl?: string;
+  initialInstruction?: string;
 }) {
   const { toast } = useToast();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
+  /** Baza maski wczytana z poprzedniej edycji (czerwień tam, gdzie było zaznaczenie). */
+  const baselineRef = useRef<HTMLCanvasElement | null>(null);
+  const [baselineLoaded, setBaselineLoaded] = useState(false);
 
   const [imageReady, setImageReady] = useState(false);
   const [natural, setNatural] = useState<{ w: number; h: number } | null>(null);
@@ -89,7 +98,7 @@ export function MaskEditor({
   const [cursorPos, setCursorPos] = useState<{ x: number; y: number } | null>(null);
   const panActive = panMode || spaceHeld;
 
-  const [instruction, setInstruction] = useState('');
+  const [instruction, setInstruction] = useState(initialInstruction ?? '');
   const [references, setReferences] = useState<{ file: File; url: string }[]>([]);
   const refInputRef = useRef<HTMLInputElement>(null);
   const [model, setModel] = useState<StudioModelId>(defaultModel);
@@ -116,6 +125,36 @@ export function MaskEditor({
     canvas.width = natural.w;
     canvas.height = natural.h;
   }, [natural]);
+
+  // „Popraw maskę": wczytanie maski poprzedniej edycji jako bazy. Zapisana
+  // maska jest w formacie OpenAI (przezroczyste = zaznaczone), więc odwracamy:
+  // wypełniamy czerwienią i wycinamy (destination-out) kryjące piksele maski —
+  // czerwień zostaje dokładnie tam, gdzie było malowane.
+  useEffect(() => {
+    if (!initialMaskUrl || !natural) return;
+    let cancelled = false;
+    const maskImg = new Image();
+    maskImg.onload = () => {
+      if (cancelled) return;
+      const base = document.createElement('canvas');
+      base.width = natural.w;
+      base.height = natural.h;
+      const bctx = base.getContext('2d')!;
+      bctx.fillStyle = 'rgba(255,0,0,1)';
+      bctx.fillRect(0, 0, natural.w, natural.h);
+      bctx.globalCompositeOperation = 'destination-out';
+      bctx.drawImage(maskImg, 0, 0, natural.w, natural.h);
+      baselineRef.current = base;
+      setBaselineLoaded(true);
+      const ctx = canvasRef.current?.getContext('2d');
+      if (ctx) ctx.drawImage(base, 0, 0);
+    };
+    maskImg.onerror = () => toast('error', 'Nie udało się wczytać poprzedniej maski.');
+    maskImg.src = initialMaskUrl;
+    return () => {
+      cancelled = true;
+    };
+  }, [initialMaskUrl, natural, toast]);
 
   /** Rysuje miękki stempel pędzla (radialny gradient) w punkcie. */
   const stamp = useCallback((ctx: CanvasRenderingContext2D, x: number, y: number, size: number, erase: boolean) => {
@@ -162,6 +201,7 @@ export function MaskEditor({
       const ctx = canvas?.getContext('2d');
       if (!canvas || !ctx) return;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
+      if (baselineRef.current) ctx.drawImage(baselineRef.current, 0, 0);
       for (const s of allStrokes) drawStroke(ctx, s);
     },
     [drawStroke]
@@ -261,6 +301,8 @@ export function MaskEditor({
   }, [redraw]);
 
   const handleClear = useCallback(() => {
+    baselineRef.current = null;
+    setBaselineLoaded(false);
     setStrokes([]);
     setRedoStack([]);
     redraw([]);
@@ -355,7 +397,7 @@ export function MaskEditor({
     panning.current = null;
   }
 
-  const hasMask = strokes.some((s) => s.tool === 'brush');
+  const hasMask = strokes.some((s) => s.tool === 'brush') || baselineLoaded;
 
   /** Eksport masek w NATYWNEJ rozdzielczości obrazu. */
   const exportMasks = useCallback(async (): Promise<{ mask: Blob; annotated: Blob } | null> => {
@@ -395,12 +437,11 @@ export function MaskEditor({
     // Kopia synchronicznie — FileList jest żywy i pustoszeje po wyczyszczeniu
     // inputa, zanim aktualizator stanu zdąży się wykonać.
     const incoming = [...files];
-    const allowed = ['image/png', 'image/jpeg', 'image/webp'];
     setReferences((prev) => {
       const next = [...prev];
       for (const f of incoming) {
         if (next.length >= MAX_EDIT_REFERENCES) break;
-        if (!allowed.includes(f.type) || f.size > 20 * 1024 * 1024) continue;
+        if (validateImageFile(f)) continue;
         next.push({ file: f, url: URL.createObjectURL(f) });
       }
       return next;
@@ -555,6 +596,7 @@ export function MaskEditor({
             max={150}
             value={brushSize}
             onChange={(e) => setBrushSize(Number(e.target.value))}
+            aria-label="Rozmiar pędzla w pikselach"
             className="w-full accent-studio-accent"
           />
 
@@ -602,7 +644,7 @@ export function MaskEditor({
                 ? 'opcjonalnie — np. ustaw je symetrycznie po obu stronach łóżka'
                 : 'np. zmień poduszki na lniane, beżowe'
             }
-            className="w-full rounded-xl border border-studio-border bg-white px-3 py-2.5 text-sm outline-none transition-colors placeholder:text-studio-muted/60 focus:border-studio-accent"
+            className="w-full rounded-xl border border-studio-border bg-studio-surface px-3 py-2.5 text-sm outline-none transition-colors placeholder:text-studio-muted/60 focus:border-studio-accent"
           />
 
           <p className="mb-1.5 mt-3 text-sm font-medium">
@@ -655,7 +697,8 @@ export function MaskEditor({
           <select
             value={model}
             onChange={(e) => setModel(e.target.value as StudioModelId)}
-            className="w-full rounded-xl border border-studio-border bg-white px-3 py-2.5 text-sm outline-none focus:border-studio-accent"
+            aria-label="Model edycji"
+            className="w-full rounded-xl border border-studio-border bg-studio-surface px-3 py-2.5 text-sm outline-none focus:border-studio-accent"
           >
             {editModels.map((m) => (
               <option key={m.id} value={m.id}>

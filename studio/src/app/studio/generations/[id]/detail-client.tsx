@@ -10,11 +10,13 @@ import {
   Download,
   Layers,
   Lightbulb,
+  MoreHorizontal,
   RefreshCw,
   Share2,
   Sparkles,
   Star,
   Trash2,
+  Wand2,
 } from 'lucide-react';
 import { BeforeAfterSlider } from '@/components/studio/before-after-slider';
 import { Lightbox } from '@/components/studio/lightbox';
@@ -61,6 +63,7 @@ export function GenerationDetailClient({ id }: { id: string }) {
   const [sets, setSets] = useState<SetOption[]>([]);
   const [addingToSet, setAddingToSet] = useState(false);
   const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const pollRef = useRef<number | null>(null);
 
   const load = useCallback(async () => {
@@ -107,7 +110,7 @@ export function GenerationDetailClient({ id }: { id: string }) {
     return (
       <div>
         <BackLink />
-        <p className="mt-8 text-sm text-red-600">{error}</p>
+        <p className="mt-8 text-sm text-red-400">{error}</p>
       </div>
     );
   }
@@ -284,36 +287,85 @@ export function GenerationDetailClient({ id }: { id: string }) {
           </button>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {/* Akcje główne — reszta w menu „⋯", żeby pasek nie puchł. */}
           {g.status === 'done' && g.image_url && (
-            <>
-              <Button variant="secondary" onClick={() => router.push(`/studio/editor?type=generation&id=${g.id}`)}>
-                <Brush className="h-4 w-4" /> Edytuj pędzlem
+            <Button variant="secondary" onClick={() => router.push(`/studio/editor?type=generation&id=${g.id}`)}>
+              <Brush className="h-4 w-4" /> Edytuj pędzlem
+            </Button>
+          )}
+          {isEdit && g.mask_storage_path && (g.parent_generation_id || g.packshot_id) && (
+            <Link
+              href={
+                g.parent_generation_id
+                  ? `/studio/editor?type=generation&id=${g.parent_generation_id}&reuse=${g.id}`
+                  : `/studio/editor?type=packshot&id=${g.packshot_id}&reuse=${g.id}`
+              }
+            >
+              <Button variant="secondary" title="Wróć do tej samej maski i popraw instrukcję">
+                <Wand2 className="h-4 w-4" /> Popraw maskę
               </Button>
-              <a href={`${g.image_url}&download=1`}>
-                <Button variant="secondary">
-                  <Download className="h-4 w-4" /> Pobierz PNG
-                </Button>
-              </a>
-              <Button variant="secondary" onClick={handleCopyToClipboard}>
-                <Copy className="h-4 w-4" /> Kopiuj
-              </Button>
-            </>
+            </Link>
           )}
           {!isEdit && g.packshot_id && g.room_id && (
-            <>
-              <Button variant="secondary" onClick={handleRegenerate}>
-                <RefreshCw className="h-4 w-4" /> Generuj ponownie
-              </Button>
-              <Link href={`/studio/new?from=${g.id}`}>
-                <Button variant="secondary">
-                  <Sparkles className="h-4 w-4" /> Duplikuj ustawienia i zmień
-                </Button>
-              </Link>
-            </>
+            <Button variant="secondary" onClick={handleRegenerate}>
+              <RefreshCw className="h-4 w-4" /> Generuj ponownie
+            </Button>
           )}
-          <Button variant="ghost" onClick={handleTrash} title="Przenieś do kosza">
-            <Trash2 className="h-4 w-4" />
-          </Button>
+          <div className="relative">
+            <Button
+              variant="secondary"
+              onClick={() => setMenuOpen((v) => !v)}
+              aria-label="Więcej akcji"
+              aria-expanded={menuOpen}
+            >
+              <MoreHorizontal className="h-4 w-4" />
+            </Button>
+            {menuOpen && (
+              <>
+                <div className="fixed inset-0 z-30" onClick={() => setMenuOpen(false)} />
+                <div className="absolute right-0 z-40 mt-2 w-60 overflow-hidden rounded-xl border border-studio-border bg-studio-surface py-1 shadow-xl">
+                  {g.status === 'done' && g.image_url && (
+                    <>
+                      <a
+                        href={`${g.image_url}&download=1`}
+                        onClick={() => setMenuOpen(false)}
+                        className="flex items-center gap-2.5 px-4 py-2.5 text-sm transition-colors hover:bg-studio-bg"
+                      >
+                        <Download className="h-4 w-4 text-studio-muted" /> Pobierz PNG
+                      </a>
+                      <button
+                        onClick={() => {
+                          setMenuOpen(false);
+                          void handleCopyToClipboard();
+                        }}
+                        className="flex w-full items-center gap-2.5 px-4 py-2.5 text-sm transition-colors hover:bg-studio-bg"
+                      >
+                        <Copy className="h-4 w-4 text-studio-muted" /> Kopiuj do schowka
+                      </button>
+                    </>
+                  )}
+                  {!isEdit && g.packshot_id && g.room_id && (
+                    <Link
+                      href={`/studio/new?from=${g.id}`}
+                      onClick={() => setMenuOpen(false)}
+                      className="flex items-center gap-2.5 px-4 py-2.5 text-sm transition-colors hover:bg-studio-bg"
+                    >
+                      <Sparkles className="h-4 w-4 text-studio-muted" /> Duplikuj ustawienia i zmień
+                    </Link>
+                  )}
+                  <button
+                    onClick={() => {
+                      setMenuOpen(false);
+                      void handleTrash();
+                    }}
+                    className="flex w-full items-center gap-2.5 px-4 py-2.5 text-sm text-red-400 transition-colors hover:bg-studio-bg"
+                  >
+                    <Trash2 className="h-4 w-4" /> Przenieś do kosza
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </div>
 
@@ -332,7 +384,7 @@ export function GenerationDetailClient({ id }: { id: string }) {
           )}
           {g.status === 'error' && (
             <Card className="flex aspect-[4/3] flex-col items-center justify-center gap-3 p-8 text-center">
-              <p className="font-medium text-red-700">Generacja nie powiodła się</p>
+              <p className="font-medium text-red-400">Generacja nie powiodła się</p>
               <p className="max-w-md text-sm text-studio-muted">{g.error_message}</p>
               <Button onClick={handleRetry}>
                 <RefreshCw className="h-4 w-4" /> Spróbuj ponownie
@@ -387,7 +439,7 @@ export function GenerationDetailClient({ id }: { id: string }) {
                     <div key={pk.id} className="flex items-center gap-3">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
-                        src={pk.image_url}
+                        src={`${pk.image_url}&w=160`}
                         alt="Packshot"
                         className="h-12 w-12 rounded-lg border border-studio-border bg-white object-contain"
                       />
@@ -457,7 +509,7 @@ export function GenerationDetailClient({ id }: { id: string }) {
                     /* eslint-disable-next-line @next/next/no-img-element */
                     <img
                       key={p}
-                      src={`/api/studio/file?b=generations&p=${encodeURIComponent(p)}`}
+                      src={`/api/studio/file?b=generations&p=${encodeURIComponent(p)}&w=160`}
                       alt="Referencja"
                       className="h-12 w-12 rounded-lg border border-studio-border bg-white object-contain"
                     />
@@ -573,7 +625,7 @@ function VersionTree({
         >
           {node.image_url ? (
             /* eslint-disable-next-line @next/next/no-img-element */
-            <img src={node.image_url} alt="" className="h-8 w-8 rounded object-cover" />
+            <img src={`${node.image_url}&w=160`} alt="" className="h-8 w-8 rounded object-cover" />
           ) : (
             <span className="flex h-8 w-8 items-center justify-center rounded bg-studio-bg">
               <Spinner className="h-3 w-3" />

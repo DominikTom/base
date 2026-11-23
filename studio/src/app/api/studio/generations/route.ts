@@ -253,11 +253,13 @@ export async function GET(request: NextRequest) {
   if (auth instanceof NextResponse) return auth;
 
   const q = request.nextUrl.searchParams;
+  const limit = Math.min(Math.max(Number(q.get('limit') ?? 60) || 60, 1), 200);
+  const offset = Math.max(Number(q.get('offset') ?? 0) || 0, 0);
   let query = auth.supabase
     .from('generations')
-    .select('*, rooms(name), inspiration_sets(name)')
+    .select('*, rooms(name), inspiration_sets(name)', { count: 'exact' })
     .order('created_at', { ascending: false })
-    .limit(Math.min(Number(q.get('limit') ?? 100), 200));
+    .range(offset, offset + limit - 1);
 
   if (q.get('deleted') === '1') {
     query = query.not('deleted_at', 'is', null);
@@ -284,7 +286,7 @@ export async function GET(request: NextRequest) {
   const to = q.get('to');
   if (to) query = query.lte('created_at', to);
 
-  const { data, error } = await query;
+  const { data, error, count } = await query;
   if (error) {
     return NextResponse.json({ error: `Nie udało się pobrać biblioteki: ${error.message}` }, { status: 500 });
   }
@@ -309,5 +311,5 @@ export async function GET(request: NextRequest) {
     author_name: nameById.get(row.user_id) ?? null,
   }));
 
-  return NextResponse.json({ generations });
+  return NextResponse.json({ generations, total: count ?? generations.length, offset, limit });
 }

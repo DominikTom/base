@@ -100,7 +100,7 @@ export function BatchClient({ batchId }: { batchId: string }) {
                   {g.status === 'done' && g.image_url ? (
                     /* eslint-disable-next-line @next/next/no-img-element */
                     <img
-                      src={g.image_url}
+                      src={`${g.image_url}&w=640`}
                       alt=""
                       className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
                       loading="lazy"
@@ -110,7 +110,7 @@ export function BatchClient({ batchId }: { batchId: string }) {
                       {g.status === 'pending' ? (
                         <Spinner className="h-6 w-6" />
                       ) : (
-                        <span className="px-4 text-center text-xs text-red-600">
+                        <span className="px-4 text-center text-xs text-red-400">
                           {g.error_message?.slice(0, 80) ?? 'Błąd'}
                         </span>
                       )}
@@ -135,7 +135,7 @@ export function BatchClient({ batchId }: { batchId: string }) {
                   'absolute right-2 top-2 rounded-full p-1.5 shadow transition-colors',
                   g.is_favorite
                     ? 'bg-amber-400 text-white'
-                    : 'bg-white/90 text-studio-muted hover:text-amber-500'
+                    : 'bg-studio-surface/90 text-studio-muted hover:text-amber-400'
                 )}
               >
                 <Star className={cn('h-4 w-4', g.is_favorite && 'fill-current')} />

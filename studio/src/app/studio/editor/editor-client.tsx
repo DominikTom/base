@@ -9,14 +9,18 @@ import { useToast } from '@/components/studio/toast';
 import { PageTitle, Spinner } from '@/components/studio/ui';
 import { apiGet, apiJson } from '@/lib/studio/client';
 import { getBrowserUserId, uploadToStorageFromBrowser } from '@/lib/studio/supabase-browser';
+import { STUDIO_MODELS, type StudioModelId } from '@/lib/studio/models';
 import type { GenerationRow, PackshotRow } from '@/lib/studio/types';
 
 export function EditorClient({
   sourceType,
   sourceId,
+  reuseId = null,
 }: {
   sourceType: 'generation' | 'packshot';
   sourceId: string;
+  /** Id wcześniejszej edycji — jej maska i instrukcja stają się punktem wyjścia. */
+  reuseId?: string | null;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -24,6 +28,9 @@ export function EditorClient({
   const [title, setTitle] = useState('Edycja pędzlem');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [initialMaskUrl, setInitialMaskUrl] = useState<string | undefined>(undefined);
+  const [initialInstruction, setInitialInstruction] = useState<string | undefined>(undefined);
+  const [initialModel, setInitialModel] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     (async () => {
@@ -45,13 +52,31 @@ export function EditorClient({
           setImageUrl(pk.image_url);
           setTitle(`Edycja packshota${pk.original_filename ? ` — ${pk.original_filename}` : ''}`);
         }
+
+        // „Popraw maskę": maska + instrukcja + model z poprzedniej edycji.
+        if (reuseId) {
+          try {
+            const r = await apiGet<{ generation: GenerationRow }>(`/api/studio/generations/${reuseId}`);
+            const prev = r.generation;
+            if (prev.mask_storage_path) {
+              setInitialMaskUrl(
+                `/api/studio/file?b=generations&p=${encodeURIComponent(prev.mask_storage_path)}`
+              );
+            }
+            if (prev.edit_instruction) setInitialInstruction(prev.edit_instruction);
+            if (prev.model) setInitialModel(prev.model);
+            setTitle('Poprawka maski — na bazie poprzedniej edycji');
+          } catch {
+            toast('error', 'Nie udało się wczytać poprzedniej maski — zaczynasz od czystej.');
+          }
+        }
       } catch (err) {
         toast('error', err instanceof Error ? err.message : 'Nie udało się załadować obrazu.');
       } finally {
         setLoading(false);
       }
     })();
-  }, [sourceType, sourceId, toast]);
+  }, [sourceType, sourceId, reuseId, toast]);
 
   async function handleSubmit(payload: MaskEditorSubmit) {
     setBusy(true);
@@ -106,7 +131,19 @@ export function EditorClient({
           <Spinner className="h-8 w-8" />
         </div>
       ) : imageUrl ? (
-        <MaskEditor imageUrl={imageUrl} onSubmit={handleSubmit} busy={busy} />
+        <MaskEditor
+          key={`${imageUrl}-${initialMaskUrl ?? ''}`}
+          imageUrl={imageUrl}
+          onSubmit={handleSubmit}
+          busy={busy}
+          initialMaskUrl={initialMaskUrl}
+          initialInstruction={initialInstruction}
+          defaultModel={
+            initialModel && STUDIO_MODELS.some((m) => m.id === initialModel)
+              ? (initialModel as StudioModelId)
+              : undefined
+          }
+        />
       ) : (
         <p className="text-sm text-studio-muted">Nie udało się załadować obrazu.</p>
       )}

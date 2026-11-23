@@ -8,6 +8,7 @@ import { useToast } from '@/components/studio/toast';
 import { Badge, Button, Card, EmptyState, PageTitle, Spinner } from '@/components/studio/ui';
 import { apiGet, apiJson } from '@/lib/studio/client';
 import { readImageDimensions, uploadToStorageFromBrowser } from '@/lib/studio/supabase-browser';
+import { extForMime, validateImageFile } from '@/lib/studio/upload-limits';
 import { cn } from '@/lib/utils';
 import type { InspirationImageRow, InspirationSetRow, RoomRow } from '@/lib/studio/types';
 
@@ -56,22 +57,17 @@ export function InspirationSetClient({ id }: { id: string }) {
     try {
       // Upload z przeglądarki prosto do Storage (omija limit 4,5 MB Vercela),
       // potem rejestracja ścieżek w API.
-      const allowed = ['image/png', 'image/jpeg', 'image/webp'];
       const registered: { path: string; width: number | null; height: number | null }[] = [];
       const skipped: string[] = [];
       for (const f of list.slice(0, 30)) {
-        if (!allowed.includes(f.type)) {
-          skipped.push(`${f.name}: nieobsługiwany format`);
-          continue;
-        }
-        if (f.size > 20 * 1024 * 1024) {
-          skipped.push(`${f.name}: plik przekracza 20 MB`);
+        const invalid = validateImageFile(f);
+        if (invalid) {
+          skipped.push(`${f.name}: ${invalid}`);
           continue;
         }
         try {
           const dims = await readImageDimensions(f);
-          const ext = f.type === 'image/jpeg' ? 'jpg' : f.type === 'image/webp' ? 'webp' : 'png';
-          const path = `${id}/${crypto.randomUUID()}.${ext}`;
+          const path = `${id}/${crypto.randomUUID()}.${extForMime(f.type)}`;
           await uploadToStorageFromBrowser('inspirations', path, f, f.type);
           registered.push({ path, width: dims.width, height: dims.height });
         } catch (err) {
@@ -193,7 +189,7 @@ export function InspirationSetClient({ id }: { id: string }) {
             <select
               value={set.room_id ?? ''}
               onChange={(e) => handleRoomChange(e.target.value)}
-              className="rounded-xl border border-studio-border bg-white px-3 py-2 text-sm outline-none focus:border-studio-accent"
+              className="rounded-xl border border-studio-border bg-studio-surface px-3 py-2 text-sm outline-none focus:border-studio-accent"
               title="Zestaw podpowie się przy wyborze tego pokoju"
             >
               <option value="">Bez przypisania do pokoju</option>
@@ -256,7 +252,7 @@ export function InspirationSetClient({ id }: { id: string }) {
             <Card key={img.id} className="group relative overflow-hidden">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src={img.image_url}
+                src={`${img.image_url}&w=640`}
                 alt=""
                 className="aspect-square w-full object-cover"
                 loading="lazy"
@@ -272,7 +268,7 @@ export function InspirationSetClient({ id }: { id: string }) {
                 {set.cover_image_id !== img.id && (
                   <button
                     onClick={() => handleSetCover(img.id)}
-                    className="rounded-lg bg-white/90 p-1.5 text-studio-ink transition-colors hover:bg-white"
+                    className="rounded-lg bg-studio-surface/90 p-1.5 text-studio-ink transition-colors hover:bg-studio-border"
                     title="Ustaw jako okładkę"
                   >
                     <Star className="h-4 w-4" />
@@ -280,7 +276,7 @@ export function InspirationSetClient({ id }: { id: string }) {
                 )}
                 <button
                   onClick={() => handleDeleteImage(img.id)}
-                  className="rounded-lg bg-white/90 p-1.5 text-red-600 transition-colors hover:bg-white"
+                  className="rounded-lg bg-studio-surface/90 p-1.5 text-red-400 transition-colors hover:bg-studio-border"
                   title="Usuń obraz"
                 >
                   <X className="h-4 w-4" />

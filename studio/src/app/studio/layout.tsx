@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { StudioNotifications } from '@/components/studio/notifications';
 import { StudioSidebar } from '@/components/studio/sidebar-nav';
 import { ToastProvider } from '@/components/studio/toast';
 
@@ -11,6 +12,7 @@ export default function StudioLayout({ children }: { children: React.ReactNode }
   return (
     <div className="min-h-dvh bg-studio-bg text-studio-ink md:flex">
       <ToastProvider>
+        <StudioNotifications />
         <StudioSidebar />
         <main className="min-w-0 flex-1">
           <div

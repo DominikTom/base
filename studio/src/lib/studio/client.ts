@@ -24,13 +24,13 @@ export async function apiGet<T>(url: string): Promise<T> {
 export async function apiJson<T>(
   url: string,
   method: 'POST' | 'PATCH' | 'DELETE',
-  body: unknown
+  body?: unknown
 ): Promise<T> {
   return parseResponse<T>(
     await fetch(url, {
       method,
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      body: body === undefined ? undefined : JSON.stringify(body),
     })
   );
 }

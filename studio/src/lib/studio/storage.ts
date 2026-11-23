@@ -2,19 +2,20 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 
 export type StudioBucket = 'packshots' | 'inspirations' | 'generations';
 
-export const MAX_UPLOAD_BYTES = 20 * 1024 * 1024; // 20 MB
+export {
+  ALLOWED_IMAGE_TYPES,
+  extForMime,
+  MAX_UPLOAD_BYTES,
+} from './upload-limits';
 
-export const ALLOWED_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
-
-export function extForMime(mime: string): string {
-  if (mime === 'image/jpeg') return 'jpg';
-  if (mime === 'image/webp') return 'webp';
-  return 'png';
-}
-
-/** Adres pliku serwowany przez nasz same-origin proxy (autoryzacja sesją + RLS). */
-export function studioFileUrl(bucket: StudioBucket, path: string): string {
-  return `/api/studio/file?b=${bucket}&p=${encodeURIComponent(path)}`;
+/**
+ * Adres pliku serwowany przez nasz same-origin proxy (autoryzacja sesją + RLS).
+ * `width` włącza miniaturę (transformacja obrazu po stronie Supabase) —
+ * używać w siatkach, pełna rozdzielczość tylko w podglądzie/pobieraniu.
+ */
+export function studioFileUrl(bucket: StudioBucket, path: string, width?: number): string {
+  const w = width ? `&w=${width}` : '';
+  return `/api/studio/file?b=${bucket}&p=${encodeURIComponent(path)}${w}`;
 }
 
 export async function uploadToBucket(

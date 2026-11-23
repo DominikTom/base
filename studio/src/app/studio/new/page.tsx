@@ -1,8 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Check, ImagePlus, Sparkles, X } from 'lucide-react';
+import { Check, ImagePlus, Sparkles, Trash2, X } from 'lucide-react';
 import { RoomIcon } from '@/components/studio/room-icon';
 import { useToast } from '@/components/studio/toast';
 import { Badge, Button, Card, PageTitle, Spinner, labelForStrength } from '@/components/studio/ui';
@@ -12,6 +13,7 @@ import {
   readImageDimensions,
   uploadToStorageFromBrowser,
 } from '@/lib/studio/supabase-browser';
+import { extForMime, validateImageFile } from '@/lib/studio/upload-limits';
 import { DEFAULT_GENERATION_MODEL, STUDIO_MODELS, type StudioModelId } from '@/lib/studio/models';
 import { cn } from '@/lib/utils';
 import {
@@ -78,6 +80,8 @@ export default function NewVisualizationPage() {
   const [templates, setTemplates] = useState<CreatorTemplateRow[]>([]);
   const [templateName, setTemplateName] = useState('');
   const [showTemplateSave, setShowTemplateSave] = useState(false);
+  /** Ostatnio zastosowany szablon — przy nim pokazujemy przycisk usunięcia. */
+  const [activeTemplateId, setActiveTemplateId] = useState<string | null>(null);
 
   const [uploading, setUploading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -99,8 +103,15 @@ export default function NewVisualizationPage() {
           .then((t) => setTemplates(t.templates))
           .catch(() => {});
 
+        // Preselekcja packshota: /studio/new?packshot=<id> (np. ze strony Packshoty).
+        const urlParams = new URLSearchParams(window.location.search);
+        const presetPackshot = urlParams.get('packshot');
+        if (presetPackshot && p.packshots.some((x) => x.id === presetPackshot)) {
+          setSelectedPackshots([{ id: presetPackshot, role: 'main', note: '' }]);
+        }
+
         // Duplikacja ustawień: /studio/new?from=<id generacji>
-        const from = new URLSearchParams(window.location.search).get('from');
+        const from = urlParams.get('from');
         if (from) {
           const d = await apiGet<{
             generation: GenerationRow;
@@ -138,13 +149,9 @@ export default function NewVisualizationPage() {
 
   const handleUpload = useCallback(
     async (file: File) => {
-      if (file.size > 20 * 1024 * 1024) {
-        toast('error', 'Plik jest za duży — limit to 20 MB.');
-        return;
-      }
-      const allowed = ['image/png', 'image/jpeg', 'image/webp'];
-      if (!allowed.includes(file.type)) {
-        toast('error', 'Nieobsługiwany format. Dozwolone: PNG, JPG, WEBP.');
+      const invalid = validateImageFile(file);
+      if (invalid) {
+        toast('error', `${file.name}: ${invalid}.`);
         return;
       }
       setUploading(true);
@@ -152,8 +159,7 @@ export default function NewVisualizationPage() {
         // Upload prosto do Storage (RLS) — omija limit 4,5 MB body Vercela.
         const dims = await readImageDimensions(file);
         const userId = await getBrowserUserId();
-        const ext = file.type === 'image/jpeg' ? 'jpg' : file.type === 'image/webp' ? 'webp' : 'png';
-        const path = `${userId}/${crypto.randomUUID()}.${ext}`;
+        const path = `${userId}/${crypto.randomUUID()}.${extForMime(file.type)}`;
         await uploadToStorageFromBrowser('packshots', path, file, file.type);
 
         const res = await apiJson<{ packshot: PackshotItem }>('/api/studio/packshots', 'POST', {
@@ -291,7 +297,20 @@ export default function NewVisualizationPage() {
     }
     if (p.variants) setVariants(Math.min(MAX_VARIANTS, p.variants));
     if (p.imageSize === '4K' || p.imageSize === '2K') setImageSize(p.imageSize);
+    setActiveTemplateId(t.id);
     toast('info', `Zastosowano szablon „${t.name}".`);
+  }
+
+  async function handleDeleteTemplate(id: string) {
+    const t = templates.find((x) => x.id === id);
+    try {
+      await apiJson(`/api/studio/templates/${id}`, 'DELETE');
+      setTemplates((prev) => prev.filter((x) => x.id !== id));
+      setActiveTemplateId(null);
+      toast('success', `Szablon „${t?.name ?? ''}" usunięty.`);
+    } catch (err) {
+      toast('error', err instanceof Error ? err.message : 'Nie udało się usunąć szablonu.');
+    }
   }
 
   async function handleSaveTemplate() {
@@ -325,6 +344,17 @@ export default function NewVisualizationPage() {
 
   const suggestedSets = roomIds.length > 0 ? sets.filter((s) => s.room_id && roomIds.includes(s.room_id)) : [];
   const otherSets = sets.filter((s) => !suggestedSets.includes(s));
+  // Przy wielu zestawach chipsy tylko dla sugerowanych + wybranego, reszta w liście.
+  const MAX_SET_CHIPS = 8;
+  const orderedSets = [...suggestedSets, ...otherSets];
+  const visibleSets =
+    orderedSets.length <= MAX_SET_CHIPS
+      ? orderedSets
+      : [
+          ...orderedSets.slice(0, MAX_SET_CHIPS),
+          ...orderedSets.slice(MAX_SET_CHIPS).filter((s) => s.id === setId),
+        ];
+  const overflowSets = orderedSets.filter((s) => !visibleSets.includes(s));
   const estimatedSeconds = Math.max(
     0,
     ...models.map((m) => STUDIO_MODELS.find((sm) => sm.id === m)?.estimatedSeconds ?? 40)
@@ -346,21 +376,33 @@ export default function NewVisualizationPage() {
         actions={
           <div className="flex flex-wrap items-center gap-2">
             {templates.length > 0 && (
-              <select
-                value=""
-                onChange={(e) => {
-                  const t = templates.find((x) => x.id === e.target.value);
-                  if (t) applyTemplate(t);
-                }}
-                className="rounded-xl border border-studio-border bg-white px-3 py-2 text-sm outline-none focus:border-studio-accent"
-              >
-                <option value="">Szablon ustawień…</option>
-                {templates.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}
-                  </option>
-                ))}
-              </select>
+              <>
+                <select
+                  value=""
+                  onChange={(e) => {
+                    const t = templates.find((x) => x.id === e.target.value);
+                    if (t) applyTemplate(t);
+                  }}
+                  aria-label="Szablon ustawień"
+                  className="rounded-xl border border-studio-border bg-studio-surface px-3 py-2 text-sm outline-none focus:border-studio-accent"
+                >
+                  <option value="">Szablon ustawień…</option>
+                  {templates.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}
+                    </option>
+                  ))}
+                </select>
+                {activeTemplateId && (
+                  <button
+                    onClick={() => handleDeleteTemplate(activeTemplateId)}
+                    title={`Usuń szablon „${templates.find((t) => t.id === activeTemplateId)?.name ?? ''}"`}
+                    className="rounded-xl border border-studio-border bg-studio-surface p-2 text-studio-muted transition-colors hover:border-red-500/50 hover:text-red-400"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                )}
+              </>
             )}
             {showTemplateSave ? (
               <div className="flex items-center gap-1.5">
@@ -371,7 +413,7 @@ export default function NewVisualizationPage() {
                   placeholder="Nazwa szablonu…"
                   maxLength={120}
                   autoFocus
-                  className="w-44 rounded-xl border border-studio-border bg-white px-3 py-2 text-sm outline-none focus:border-studio-accent"
+                  className="w-44 rounded-xl border border-studio-border bg-studio-surface px-3 py-2 text-sm outline-none focus:border-studio-accent"
                 />
                 <Button variant="secondary" onClick={handleSaveTemplate} className="px-3 py-2">
                   Zapisz
@@ -444,7 +486,7 @@ export default function NewVisualizationPage() {
 
           {packshots.length > 0 && (
             <div className="mt-4 grid grid-cols-3 gap-3 sm:grid-cols-6">
-              {packshots.slice(0, 18).map((p) => {
+              {packshots.slice(0, 17).map((p) => {
                 const selection = selectedPackshots.find((s) => s.id === p.id);
                 return (
                   <div
@@ -478,7 +520,7 @@ export default function NewVisualizationPage() {
                           }}
                           title="Kliknij, żeby zmienić rolę"
                           className={cn(
-                            'absolute inset-x-1 bottom-1 rounded-md px-1 py-0.5 text-center text-[10px] font-semibold uppercase tracking-wide transition-colors',
+                            'absolute inset-x-1 bottom-1 rounded-md px-1 py-1 text-center text-[11px] font-semibold uppercase tracking-wide transition-colors',
                             ROLE_BTN_CLS[selection.role]
                           )}
                         >
@@ -489,6 +531,14 @@ export default function NewVisualizationPage() {
                   </div>
                 );
               })}
+              <Link
+                href="/studio/packshots"
+                className="flex aspect-square flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed border-studio-border text-center text-xs text-studio-muted transition-colors hover:border-studio-accent/50 hover:text-studio-ink"
+              >
+                Wszystkie
+                <br />
+                packshoty →
+              </Link>
             </div>
           )}
           {selectedPackshots.length > 0 && (
@@ -529,7 +579,7 @@ export default function NewVisualizationPage() {
                           ? 'np. rozłożona do spania, ustaw po prawej stronie sceny'
                           : 'Gdzie ustawić? Co na nim położyć? (np. przy oknie, na nim lniany pled)'
                       }
-                      className="w-full min-w-0 flex-1 rounded-lg border border-studio-border bg-white px-3 py-2 text-sm outline-none transition-colors placeholder:text-studio-muted/60 focus:border-studio-accent"
+                      className="w-full min-w-0 flex-1 rounded-lg border border-studio-border bg-studio-surface px-3 py-2 text-sm outline-none transition-colors placeholder:text-studio-muted/60 focus:border-studio-accent"
                     />
                   </div>
                 );
@@ -599,7 +649,7 @@ export default function NewVisualizationPage() {
             rows={2}
             maxLength={2000}
             placeholder="np. japandi, jasne drewno dębowe, len, poranne światło"
-            className="w-full rounded-xl border border-studio-border bg-white px-4 py-3 text-sm outline-none transition-colors placeholder:text-studio-muted/60 focus:border-studio-accent"
+            className="w-full rounded-xl border border-studio-border bg-studio-surface px-4 py-3 text-sm outline-none transition-colors placeholder:text-studio-muted/60 focus:border-studio-accent"
           />
 
           <label className="mb-1.5 mt-4 block text-xs font-medium text-studio-muted">
@@ -611,7 +661,7 @@ export default function NewVisualizationPage() {
             </p>
           ) : (
             <div className="flex flex-wrap gap-2">
-              {[...suggestedSets, ...otherSets].map((s) => (
+              {visibleSets.map((s) => (
                 <button
                   key={s.id}
                   onClick={() => setSetId(s.id === setId ? null : s.id)}
@@ -637,6 +687,23 @@ export default function NewVisualizationPage() {
                   {suggestedSets.includes(s) && <Badge tone="accent">pasuje do pokoju</Badge>}
                 </button>
               ))}
+              {overflowSets.length > 0 && (
+                <select
+                  value=""
+                  onChange={(e) => {
+                    if (e.target.value) setSetId(e.target.value);
+                  }}
+                  aria-label="Pozostałe zestawy inspiracji"
+                  className="rounded-full border-2 border-studio-border bg-studio-surface px-3 py-1 text-sm outline-none transition-colors focus:border-studio-accent"
+                >
+                  <option value="">Więcej zestawów ({overflowSets.length})…</option>
+                  {overflowSets.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name} ({s.image_count})
+                    </option>
+                  ))}
+                </select>
+              )}
             </div>
           )}
 
@@ -655,6 +722,7 @@ export default function NewVisualizationPage() {
                 step={1}
                 value={strength}
                 onChange={(e) => setStrength(Number(e.target.value))}
+                aria-label="Siła inspiracji (1–5)"
                 className="mt-2 w-full accent-studio-accent"
               />
               <div className="mt-1 flex justify-between text-[10px] text-studio-muted">
@@ -676,7 +744,7 @@ export default function NewVisualizationPage() {
             rows={2}
             maxLength={2000}
             placeholder="np. miękkie poranne światło; nie używaj roślin w wizce"
-            className="w-full rounded-xl border border-studio-border bg-white px-4 py-3 text-sm outline-none transition-colors placeholder:text-studio-muted/60 focus:border-studio-accent"
+            className="w-full rounded-xl border border-studio-border bg-studio-surface px-4 py-3 text-sm outline-none transition-colors placeholder:text-studio-muted/60 focus:border-studio-accent"
           />
           <p className="mt-1.5 text-xs text-studio-muted">
             Uwagi dotyczące całej sceny (światło, klimat, czego nie używać). Umiejscowienie
@@ -796,7 +864,8 @@ export default function NewVisualizationPage() {
                   const id = e.target.value as StudioModelId;
                   if (id && !models.includes(id)) setModels((prev) => [...prev, id]);
                 }}
-                className="rounded-xl border border-studio-border bg-white px-3 py-2 text-sm outline-none focus:border-studio-accent"
+                aria-label="Dodaj model do serii"
+                className="rounded-xl border border-studio-border bg-studio-surface px-3 py-2 text-sm outline-none focus:border-studio-accent"
               >
                 <option value="">+ Dodaj model z listy…</option>
                 {STUDIO_MODELS.filter((m) => !models.includes(m.id)).map((m) => (
@@ -843,17 +912,23 @@ export default function NewVisualizationPage() {
           </div>
         </Card>
 
-        <div className="flex flex-col items-stretch gap-3 pb-8 sm:flex-row sm:items-center sm:justify-end sm:gap-4">
-          <p className={cn('text-sm', totalGenerations > MAX_BATCH_TOTAL ? 'font-medium text-red-600' : 'text-studio-muted')}>
-            Seria: {roomIds.length || '–'} {roomIds.length === 1 ? 'pokój' : 'pokoje'} ×{' '}
-            {models.length} {models.length === 1 ? 'model' : 'modele'} × {variants}{' '}
-            {variants === 1 ? 'wariant' : 'warianty'} = <strong>{totalGenerations || '–'}</strong>{' '}
-            generacji (maks. {MAX_BATCH_TOTAL}) · ~{estimatedSeconds} s/szt.
-          </p>
-          <Button onClick={handleSubmit} disabled={submitting} className="px-8 py-3 text-base">
-            {submitting ? <Spinner className="h-5 w-5 text-white" /> : <Sparkles className="h-5 w-5" />}
-            {totalGenerations > 1 ? `Generuj serię (${totalGenerations})` : 'Generuj wizualizację'}
-          </Button>
+        {/* Pasek podsumowania przyklejony do dołu — CTA zawsze pod ręką. */}
+        <div
+          className="sticky bottom-0 z-20 -mx-4 border-t border-studio-border bg-studio-bg/85 px-4 py-3 backdrop-blur md:-mx-8 md:px-8"
+          style={{ paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom, 0px))' }}
+        >
+          <div className="flex max-w-4xl flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+            <p className={cn('text-sm', totalGenerations > MAX_BATCH_TOTAL ? 'font-medium text-red-400' : 'text-studio-muted')}>
+              Seria: {roomIds.length || '–'} {roomIds.length === 1 ? 'pokój' : 'pokoje'} ×{' '}
+              {models.length} {models.length === 1 ? 'model' : 'modele'} × {variants}{' '}
+              {variants === 1 ? 'wariant' : 'warianty'} = <strong>{totalGenerations || '–'}</strong>{' '}
+              generacji (maks. {MAX_BATCH_TOTAL}) · ~{estimatedSeconds} s/szt.
+            </p>
+            <Button onClick={handleSubmit} disabled={submitting} className="px-8 py-3 text-base">
+              {submitting ? <Spinner className="h-5 w-5 text-white" /> : <Sparkles className="h-5 w-5" />}
+              {totalGenerations > 1 ? `Generuj serię (${totalGenerations})` : 'Generuj wizualizację'}
+            </Button>
+          </div>
         </div>
       </div>
     </div>

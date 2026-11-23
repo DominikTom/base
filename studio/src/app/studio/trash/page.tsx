@@ -165,7 +165,7 @@ function TrashCard({
       <div className="aspect-[4/3] bg-studio-bg">
         {imageUrl ? (
           /* eslint-disable-next-line @next/next/no-img-element */
-          <img src={imageUrl} alt="" className="h-full w-full object-cover opacity-60" loading="lazy" />
+          <img src={`${imageUrl}&w=640`} alt="" className="h-full w-full object-cover opacity-60" loading="lazy" />
         ) : (
           <div className="flex h-full items-center justify-center text-studio-muted">
             <Trash2 className="h-6 w-6" />

@@ -8,6 +8,7 @@ import { useToast } from '@/components/studio/toast';
 import { Badge, Button, Card, EmptyState, PageTitle, Spinner } from '@/components/studio/ui';
 import { apiGet, apiJson } from '@/lib/studio/client';
 import { readImageDimensions, uploadToStorageFromBrowser } from '@/lib/studio/supabase-browser';
+import { extForMime, validateImageFile } from '@/lib/studio/upload-limits';
 import type { InspirationSetRow, RoomRow } from '@/lib/studio/types';
 
 interface SetItem extends InspirationSetRow {
@@ -54,17 +55,13 @@ export default function InspirationsPage() {
     // Kopia synchronicznie — FileList jest żywy i pustoszeje po wyczyszczeniu
     // inputa, zanim aktualizator stanu zdąży się wykonać.
     const incoming = [...files];
-    const allowed = ['image/png', 'image/jpeg', 'image/webp'];
     setPendingFiles((prev) => {
       const next = [...prev];
       for (const f of incoming) {
         if (next.length >= 30) break;
-        if (!allowed.includes(f.type)) {
-          toast('error', `${f.name}: nieobsługiwany format (PNG, JPG, WEBP).`);
-          continue;
-        }
-        if (f.size > 20 * 1024 * 1024) {
-          toast('error', `${f.name}: plik przekracza 20 MB.`);
+        const invalid = validateImageFile(f);
+        if (invalid) {
+          toast('error', `${f.name}: ${invalid}`);
           continue;
         }
         next.push({ file: f, url: URL.createObjectURL(f) });
@@ -89,7 +86,7 @@ export default function InspirationsPage() {
         const registered: { path: string; width: number | null; height: number | null }[] = [];
         for (const { file } of pendingFiles) {
           const dims = await readImageDimensions(file);
-          const ext = file.type === 'image/jpeg' ? 'jpg' : file.type === 'image/webp' ? 'webp' : 'png';
+          const ext = extForMime(file.type);
           const path = `${setId}/${crypto.randomUUID()}.${ext}`;
           await uploadToStorageFromBrowser('inspirations', path, file, file.type);
           registered.push({ path, width: dims.width, height: dims.height });
@@ -137,12 +134,13 @@ export default function InspirationsPage() {
               onChange={(e) => setName(e.target.value)}
               placeholder="Nazwa zestawu, np. Japandi jasne"
               maxLength={200}
-              className="rounded-xl border border-studio-border bg-white px-3 py-2.5 text-sm outline-none focus:border-studio-accent"
+              className="rounded-xl border border-studio-border bg-studio-surface px-3 py-2.5 text-sm outline-none focus:border-studio-accent"
             />
             <select
               value={roomId}
               onChange={(e) => setRoomId(e.target.value)}
-              className="rounded-xl border border-studio-border bg-white px-3 py-2.5 text-sm outline-none focus:border-studio-accent"
+              aria-label="Pokój zestawu"
+              className="rounded-xl border border-studio-border bg-studio-surface px-3 py-2.5 text-sm outline-none focus:border-studio-accent"
             >
               <option value="">Bez przypisania do pokoju</option>
               {rooms.map((r) => (
@@ -157,7 +155,7 @@ export default function InspirationsPage() {
             onChange={(e) => setDescription(e.target.value)}
             placeholder="Opis (opcjonalnie)"
             maxLength={1000}
-            className="w-full rounded-xl border border-studio-border bg-white px-3 py-2.5 text-sm outline-none focus:border-studio-accent"
+            className="w-full rounded-xl border border-studio-border bg-studio-surface px-3 py-2.5 text-sm outline-none focus:border-studio-accent"
           />
 
           {/* Zdjęcia od razu przy tworzeniu zestawu */}
@@ -247,7 +245,7 @@ export default function InspirationsPage() {
                   {s.cover_url ? (
                     /* eslint-disable-next-line @next/next/no-img-element */
                     <img
-                      src={s.cover_url}
+                      src={`${s.cover_url}&w=640`}
                       alt=""
                       className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
                       loading="lazy"
