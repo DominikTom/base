@@ -83,7 +83,47 @@ export interface BuildPromptInput {
   packshotNotes?: (string | null | undefined)[];
   /** Format kadru (np. '3:4') — wymuszany też na poziomie API modelu. */
   aspectRatio?: string | null;
+  /** Ujęcie kamery (wide/medium/close); null/undefined = auto. */
+  cameraShot?: string | null;
+  /** Kąt kamery (front/three-quarter-…/side/low/elevated); null = auto. */
+  cameraAngle?: string | null;
+  /** Preset oświetlenia sceny; null = auto. */
+  lighting?: string | null;
 }
+
+const CAMERA_SHOT_PHRASES: Record<string, string> = {
+  wide: 'Wide establishing shot: show the whole room with the product(s) fully visible in their context.',
+  medium:
+    'Medium shot: the product(s) dominate the frame, with enough of the room visible around them for context.',
+  close:
+    'Close-up shot: frame tightly on the main product so it fills most of the frame, emphasizing fabric texture and details.',
+};
+
+const CAMERA_ANGLE_PHRASES: Record<string, string> = {
+  front:
+    'Camera straight-on, facing the main product frontally at eye level (about 120 cm high), symmetric composition.',
+  'three-quarter-left':
+    "Three-quarter view from the product's left side at eye level — the classic furniture catalog angle showing front and side.",
+  'three-quarter-right':
+    "Three-quarter view from the product's right side at eye level — the classic furniture catalog angle showing front and side.",
+  side: 'Side profile view: camera perpendicular to the main product, showing its silhouette.',
+  low: 'Slightly low hero angle (camera about 60 cm high, tilted gently up) making the product feel grand and monumental.',
+  elevated:
+    'Slightly elevated angle (camera about 180–200 cm high, tilted gently down) overlooking the arrangement.',
+};
+
+const LIGHTING_PHRASES: Record<string, string> = {
+  morning:
+    'Soft morning daylight streaming from a window: gentle warm glow, long soft shadows, fresh calm atmosphere.',
+  'daylight-soft':
+    'Bright diffused midday daylight: airy, neutral white balance, soft shadows, clean and natural.',
+  golden:
+    'Golden hour sunlight: warm low-angle beams, glowing highlights, cozy late-afternoon atmosphere.',
+  evening:
+    'Evening scene lit by warm interior lamps: intimate mood, pools of soft warm light, gently darkened corners.',
+  studio:
+    'Clean, neutral, studio-like lighting: even illumination, controlled soft shadows, color-accurate rendition of materials.',
+};
 
 /** Ile obrazów referencyjnych faktycznie trafi do modelu przy danych parametrach. */
 export function effectiveReferenceCount(
@@ -177,6 +217,33 @@ export function buildGenerationPrompt(input: BuildPromptInput): string {
       `FRAME: The output image MUST have a strict ${input.aspectRatio} aspect ratio — a ${orientation} frame. Compose the scene deliberately for this format: fill the frame edge to edge, no letterboxing, borders or padding.`
     );
   }
+
+  // Ujęcie i kąt kamery (gdy wybrane — inaczej model komponuje sam).
+  const cameraLines: string[] = [];
+  if (input.cameraShot && CAMERA_SHOT_PHRASES[input.cameraShot]) {
+    cameraLines.push(CAMERA_SHOT_PHRASES[input.cameraShot]);
+  }
+  if (input.cameraAngle && CAMERA_ANGLE_PHRASES[input.cameraAngle]) {
+    cameraLines.push(CAMERA_ANGLE_PHRASES[input.cameraAngle]);
+  }
+  if (cameraLines.length > 0) {
+    cameraLines.push(
+      'Realistic interior-photography perspective (roughly a 35–50 mm full-frame lens look), straight verticals, no fisheye or wide-angle distortion. The camera framing changes ONLY the viewpoint — never the product itself.'
+    );
+    parts.push(`CAMERA: ${cameraLines.join(' ')}`);
+  }
+
+  // Oświetlenie: preset (opcjonalny) + ZAWSZE integracja światła na produkcie.
+  const lightingPreset =
+    input.lighting && LIGHTING_PHRASES[input.lighting] ? LIGHTING_PHRASES[input.lighting] : null;
+  parts.push(
+    [
+      lightingPreset ? `LIGHTING: ${lightingPreset}` : 'LIGHTING:',
+      'LIGHTING INTEGRATION ON THE PRODUCTS: re-light every packshot product so it sits naturally in this scene — light direction, color temperature, soft shadows, contact shadows where it meets the floor/wall, and subtle reflections must all match the room lighting. This relighting must NOT change the product itself: geometry, proportions, fabric color, pattern, stitching and details stay exactly as in the packshot; only the illumination falling on the product adapts. The product must never look like a pasted-in cutout with flat studio lighting.',
+    ]
+      .join(' ')
+      .trim()
+  );
 
   if (input.roomBasePrompt) {
     const roomLabel = input.roomName ? ` (${input.roomName})` : '';

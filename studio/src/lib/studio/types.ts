@@ -66,6 +66,44 @@ export const ASPECT_RATIOS: { id: AspectRatio; labelPl: string }[] = [
 
 export const DEFAULT_ASPECT_RATIO: AspectRatio = '4:3';
 
+/** Ujęcie, kąt kamery i oświetlenie — 'auto' = model decyduje (w DB null). */
+export type CameraShot = 'auto' | 'wide' | 'medium' | 'close';
+export type CameraAngle =
+  | 'auto'
+  | 'front'
+  | 'three-quarter-left'
+  | 'three-quarter-right'
+  | 'side'
+  | 'low'
+  | 'elevated';
+export type LightingPreset = 'auto' | 'morning' | 'daylight-soft' | 'golden' | 'evening' | 'studio';
+
+export const CAMERA_SHOTS: { id: CameraShot; labelPl: string }[] = [
+  { id: 'auto', labelPl: 'Auto' },
+  { id: 'wide', labelPl: 'Szeroki plan' },
+  { id: 'medium', labelPl: 'Plan średni' },
+  { id: 'close', labelPl: 'Zbliżenie' },
+];
+
+export const CAMERA_ANGLES: { id: CameraAngle; labelPl: string }[] = [
+  { id: 'auto', labelPl: 'Auto' },
+  { id: 'front', labelPl: 'Na wprost' },
+  { id: 'three-quarter-left', labelPl: '¾ z lewej' },
+  { id: 'three-quarter-right', labelPl: '¾ z prawej' },
+  { id: 'side', labelPl: 'Profil' },
+  { id: 'low', labelPl: 'Niski (hero)' },
+  { id: 'elevated', labelPl: 'Lekko z góry' },
+];
+
+export const LIGHTING_PRESETS: { id: LightingPreset; labelPl: string }[] = [
+  { id: 'auto', labelPl: 'Auto' },
+  { id: 'morning', labelPl: 'Poranne' },
+  { id: 'daylight-soft', labelPl: 'Dzienne miękkie' },
+  { id: 'golden', labelPl: 'Złota godzina' },
+  { id: 'evening', labelPl: 'Wieczorne lampy' },
+  { id: 'studio', labelPl: 'Studyjne neutralne' },
+];
+
 export type GenerationStatus = 'pending' | 'done' | 'error';
 
 export interface GenerationRow {
@@ -85,6 +123,9 @@ export interface GenerationRow {
   edit_reference_paths: string[] | null;
   storage_path: string | null;
   aspect_ratio: string | null;
+  camera_shot: string | null;
+  camera_angle: string | null;
+  lighting: string | null;
   width: number | null;
   height: number | null;
   status: GenerationStatus;

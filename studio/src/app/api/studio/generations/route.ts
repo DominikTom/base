@@ -28,6 +28,13 @@ const createSchema = z.object({
   inspirationStrength: z.number().int().min(1).max(5).nullish(),
   manualNotes: z.string().max(2000).optional(),
   aspectRatio: z.enum(['1:1', '3:4', '9:16', '4:3', '16:9']).default('4:3'),
+  cameraShot: z.enum(['auto', 'wide', 'medium', 'close']).default('auto'),
+  cameraAngle: z
+    .enum(['auto', 'front', 'three-quarter-left', 'three-quarter-right', 'side', 'low', 'elevated'])
+    .default('auto'),
+  lighting: z
+    .enum(['auto', 'morning', 'daylight-soft', 'golden', 'evening', 'studio'])
+    .default('auto'),
   model: z.string().refine(isStudioModelId, 'Nieznany model generacji.'),
   /** Wysyłka bez czekania na wynik — klient sam polluje status. */
   async: z.boolean().optional(),
@@ -102,6 +109,9 @@ export async function POST(request: NextRequest) {
     additionCount: additions.length,
     packshotNotes: [...mains, ...additions].map((p) => p.note ?? null),
     aspectRatio: input.aspectRatio,
+    cameraShot: input.cameraShot === 'auto' ? null : input.cameraShot,
+    cameraAngle: input.cameraAngle === 'auto' ? null : input.cameraAngle,
+    lighting: input.lighting === 'auto' ? null : input.lighting,
   });
 
   const { data: created, error: insErr } = await auth.supabase
@@ -115,6 +125,9 @@ export async function POST(request: NextRequest) {
       inspiration_strength: hasInspirationImages ? strength : null,
       manual_notes: input.manualNotes ?? null,
       aspect_ratio: input.aspectRatio,
+      camera_shot: input.cameraShot === 'auto' ? null : input.cameraShot,
+      camera_angle: input.cameraAngle === 'auto' ? null : input.cameraAngle,
+      lighting: input.lighting === 'auto' ? null : input.lighting,
       model: input.model,
       full_prompt_sent: fullPrompt,
       status: 'pending',

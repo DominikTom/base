@@ -20,6 +20,7 @@ import { useToast } from '@/components/studio/toast';
 import { Badge, Button, Card, Spinner, StatusBadge, labelForStrength } from '@/components/studio/ui';
 import { apiGet, apiJson, formatDate, formatDuration } from '@/lib/studio/client';
 import { STUDIO_MODELS } from '@/lib/studio/models';
+import { CAMERA_ANGLES, CAMERA_SHOTS, LIGHTING_PRESETS } from '@/lib/studio/types';
 import { cn } from '@/lib/utils';
 import type { GenerationRow } from '@/lib/studio/types';
 
@@ -166,6 +167,9 @@ export function GenerationDetailClient({ id }: { id: string }) {
         inspirationStrength: g.inspiration_strength ?? undefined,
         manualNotes: g.manual_notes ?? undefined,
         aspectRatio: g.aspect_ratio ?? undefined,
+        cameraShot: g.camera_shot ?? undefined,
+        cameraAngle: g.camera_angle ?? undefined,
+        lighting: g.lighting ?? undefined,
         model: g.model,
         async: true,
       });
@@ -347,6 +351,24 @@ export function GenerationDetailClient({ id }: { id: string }) {
             <InfoRow label="Pokój" value={g.room_name ?? '—'} />
             <InfoRow label="Model" value={modelMeta?.label ?? g.model} />
             {g.aspect_ratio && <InfoRow label="Format" value={g.aspect_ratio} />}
+            {g.camera_shot && (
+              <InfoRow
+                label="Ujęcie"
+                value={CAMERA_SHOTS.find((s) => s.id === g.camera_shot)?.labelPl ?? g.camera_shot}
+              />
+            )}
+            {g.camera_angle && (
+              <InfoRow
+                label="Kąt kamery"
+                value={CAMERA_ANGLES.find((a) => a.id === g.camera_angle)?.labelPl ?? g.camera_angle}
+              />
+            )}
+            {g.lighting && (
+              <InfoRow
+                label="Oświetlenie"
+                value={LIGHTING_PRESETS.find((l) => l.id === g.lighting)?.labelPl ?? g.lighting}
+              />
+            )}
             {g.style_text && <InfoRow label="Styl" value={g.style_text} />}
             {g.set_name && (
               <InfoRow

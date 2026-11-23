@@ -16,11 +16,17 @@ import { DEFAULT_GENERATION_MODEL, STUDIO_MODELS, type StudioModelId } from '@/l
 import { cn } from '@/lib/utils';
 import {
   ASPECT_RATIOS,
+  CAMERA_ANGLES,
+  CAMERA_SHOTS,
   DEFAULT_ASPECT_RATIO,
+  LIGHTING_PRESETS,
   MAX_PACKSHOTS_PER_GENERATION,
   type AspectRatio,
+  type CameraAngle,
+  type CameraShot,
   type GenerationRow,
   type InspirationSetRow,
+  type LightingPreset,
   type PackshotRole,
   type PackshotRow,
   type RoomRow,
@@ -54,6 +60,9 @@ export default function NewVisualizationPage() {
   const [strength, setStrength] = useState(3);
   const [notes, setNotes] = useState('');
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>(DEFAULT_ASPECT_RATIO);
+  const [cameraShot, setCameraShot] = useState<CameraShot>('auto');
+  const [cameraAngle, setCameraAngle] = useState<CameraAngle>('auto');
+  const [lighting, setLighting] = useState<LightingPreset>('auto');
   const [model, setModel] = useState<StudioModelId>(DEFAULT_GENERATION_MODEL);
 
   const [uploading, setUploading] = useState(false);
@@ -96,6 +105,9 @@ export default function NewVisualizationPage() {
           if (g.aspect_ratio && ASPECT_RATIOS.some((a) => a.id === g.aspect_ratio)) {
             setAspectRatio(g.aspect_ratio as AspectRatio);
           }
+          if (g.camera_shot) setCameraShot(g.camera_shot as CameraShot);
+          if (g.camera_angle) setCameraAngle(g.camera_angle as CameraAngle);
+          if (g.lighting) setLighting(g.lighting as LightingPreset);
           if (STUDIO_MODELS.some((m) => m.id === g.model)) setModel(g.model as StudioModelId);
         }
       } catch (err) {
@@ -193,6 +205,9 @@ export default function NewVisualizationPage() {
         inspirationStrength: setId ? strength : undefined,
         manualNotes: notes || undefined,
         aspectRatio,
+        cameraShot,
+        cameraAngle,
+        lighting,
         model,
         async: true,
       });
@@ -545,10 +560,42 @@ export default function NewVisualizationPage() {
           </p>
         </Card>
 
-        {/* Krok 6: Model */}
+        {/* Krok 6: Ujęcie i światło */}
         <Card className="p-6">
           <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-studio-muted">
-            6. Model generacji
+            6. Ujęcie i światło
+          </h2>
+          <div className="space-y-4">
+            <ChipRow
+              label="Ujęcie"
+              options={CAMERA_SHOTS}
+              value={cameraShot}
+              onChange={(v) => setCameraShot(v as CameraShot)}
+            />
+            <ChipRow
+              label="Kąt kamery"
+              options={CAMERA_ANGLES}
+              value={cameraAngle}
+              onChange={(v) => setCameraAngle(v as CameraAngle)}
+            />
+            <ChipRow
+              label="Oświetlenie sceny"
+              options={LIGHTING_PRESETS}
+              value={lighting}
+              onChange={(v) => setLighting(v as LightingPreset)}
+            />
+          </div>
+          <p className="mt-3 text-xs text-studio-muted">
+            Niezależnie od wyboru, światło na produkcie jest zawsze dopasowywane do aranżacji
+            (kierunek, temperatura barwowa, cienie kontaktowe) — bryła, tkanina i kolor produktu
+            pozostają nietknięte. „Auto" = model komponuje sam.
+          </p>
+        </Card>
+
+        {/* Krok 7: Model */}
+        <Card className="p-6">
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-studio-muted">
+            7. Model generacji
           </h2>
           <div className="grid gap-3 sm:grid-cols-3">
             {STUDIO_MODELS.map((m) => (
@@ -587,6 +634,40 @@ export default function NewVisualizationPage() {
             Generuj wizualizację
           </Button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function ChipRow({
+  label,
+  options,
+  value,
+  onChange,
+}: {
+  label: string;
+  options: { id: string; labelPl: string }[];
+  value: string;
+  onChange: (id: string) => void;
+}) {
+  return (
+    <div>
+      <p className="mb-1.5 text-xs font-medium text-studio-muted">{label}</p>
+      <div className="flex flex-wrap gap-1.5">
+        {options.map((o) => (
+          <button
+            key={o.id}
+            onClick={() => onChange(o.id)}
+            className={cn(
+              'rounded-full border-2 px-3 py-1.5 text-sm transition-all',
+              value === o.id
+                ? 'border-studio-accent bg-studio-accent-soft font-medium'
+                : 'border-studio-border hover:border-studio-accent/50'
+            )}
+          >
+            {o.labelPl}
+          </button>
+        ))}
       </div>
     </div>
   );
