@@ -121,7 +121,7 @@ export async function GET(request: NextRequest, ctx: Ctx) {
 }
 
 const patchSchema = z.object({
-  action: z.enum(['trash', 'restore', 'favorite', 'unfavorite']),
+  action: z.enum(['trash', 'restore', 'favorite', 'unfavorite', 'share', 'unshare']),
 });
 
 export async function PATCH(request: NextRequest, ctx: Ctx) {
@@ -133,11 +133,35 @@ export async function PATCH(request: NextRequest, ctx: Ctx) {
   if (!parsed.success) {
     return NextResponse.json({ error: 'Nieprawidłowe dane żądania.' }, { status: 400 });
   }
+  const action = parsed.data.action;
+
+  if (action === 'share' || action === 'unshare') {
+    const { error } = await auth.supabase
+      .from('generations')
+      .update({ shared: action === 'share' })
+      .eq('id', id);
+    if (error) {
+      return NextResponse.json({ error: `Operacja nie powiodła się: ${error.message}` }, { status: 500 });
+    }
+    if (action === 'share') {
+      // Udostępnij też packshoty źródłowe — bez nich druga osoba nie mogłaby
+      // zobaczyć kontekstu ani zrobić "Generuj ponownie".
+      const { data: links } = await auth.supabase
+        .from('generation_packshots')
+        .select('packshot_id')
+        .eq('generation_id', id);
+      const packshotIds = (links ?? []).map((l) => l.packshot_id);
+      if (packshotIds.length > 0) {
+        await auth.supabase.from('packshots').update({ shared: true }).in('id', packshotIds);
+      }
+    }
+    return NextResponse.json({ ok: true });
+  }
 
   const update =
-    parsed.data.action === 'favorite' || parsed.data.action === 'unfavorite'
-      ? { is_favorite: parsed.data.action === 'favorite' }
-      : { deleted_at: parsed.data.action === 'trash' ? new Date().toISOString() : null };
+    action === 'favorite' || action === 'unfavorite'
+      ? { is_favorite: action === 'favorite' }
+      : { deleted_at: action === 'trash' ? new Date().toISOString() : null };
 
   const { error } = await auth.supabase.from('generations').update(update).eq('id', id);
   if (error) {

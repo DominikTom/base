@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, ImagePlus, Star, Trash2, X } from 'lucide-react';
+import { ArrowLeft, ImagePlus, Share2, Star, Trash2, X } from 'lucide-react';
 import { useToast } from '@/components/studio/toast';
 import { Badge, Button, Card, EmptyState, PageTitle, Spinner } from '@/components/studio/ui';
 import { apiGet, apiJson } from '@/lib/studio/client';
@@ -166,6 +166,30 @@ export function InspirationSetClient({ id }: { id: string }) {
         subtitle={set.description ?? undefined}
         actions={
           <div className="flex items-center gap-2">
+            <button
+              onClick={async () => {
+                try {
+                  await apiJson(`/api/studio/inspirations/${id}`, 'PATCH', { shared: !set.shared });
+                  setSet((prev) => (prev ? { ...prev, shared: !prev.shared } : prev));
+                  toast(
+                    'success',
+                    set.shared ? 'Zestaw jest znów prywatny.' : 'Zestaw udostępniony zespołowi.'
+                  );
+                } catch {
+                  toast('error', 'Nie udało się zmienić udostępniania.');
+                }
+              }}
+              title={set.shared ? 'Wspólny — kliknij, aby cofnąć udostępnianie' : 'Udostępnij zespołowi'}
+              className={cn(
+                'inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
+                set.shared
+                  ? 'border-studio-accent bg-studio-accent-soft text-studio-accent-dark'
+                  : 'border-studio-border text-studio-muted hover:text-studio-ink'
+              )}
+            >
+              <Share2 className="h-3.5 w-3.5" />
+              {set.shared ? 'Wspólny' : 'Udostępnij'}
+            </button>
             <select
               value={set.room_id ?? ''}
               onChange={(e) => handleRoomChange(e.target.value)}

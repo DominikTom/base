@@ -257,7 +257,10 @@ export default function LibraryPage() {
                     <span className="truncate text-sm font-medium">
                       {g.room_name ?? (g.edit_instruction ? 'Edycja pędzlem' : 'Wizualizacja')}
                     </span>
-                    <Badge>{STUDIO_MODELS.find((m) => m.id === g.model)?.label ?? g.model}</Badge>
+                    <span className="flex shrink-0 items-center gap-1">
+                      {g.shared && <Badge tone="accent">wspólna</Badge>}
+                      <Badge>{STUDIO_MODELS.find((m) => m.id === g.model)?.label ?? g.model}</Badge>
+                    </span>
                   </div>
                   <p className="truncate text-xs text-studio-muted">
                     {g.style_text ?? g.edit_instruction ?? g.set_name ?? '—'}

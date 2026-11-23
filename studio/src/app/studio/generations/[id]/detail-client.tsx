@@ -11,6 +11,7 @@ import {
   Layers,
   Lightbulb,
   RefreshCw,
+  Share2,
   Sparkles,
   Star,
   Trash2,
@@ -249,6 +250,38 @@ export function GenerationDetailClient({ id }: { id: string }) {
               zobacz całą serię
             </Link>
           )}
+          <button
+            onClick={async () => {
+              try {
+                await apiJson(`/api/studio/generations/${g.id}`, 'PATCH', {
+                  action: g.shared ? 'unshare' : 'share',
+                });
+                setData((prev) =>
+                  prev
+                    ? { ...prev, generation: { ...prev.generation, shared: !g.shared } }
+                    : prev
+                );
+                toast(
+                  'success',
+                  g.shared
+                    ? 'Wizualizacja jest znów prywatna.'
+                    : 'Udostępniono zespołowi (wraz z packshotami źródłowymi).'
+                );
+              } catch {
+                toast('error', 'Nie udało się zmienić udostępniania.');
+              }
+            }}
+            title={g.shared ? 'Wspólna — kliknij, aby cofnąć udostępnianie' : 'Udostępnij zespołowi'}
+            className={cn(
+              'inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors',
+              g.shared
+                ? 'border-studio-accent bg-studio-accent-soft text-studio-accent-dark'
+                : 'border-studio-border text-studio-muted hover:text-studio-ink'
+            )}
+          >
+            <Share2 className="h-3.5 w-3.5" />
+            {g.shared ? 'Wspólna' : 'Udostępnij'}
+          </button>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {g.status === 'done' && g.image_url && (

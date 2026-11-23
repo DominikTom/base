@@ -43,6 +43,7 @@ const patchSchema = z.object({
   description: z.string().max(1000).nullish(),
   roomId: z.string().uuid().nullish(),
   coverImageId: z.string().uuid().nullish(),
+  shared: z.boolean().optional(),
   action: z.enum(['trash', 'restore']).optional(),
 });
 
@@ -62,6 +63,7 @@ export async function PATCH(request: NextRequest, ctx: Ctx) {
   if (input.description !== undefined) update.description = input.description;
   if (input.roomId !== undefined) update.room_id = input.roomId;
   if (input.coverImageId !== undefined) update.cover_image_id = input.coverImageId;
+  if (input.shared !== undefined) update.shared = input.shared;
   if (input.action) update.deleted_at = input.action === 'trash' ? new Date().toISOString() : null;
 
   if (Object.keys(update).length === 0) {
