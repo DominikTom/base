@@ -34,8 +34,18 @@ export default function RootLayout({
     <html
       lang="pl"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      suppressHydrationWarning
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        {/* Motyw przed pierwszym malowaniem — bez błysku ciemnego przy jasnym wyborze. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              "try{if(localStorage.getItem('studio-theme')==='light'){document.documentElement.setAttribute('data-theme','light');var m=document.querySelector('meta[name=\"theme-color\"]');if(m)m.setAttribute('content','#f4f4f5');}}catch(e){}",
+          }}
+        />
+        {children}
+      </body>
     </html>
   );
 }

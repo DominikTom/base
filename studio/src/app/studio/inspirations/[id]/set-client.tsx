@@ -276,7 +276,7 @@ export function InspirationSetClient({ id }: { id: string }) {
                 )}
                 <button
                   onClick={() => handleDeleteImage(img.id)}
-                  className="rounded-lg bg-studio-surface/90 p-1.5 text-red-400 transition-colors hover:bg-studio-border"
+                  className="rounded-lg bg-studio-surface/90 p-1.5 text-red-400 light:text-red-600 transition-colors hover:bg-studio-border"
                   title="Usuń obraz"
                 >
                   <X className="h-4 w-4" />

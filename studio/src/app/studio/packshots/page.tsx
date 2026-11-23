@@ -239,7 +239,7 @@ export default function PackshotsPage() {
                     />
                     <button
                       onClick={() => handleRename(p.id)}
-                      className="shrink-0 rounded-md p-1 text-emerald-400 hover:bg-studio-bg"
+                      className="shrink-0 rounded-md p-1 text-emerald-400 light:text-emerald-600 hover:bg-studio-bg"
                       aria-label="Zapisz nazwę"
                     >
                       <Check className="h-4 w-4" />

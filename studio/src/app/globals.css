@@ -1,8 +1,52 @@
 @import "tailwindcss";
 
+/* Wariant `light:` — aktywny, gdy <html> ma data-theme="light" (przełącznik w nawigacji). */
+@custom-variant light (&:where([data-theme='light'], [data-theme='light'] *));
+
+/*
+ * MyBed Visual Studio — design system spójny z dash/OS.
+ * Motyw domyślny: ciemny zinc + niebieski akcent; jasny włącza data-theme="light".
+ * Wartości siedzą w zmiennych na :root, a @theme inline tylko je mapuje na
+ * klasy Tailwinda — dzięki temu zmiana motywu to podmiana zmiennych w runtime.
+ */
 :root {
-  --background: #09090b;
-  --foreground: #fafafa;
+  color-scheme: dark;
+
+  --studio-bg: #09090b;
+  --studio-surface: #18181b;
+  --studio-border: #27272a;
+  --studio-ink: #fafafa;
+  --studio-muted: #a1a1aa;
+  --studio-accent: #2563eb;
+  --studio-accent-dark: #3b82f6;
+  --studio-accent-soft: rgba(37, 99, 235, 0.16);
+
+  --studio-card-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  --studio-scrollbar-track: #18181b;
+  --studio-scrollbar-thumb: #3f3f46;
+  --studio-scrollbar-thumb-hover: #52525b;
+
+  --background: var(--studio-bg);
+  --foreground: var(--studio-ink);
+}
+
+:root[data-theme='light'] {
+  color-scheme: light;
+
+  --studio-bg: #f4f4f5;
+  --studio-surface: #ffffff;
+  --studio-border: #e4e4e7;
+  --studio-ink: #18181b;
+  --studio-muted: #71717a;
+  --studio-accent: #2563eb;
+  /* W jasnym motywie "mocniejszy" akcent tekstowy musi być ciemniejszy, nie jaśniejszy. */
+  --studio-accent-dark: #1d4ed8;
+  --studio-accent-soft: rgba(37, 99, 235, 0.1);
+
+  --studio-card-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  --studio-scrollbar-track: #e4e4e7;
+  --studio-scrollbar-thumb: #a1a1aa;
+  --studio-scrollbar-thumb-hover: #71717a;
 }
 
 @theme inline {
@@ -11,15 +55,14 @@
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 
-  /* MyBed Visual Studio — design system spójny z dash/OS: ciemny zinc + niebieski akcent */
-  --color-studio-bg: #09090b;
-  --color-studio-surface: #18181b;
-  --color-studio-border: #27272a;
-  --color-studio-ink: #fafafa;
-  --color-studio-muted: #a1a1aa;
-  --color-studio-accent: #2563eb;
-  --color-studio-accent-dark: #3b82f6;
-  --color-studio-accent-soft: rgba(37, 99, 235, 0.16);
+  --color-studio-bg: var(--studio-bg);
+  --color-studio-surface: var(--studio-surface);
+  --color-studio-border: var(--studio-border);
+  --color-studio-ink: var(--studio-ink);
+  --color-studio-muted: var(--studio-muted);
+  --color-studio-accent: var(--studio-accent);
+  --color-studio-accent-dark: var(--studio-accent-dark);
+  --color-studio-accent-soft: var(--studio-accent-soft);
 }
 
 body {
@@ -31,7 +74,7 @@ body {
 /* ---------- Dostępność ---------- */
 
 :focus-visible {
-  outline: 2px solid var(--color-studio-accent);
+  outline: 2px solid var(--studio-accent);
   outline-offset: 2px;
   border-radius: 4px;
 }
@@ -63,7 +106,7 @@ a,
   }
 }
 
-/* ---------- Scrollbar (ciemny, jak w dash) ---------- */
+/* ---------- Scrollbar (kolory z motywu) ---------- */
 
 ::-webkit-scrollbar {
   width: 6px;
@@ -71,23 +114,23 @@ a,
 }
 
 ::-webkit-scrollbar-track {
-  background: #18181b;
+  background: var(--studio-scrollbar-track);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #3f3f46;
+  background: var(--studio-scrollbar-thumb);
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #52525b;
+  background: var(--studio-scrollbar-thumb-hover);
 }
 
 * {
-  scrollbar-color: #3f3f46 #18181b;
+  scrollbar-color: var(--studio-scrollbar-thumb) var(--studio-scrollbar-track);
 }
 
-/* Date input w ciemnym motywie */
-input[type='date']::-webkit-calendar-picker-indicator {
+/* Ikona kalendarza w input[type=date] — odwracana tylko w ciemnym motywie. */
+:root:not([data-theme='light']) input[type='date']::-webkit-calendar-picker-indicator {
   filter: invert(0.7);
 }

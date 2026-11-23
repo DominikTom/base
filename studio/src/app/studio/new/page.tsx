@@ -397,7 +397,7 @@ export default function NewVisualizationPage() {
                   <button
                     onClick={() => handleDeleteTemplate(activeTemplateId)}
                     title={`Usuń szablon „${templates.find((t) => t.id === activeTemplateId)?.name ?? ''}"`}
-                    className="rounded-xl border border-studio-border bg-studio-surface p-2 text-studio-muted transition-colors hover:border-red-500/50 hover:text-red-400"
+                    className="rounded-xl border border-studio-border bg-studio-surface p-2 text-studio-muted transition-colors hover:border-red-500/50 hover:text-red-400 light:hover:text-red-600"
                   >
                     <Trash2 className="h-4 w-4" />
                   </button>
@@ -918,7 +918,7 @@ export default function NewVisualizationPage() {
           style={{ paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom, 0px))' }}
         >
           <div className="flex max-w-4xl flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-            <p className={cn('text-sm', totalGenerations > MAX_BATCH_TOTAL ? 'font-medium text-red-400' : 'text-studio-muted')}>
+            <p className={cn('text-sm', totalGenerations > MAX_BATCH_TOTAL ? 'font-medium text-red-400 light:text-red-600' : 'text-studio-muted')}>
               Seria: {roomIds.length || '–'} {roomIds.length === 1 ? 'pokój' : 'pokoje'} ×{' '}
               {models.length} {models.length === 1 ? 'model' : 'modele'} × {variants}{' '}
               {variants === 1 ? 'wariant' : 'warianty'} = <strong>{totalGenerations || '–'}</strong>{' '}

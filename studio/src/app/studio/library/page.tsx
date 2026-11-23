@@ -271,7 +271,7 @@ export default function LibraryPage() {
           className={cn(
             'inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-sm transition-colors',
             favOnly
-              ? 'border-amber-500/50 bg-amber-500/15 font-medium text-amber-300'
+              ? 'border-amber-500/50 bg-amber-500/15 font-medium text-amber-300 light:text-amber-700'
               : 'border-studio-border bg-studio-surface text-studio-muted hover:text-studio-ink'
           )}
         >
@@ -374,7 +374,7 @@ function GenerationCard({
               {g.status === 'pending' ? (
                 <Spinner className="h-6 w-6" />
               ) : (
-                <span className="px-4 text-center text-xs text-red-400">
+                <span className="px-4 text-center text-xs text-red-400 light:text-red-600">
                   {g.error_message?.slice(0, 80) ?? 'Błąd'}
                 </span>
               )}
@@ -444,7 +444,7 @@ function BatchCard({ batchId, items }: { batchId: string; items: GenerationView[
                 {pending.length > 0 ? (
                   <Spinner className="h-6 w-6" />
                 ) : (
-                  <span className="px-4 text-center text-xs text-red-400">Błąd serii</span>
+                  <span className="px-4 text-center text-xs text-red-400 light:text-red-600">Błąd serii</span>
                 )}
               </div>
             )}

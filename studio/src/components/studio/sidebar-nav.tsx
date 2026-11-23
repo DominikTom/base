@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { createBrowserClient } from '@supabase/ssr';
 import { Images, Lightbulb, Library, LogOut, Menu, Sparkles, Trash2, X } from 'lucide-react';
+import { ThemeToggle } from '@/components/studio/theme-toggle';
 import { cn } from '@/lib/utils';
 
 const NAV_ITEMS = [
@@ -58,7 +59,8 @@ export function StudioSidebar() {
   );
 
   const logoutButton = (
-    <div className="border-t border-studio-border p-3">
+    <div className="space-y-1 border-t border-studio-border p-3">
+      <ThemeToggle withLabel />
       <button
         onClick={handleLogout}
         className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-studio-muted transition-colors hover:bg-studio-bg hover:text-studio-ink"
@@ -89,13 +91,16 @@ export function StudioSidebar() {
         style={{ paddingTop: 'calc(0.625rem + env(safe-area-inset-top, 0px))' }}
       >
         {logo}
-        <button
-          onClick={() => setDrawerOpen(true)}
-          className="rounded-xl p-2 text-studio-muted transition-colors hover:bg-studio-bg hover:text-studio-ink"
-          aria-label="Otwórz menu"
-        >
-          <Menu className="h-6 w-6" />
-        </button>
+        <div className="flex items-center gap-1">
+          <ThemeToggle />
+          <button
+            onClick={() => setDrawerOpen(true)}
+            className="rounded-xl p-2 text-studio-muted transition-colors hover:bg-studio-bg hover:text-studio-ink"
+            aria-label="Otwórz menu"
+          >
+            <Menu className="h-6 w-6" />
+          </button>
+        </div>
       </header>
 
       {/* Szuflada — mobile */}

@@ -99,7 +99,7 @@ export default function LoginPage() {
             </button>
 
             {error && (
-              <p className="text-sm text-red-400 text-center">{error}</p>
+              <p className="text-sm text-red-400 light:text-red-600 text-center">{error}</p>
             )}
           </form>
         </div>

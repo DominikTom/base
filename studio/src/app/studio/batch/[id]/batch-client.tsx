@@ -110,7 +110,7 @@ export function BatchClient({ batchId }: { batchId: string }) {
                       {g.status === 'pending' ? (
                         <Spinner className="h-6 w-6" />
                       ) : (
-                        <span className="px-4 text-center text-xs text-red-400">
+                        <span className="px-4 text-center text-xs text-red-400 light:text-red-600">
                           {g.error_message?.slice(0, 80) ?? 'Błąd'}
                         </span>
                       )}

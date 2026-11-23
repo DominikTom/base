@@ -110,7 +110,7 @@ export function GenerationDetailClient({ id }: { id: string }) {
     return (
       <div>
         <BackLink />
-        <p className="mt-8 text-sm text-red-400">{error}</p>
+        <p className="mt-8 text-sm text-red-400 light:text-red-600">{error}</p>
       </div>
     );
   }
@@ -358,7 +358,7 @@ export function GenerationDetailClient({ id }: { id: string }) {
                       setMenuOpen(false);
                       void handleTrash();
                     }}
-                    className="flex w-full items-center gap-2.5 px-4 py-2.5 text-sm text-red-400 transition-colors hover:bg-studio-bg"
+                    className="flex w-full items-center gap-2.5 px-4 py-2.5 text-sm text-red-400 light:text-red-600 transition-colors hover:bg-studio-bg"
                   >
                     <Trash2 className="h-4 w-4" /> Przenieś do kosza
                   </button>
@@ -384,7 +384,7 @@ export function GenerationDetailClient({ id }: { id: string }) {
           )}
           {g.status === 'error' && (
             <Card className="flex aspect-[4/3] flex-col items-center justify-center gap-3 p-8 text-center">
-              <p className="font-medium text-red-400">Generacja nie powiodła się</p>
+              <p className="font-medium text-red-400 light:text-red-600">Generacja nie powiodła się</p>
               <p className="max-w-md text-sm text-studio-muted">{g.error_message}</p>
               <Button onClick={handleRetry}>
                 <RefreshCw className="h-4 w-4" /> Spróbuj ponownie
