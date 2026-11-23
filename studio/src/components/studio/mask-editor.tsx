@@ -1,7 +1,19 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Brush, Eraser, ImagePlus, Trash2, Undo2, Wand2, X } from 'lucide-react';
+import {
+  Brush,
+  Eraser,
+  Hand,
+  ImagePlus,
+  Redo2,
+  Trash2,
+  Undo2,
+  Wand2,
+  X,
+  ZoomIn,
+  ZoomOut,
+} from 'lucide-react';
 import { useToast } from '@/components/studio/toast';
 import { Badge, Button, Card, Spinner } from '@/components/studio/ui';
 import { DEFAULT_EDIT_MODEL, STUDIO_MODELS, type StudioModelId } from '@/lib/studio/models';
@@ -56,7 +68,6 @@ export function MaskEditor({
   defaultModel?: StudioModelId;
 }) {
   const { toast } = useToast();
-  const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
 
@@ -66,6 +77,18 @@ export function MaskEditor({
   const [tool, setTool] = useState<Tool>('brush');
   const [brushSize, setBrushSize] = useState(40);
   const [strokes, setStrokes] = useState<Stroke[]>([]);
+  const [redoStack, setRedoStack] = useState<Stroke[]>([]);
+
+  // Zoom/pan obszaru roboczego (precyzyjne maskowanie na obrazach 2K/4K).
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [panMode, setPanMode] = useState(false);
+  const [spaceHeld, setSpaceHeld] = useState(false);
+  const panning = useRef<{ startX: number; startY: number; panX: number; panY: number } | null>(null);
+  const [cursorPos, setCursorPos] = useState<{ x: number; y: number } | null>(null);
+  const panActive = panMode || spaceHeld;
+
   const [instruction, setInstruction] = useState('');
   const [references, setReferences] = useState<{ file: File; url: string }[]>([]);
   const refInputRef = useRef<HTMLInputElement>(null);
@@ -169,7 +192,7 @@ export function MaskEditor({
 
   const handlePointerDown = useCallback(
     (e: React.PointerEvent) => {
-      if (busy) return;
+      if (busy || panActive) return;
       const point = toNative(e);
       if (!point) return;
       e.currentTarget.setPointerCapture(e.pointerId);
@@ -183,7 +206,7 @@ export function MaskEditor({
       const ctx = canvasRef.current?.getContext('2d');
       if (ctx) stamp(ctx, point.x, point.y, stroke.size, tool === 'eraser');
     },
-    [busy, toNative, tool, brushSize, nativeScale, stamp]
+    [busy, panActive, toNative, tool, brushSize, nativeScale, stamp]
   );
 
   const handlePointerMove = useCallback(
@@ -209,33 +232,128 @@ export function MaskEditor({
     currentStroke.current = null;
     if (stroke && stroke.points.length > 0) {
       setStrokes((prev) => [...prev, stroke]);
+      setRedoStack([]);
     }
   }, []);
 
   const handleUndo = useCallback(() => {
     setStrokes((prev) => {
+      if (prev.length === 0) return prev;
+      const last = prev[prev.length - 1];
       const next = prev.slice(0, -1);
+      setRedoStack((r) => [...r, last]);
       redraw(next);
       return next;
     });
   }, [redraw]);
 
+  const handleRedo = useCallback(() => {
+    setRedoStack((prevRedo) => {
+      if (prevRedo.length === 0) return prevRedo;
+      const stroke = prevRedo[prevRedo.length - 1];
+      setStrokes((prev) => {
+        const next = [...prev, stroke];
+        redraw(next);
+        return next;
+      });
+      return prevRedo.slice(0, -1);
+    });
+  }, [redraw]);
+
   const handleClear = useCallback(() => {
     setStrokes([]);
+    setRedoStack([]);
     redraw([]);
   }, [redraw]);
 
-  // Ctrl+Z / Cmd+Z — pełna historia kroków.
+  // Ctrl+Z / Ctrl+Shift+Z (lub Ctrl+Y) — pełna historia kroków; spacja = chwilowe przesuwanie.
   useEffect(() => {
-    function onKey(e: KeyboardEvent) {
+    function onKeyDown(e: KeyboardEvent) {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
         e.preventDefault();
-        handleUndo();
+        if (e.shiftKey) handleRedo();
+        else handleUndo();
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
+        e.preventDefault();
+        handleRedo();
+      } else if (e.code === 'Space' && !(e.target instanceof HTMLTextAreaElement) && !(e.target instanceof HTMLInputElement)) {
+        e.preventDefault();
+        setSpaceHeld(true);
       }
     }
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [handleUndo]);
+    function onKeyUp(e: KeyboardEvent) {
+      if (e.code === 'Space') setSpaceHeld(false);
+    }
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+    };
+  }, [handleUndo, handleRedo]);
+
+  /** Zoom kółkiem do kursora (natywny listener — React oznacza wheel jako pasywny). */
+  const zoomRef = useRef({ zoom, pan });
+  zoomRef.current = { zoom, pan };
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    function onWheel(e: WheelEvent) {
+      e.preventDefault();
+      const { zoom: z, pan: p } = zoomRef.current;
+      const rect = viewport!.getBoundingClientRect();
+      const v = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+      const factor = e.deltaY < 0 ? 1.2 : 1 / 1.2;
+      const newZoom = Math.min(6, Math.max(1, z * factor));
+      if (newZoom === 1) {
+        setZoom(1);
+        setPan({ x: 0, y: 0 });
+        return;
+      }
+      const s = { x: (v.x - p.x) / z, y: (v.y - p.y) / z };
+      setZoom(newZoom);
+      setPan({ x: v.x - s.x * newZoom, y: v.y - s.y * newZoom });
+    }
+    viewport.addEventListener('wheel', onWheel, { passive: false });
+    return () => viewport.removeEventListener('wheel', onWheel);
+  }, [imageReady]);
+
+  function zoomBy(factor: number) {
+    const viewport = viewportRef.current;
+    const rect = viewport?.getBoundingClientRect();
+    const v = rect ? { x: rect.width / 2, y: rect.height / 2 } : { x: 0, y: 0 };
+    const z = zoom;
+    const newZoom = Math.min(6, Math.max(1, z * factor));
+    if (newZoom === 1) {
+      setZoom(1);
+      setPan({ x: 0, y: 0 });
+      return;
+    }
+    const s = { x: (v.x - pan.x) / z, y: (v.y - pan.y) / z };
+    setZoom(newZoom);
+    setPan({ x: v.x - s.x * newZoom, y: v.y - s.y * newZoom });
+  }
+
+  function viewportPointerDown(e: React.PointerEvent) {
+    if (!panActive) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    panning.current = { startX: e.clientX, startY: e.clientY, panX: pan.x, panY: pan.y };
+  }
+
+  function viewportPointerMove(e: React.PointerEvent) {
+    const rect = viewportRef.current?.getBoundingClientRect();
+    if (rect) setCursorPos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+    if (panning.current) {
+      setPan({
+        x: panning.current.panX + (e.clientX - panning.current.startX),
+        y: panning.current.panY + (e.clientY - panning.current.startY),
+      });
+    }
+  }
+
+  function viewportPointerUp() {
+    panning.current = null;
+  }
 
   const hasMask = strokes.some((s) => s.tool === 'brush');
 
@@ -324,34 +442,86 @@ export function MaskEditor({
     <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
       {/* Obszar roboczy */}
       <Card className="overflow-hidden p-4">
+        <div className="mb-3 flex flex-wrap items-center gap-1.5">
+          <Button
+            variant={panActive ? 'primary' : 'secondary'}
+            onClick={() => setPanMode((v) => !v)}
+            className="px-3 py-1.5 text-xs"
+            title="Przesuwanie widoku (albo przytrzymaj spację)"
+          >
+            <Hand className="h-4 w-4" /> Przesuń
+          </Button>
+          <Button variant="secondary" onClick={() => zoomBy(1.25)} className="px-2.5 py-1.5" title="Przybliż (kółko myszy)">
+            <ZoomIn className="h-4 w-4" />
+          </Button>
+          <Button variant="secondary" onClick={() => zoomBy(1 / 1.25)} className="px-2.5 py-1.5" title="Oddal">
+            <ZoomOut className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="secondary"
+            onClick={() => {
+              setZoom(1);
+              setPan({ x: 0, y: 0 });
+            }}
+            className="px-3 py-1.5 text-xs"
+            title="Dopasuj do okna"
+          >
+            {Math.round(zoom * 100)}%
+          </Button>
+        </div>
         {!imageReady ? (
           <div className="flex h-96 items-center justify-center">
             <Spinner className="h-8 w-8" />
           </div>
         ) : (
           <div
-            ref={containerRef}
-            className="relative mx-auto w-fit max-w-full select-none"
+            ref={viewportRef}
+            className={cn(
+              'relative h-[66vh] overflow-hidden rounded-lg bg-studio-bg',
+              panActive && 'cursor-grab active:cursor-grabbing'
+            )}
+            onPointerDown={viewportPointerDown}
+            onPointerMove={viewportPointerMove}
+            onPointerUp={viewportPointerUp}
+            onPointerCancel={viewportPointerUp}
+            onPointerLeave={() => setCursorPos(null)}
+            style={{ touchAction: 'none' }}
           >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={imageUrl}
-              alt="Edytowany obraz"
-              className="block max-h-[70vh] w-auto max-w-full rounded-lg"
-              draggable={false}
-            />
-            <canvas
-              ref={canvasRef}
-              onPointerDown={handlePointerDown}
-              onPointerMove={handlePointerMove}
-              onPointerUp={handlePointerUp}
-              onPointerCancel={handlePointerUp}
-              className={cn(
-                'absolute inset-0 h-full w-full rounded-lg opacity-40',
-                busy ? 'cursor-not-allowed' : 'cursor-crosshair'
-              )}
-              style={{ touchAction: 'none' }}
-            />
+            <div
+              className="relative mx-auto w-fit max-w-full select-none"
+              style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transformOrigin: '0 0' }}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={imageUrl}
+                alt="Edytowany obraz"
+                className="pointer-events-none block max-h-[64vh] w-auto max-w-full rounded-lg"
+                draggable={false}
+              />
+              <canvas
+                ref={canvasRef}
+                onPointerDown={handlePointerDown}
+                onPointerMove={handlePointerMove}
+                onPointerUp={handlePointerUp}
+                onPointerCancel={handlePointerUp}
+                className={cn(
+                  'absolute inset-0 h-full w-full rounded-lg opacity-40',
+                  busy ? 'cursor-not-allowed' : panActive ? 'cursor-grab' : 'cursor-none'
+                )}
+                style={{ touchAction: 'none' }}
+              />
+            </div>
+            {cursorPos && !panActive && !busy && (
+              <div
+                className="pointer-events-none absolute rounded-full border-2 border-red-500/80 bg-red-500/10"
+                style={{
+                  left: cursorPos.x - brushSize / 2,
+                  top: cursorPos.y - brushSize / 2,
+                  width: brushSize,
+                  height: brushSize,
+                }}
+              />
+            )}
           </div>
         )}
       </Card>
@@ -397,6 +567,15 @@ export function MaskEditor({
               title="Ctrl+Z"
             >
               <Undo2 className="h-4 w-4" /> Cofnij
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={handleRedo}
+              disabled={redoStack.length === 0}
+              className="flex-1"
+              title="Ctrl+Shift+Z"
+            >
+              <Redo2 className="h-4 w-4" /> Ponów
             </Button>
             <Button
               variant="secondary"

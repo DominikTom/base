@@ -1,11 +1,12 @@
 import { after, NextResponse, type NextRequest } from 'next/server';
+import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { isStudioModelId } from '@/lib/studio/models';
+import { isStudioModelId, type StudioModelId } from '@/lib/studio/models';
 import { buildGenerationPrompt } from '@/lib/studio/prompts';
 import { runGeneration } from '@/lib/studio/run-generation';
 import { requireStudioUser } from '@/lib/studio/supabase-server';
 import { studioFileUrl } from '@/lib/studio/storage';
-import type { GenerationRow } from '@/lib/studio/types';
+import { MAX_BATCH_TOTAL, type GenerationRow } from '@/lib/studio/types';
 
 /** Generacja potrafi trwać kilka minut (modele obrazowe + upload wyniku). */
 export const maxDuration = 300;
@@ -22,7 +23,9 @@ const createSchema = z.object({
   packshotId: z.string().uuid().optional(),
   /** Nowy format: 1–5 packshotów z rolami; min. jeden główny. */
   packshots: z.array(packshotEntry).min(1).max(5).optional(),
-  roomId: z.string().uuid(),
+  /** Jeden pokój (stary format) albo lista pokoi — seria pokój × model × wariant. */
+  roomId: z.string().uuid().optional(),
+  roomIds: z.array(z.string().uuid()).min(1).max(4).optional(),
   styleText: z.string().max(2000).optional(),
   inspirationSetId: z.string().uuid().nullish(),
   inspirationStrength: z.number().int().min(1).max(5).nullish(),
@@ -35,7 +38,16 @@ const createSchema = z.object({
   lighting: z
     .enum(['auto', 'morning', 'daylight-soft', 'golden', 'evening', 'studio'])
     .default('auto'),
-  model: z.string().refine(isStudioModelId, 'Nieznany model generacji.'),
+  /** Rozdzielczość (sens dla Nano Banana Pro: 2K standard, 4K finalne). */
+  imageSize: z.enum(['2K', '4K']).optional(),
+  model: z.string().refine(isStudioModelId, 'Nieznany model generacji.').optional(),
+  models: z
+    .array(z.string().refine(isStudioModelId, 'Nieznany model generacji.'))
+    .min(1)
+    .max(3)
+    .optional(),
+  /** Liczba wariantów na kombinację pokój × model. */
+  variants: z.number().int().min(1).max(4).default(1),
   /** Wysyłka bez czekania na wynik — klient sam polluje status. */
   async: z.boolean().optional(),
 });
@@ -78,14 +90,31 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Któryś z packshotów nie istnieje albo jest w koszu.' }, { status: 400 });
   }
 
-  const { data: room, error: roomErr } = await auth.supabase
+  // Seria: pokoje × modele × warianty (z twardym limitem łącznym).
+  const roomIds = input.roomIds ?? (input.roomId ? [input.roomId] : []);
+  const models = (input.models ?? (input.model ? [input.model] : [])) as StudioModelId[];
+  if (roomIds.length === 0) {
+    return NextResponse.json({ error: 'Wybierz przynajmniej jeden pokój.' }, { status: 400 });
+  }
+  if (models.length === 0) {
+    return NextResponse.json({ error: 'Wybierz przynajmniej jeden model.' }, { status: 400 });
+  }
+  const total = roomIds.length * models.length * input.variants;
+  if (total > MAX_BATCH_TOTAL) {
+    return NextResponse.json(
+      { error: `Seria ma ${total} generacji — maksimum to ${MAX_BATCH_TOTAL}. Zmniejsz liczbę pokoi, modeli lub wariantów.` },
+      { status: 400 }
+    );
+  }
+
+  const { data: rooms, error: roomErr } = await auth.supabase
     .from('rooms')
     .select('id, name, base_prompt')
-    .eq('id', input.roomId)
-    .single();
-  if (roomErr || !room) {
-    return NextResponse.json({ error: 'Nie znaleziono wybranego pokoju.' }, { status: 400 });
+    .in('id', [...new Set(roomIds)]);
+  if (roomErr || !rooms || rooms.length !== new Set(roomIds).size) {
+    return NextResponse.json({ error: 'Nie znaleziono któregoś z wybranych pokoi.' }, { status: 400 });
   }
+  const roomById = new Map(rooms.map((r) => [r.id, r]));
 
   let inspirationImageCount = 0;
   if (input.inspirationSetId) {
@@ -98,84 +127,120 @@ export async function POST(request: NextRequest) {
   const hasInspirationImages = inspirationImageCount > 0;
 
   const strength = input.inspirationSetId ? (input.inspirationStrength ?? 3) : null;
-  const fullPrompt = buildGenerationPrompt({
-    roomName: room.name,
-    roomBasePrompt: room.base_prompt,
-    styleText: input.styleText,
-    inspirationStrength: strength,
-    inspirationImageCount,
-    manualNotes: input.manualNotes,
-    mainCount: mains.length,
-    additionCount: additions.length,
-    packshotNotes: [...mains, ...additions].map((p) => p.note ?? null),
-    aspectRatio: input.aspectRatio,
-    cameraShot: input.cameraShot === 'auto' ? null : input.cameraShot,
-    cameraAngle: input.cameraAngle === 'auto' ? null : input.cameraAngle,
-    lighting: input.lighting === 'auto' ? null : input.lighting,
-  });
 
-  const { data: created, error: insErr } = await auth.supabase
-    .from('generations')
-    .insert({
-      user_id: auth.user.id,
-      packshot_id: mains[0].id,
-      room_id: input.roomId,
-      style_text: input.styleText ?? null,
-      inspiration_set_id: input.inspirationSetId ?? null,
-      inspiration_strength: hasInspirationImages ? strength : null,
-      manual_notes: input.manualNotes ?? null,
-      aspect_ratio: input.aspectRatio,
-      camera_shot: input.cameraShot === 'auto' ? null : input.cameraShot,
-      camera_angle: input.cameraAngle === 'auto' ? null : input.cameraAngle,
+  // Wiersze serii: jeden na kombinację pokój × model × wariant.
+  const batchId = total > 1 ? randomUUID() : null;
+  const rowsToInsert: Record<string, unknown>[] = [];
+  for (const roomId of roomIds) {
+    const room = roomById.get(roomId)!;
+    const fullPrompt = buildGenerationPrompt({
+      roomName: room.name,
+      roomBasePrompt: room.base_prompt,
+      styleText: input.styleText,
+      inspirationStrength: strength,
+      inspirationImageCount,
+      manualNotes: input.manualNotes,
+      mainCount: mains.length,
+      additionCount: additions.length,
+      packshotNotes: [...mains, ...additions].map((p) => p.note ?? null),
+      aspectRatio: input.aspectRatio,
+      cameraShot: input.cameraShot === 'auto' ? null : input.cameraShot,
+      cameraAngle: input.cameraAngle === 'auto' ? null : input.cameraAngle,
       lighting: input.lighting === 'auto' ? null : input.lighting,
-      model: input.model,
-      full_prompt_sent: fullPrompt,
-      status: 'pending',
-    })
-    .select()
-    .single();
-  if (insErr || !created) {
+    });
+    for (const model of models) {
+      for (let v = 0; v < input.variants; v++) {
+        rowsToInsert.push({
+          user_id: auth.user.id,
+          packshot_id: mains[0].id,
+          room_id: roomId,
+          style_text: input.styleText ?? null,
+          inspiration_set_id: input.inspirationSetId ?? null,
+          inspiration_strength: hasInspirationImages ? strength : null,
+          manual_notes: input.manualNotes ?? null,
+          aspect_ratio: input.aspectRatio,
+          camera_shot: input.cameraShot === 'auto' ? null : input.cameraShot,
+          camera_angle: input.cameraAngle === 'auto' ? null : input.cameraAngle,
+          lighting: input.lighting === 'auto' ? null : input.lighting,
+          image_size: model === 'nano-banana-pro' ? (input.imageSize ?? null) : null,
+          batch_id: batchId,
+          model,
+          full_prompt_sent: fullPrompt,
+          status: 'pending',
+        });
+      }
+    }
+  }
+
+  const { data: createdRows, error: insErr } = await auth.supabase
+    .from('generations')
+    .insert(rowsToInsert)
+    .select();
+  if (insErr || !createdRows || createdRows.length === 0) {
     return NextResponse.json(
       { error: `Nie udało się utworzyć generacji: ${insErr?.message}` },
       { status: 500 }
     );
   }
+  const created = createdRows as GenerationRow[];
 
-  // Powiązania packshotów z rolami (główne najpierw, kolejność wg wyboru).
+  // Powiązania packshotów z rolami (główne najpierw) — dla każdego wiersza serii.
   const orderedForInsert = [...mains, ...additions];
   const { error: linkErr } = await auth.supabase.from('generation_packshots').insert(
-    orderedForInsert.map((p, i) => ({
-      generation_id: (created as GenerationRow).id,
-      packshot_id: p.id,
-      role: p.role,
-      note: p.note?.trim() || null,
-      sort_order: i,
-    }))
+    created.flatMap((g) =>
+      orderedForInsert.map((p, i) => ({
+        generation_id: g.id,
+        packshot_id: p.id,
+        role: p.role,
+        note: p.note?.trim() || null,
+        sort_order: i,
+      }))
+    )
   );
   if (linkErr) {
-    await auth.supabase.from('generations').delete().eq('id', (created as GenerationRow).id);
+    await auth.supabase.from('generations').delete().in('id', created.map((g) => g.id));
     return NextResponse.json(
       { error: `Nie udało się zapisać packshotów generacji: ${linkErr.message}` },
       { status: 500 }
     );
   }
 
-  if (input.async) {
-    // Odpowiadamy od razu rekordem "pending", a generacja dokańcza się po
-    // wysłaniu odpowiedzi (after + maxDuration 300) — user może wyjść z ekranu,
-    // klient polluje GET /generations/[id].
-    after(async () => {
-      await runGeneration(auth.supabase, created as GenerationRow);
+  /** Seria wykonuje się z ograniczoną współbieżnością (limity API modeli). */
+  const runAll = async () => {
+    const queue = [...created];
+    const workers = Array.from({ length: Math.min(2, queue.length) }, async () => {
+      for (let g = queue.shift(); g; g = queue.shift()) {
+        await runGeneration(auth.supabase, g);
+      }
     });
-    return NextResponse.json({ generation: { ...(created as GenerationRow), image_url: null } });
+    await Promise.all(workers);
+  };
+
+  if (input.async) {
+    // Odpowiadamy od razu rekordami "pending", a seria dokańcza się po wysłaniu
+    // odpowiedzi (after + maxDuration 300) — user może wyjść z ekranu.
+    after(runAll);
+    return NextResponse.json({
+      generation: { ...created[0], image_url: null },
+      batchId,
+      generationIds: created.map((g) => g.id),
+    });
   }
 
-  const finished = await runGeneration(auth.supabase, created as GenerationRow);
+  await runAll();
+  const { data: finishedFirst } = await auth.supabase
+    .from('generations')
+    .select('*')
+    .eq('id', created[0].id)
+    .single();
+  const finished = (finishedFirst as GenerationRow) ?? created[0];
   return NextResponse.json({
     generation: {
       ...finished,
       image_url: finished.storage_path ? studioFileUrl('generations', finished.storage_path) : null,
     },
+    batchId,
+    generationIds: created.map((g) => g.id),
   });
 }
 
@@ -201,6 +266,8 @@ export async function GET(request: NextRequest) {
   if (q.get('author')) query = query.eq('user_id', q.get('author'));
   if (q.get('status')) query = query.eq('status', q.get('status'));
   if (q.get('packshot')) query = query.eq('packshot_id', q.get('packshot'));
+  if (q.get('batch')) query = query.eq('batch_id', q.get('batch'));
+  if (q.get('fav') === '1') query = query.eq('is_favorite', true);
   const search = q.get('q')?.trim();
   if (search) {
     const term = `%${search.replaceAll('%', '\\%')}%`;

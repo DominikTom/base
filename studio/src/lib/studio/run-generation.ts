@@ -79,7 +79,9 @@ export async function runGeneration(
         prompt: generation.full_prompt_sent ?? '',
         packshot: packshotImages[0],
         references: [...packshotImages.slice(1), ...references],
-        imageSize: generation.model === 'nano-banana-pro' ? '2K' : '1K',
+        imageSize:
+          (generation.image_size as '1K' | '2K' | '4K' | null) ??
+          (generation.model === 'nano-banana-pro' ? '2K' : '1K'),
         aspectRatio: generation.aspect_ratio ?? undefined,
       });
     }

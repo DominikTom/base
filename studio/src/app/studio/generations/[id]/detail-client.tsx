@@ -12,6 +12,7 @@ import {
   Lightbulb,
   RefreshCw,
   Sparkles,
+  Star,
   Trash2,
 } from 'lucide-react';
 import { BeforeAfterSlider } from '@/components/studio/before-after-slider';
@@ -170,6 +171,7 @@ export function GenerationDetailClient({ id }: { id: string }) {
         cameraShot: g.camera_shot ?? undefined,
         cameraAngle: g.camera_angle ?? undefined,
         lighting: g.lighting ?? undefined,
+        imageSize: g.image_size === '4K' || g.image_size === '2K' ? g.image_size : undefined,
         model: g.model,
         async: true,
       });
@@ -215,6 +217,38 @@ export function GenerationDetailClient({ id }: { id: string }) {
           </h1>
           <StatusBadge status={g.status} />
           {isEdit && <Badge tone="accent">wersja edytowana</Badge>}
+          {g.image_size === '4K' && <Badge tone="accent">4K</Badge>}
+          <button
+            onClick={async () => {
+              try {
+                await apiJson(`/api/studio/generations/${g.id}`, 'PATCH', {
+                  action: g.is_favorite ? 'unfavorite' : 'favorite',
+                });
+                setData((prev) =>
+                  prev
+                    ? { ...prev, generation: { ...prev.generation, is_favorite: !g.is_favorite } }
+                    : prev
+                );
+              } catch {
+                toast('error', 'Nie udało się oznaczyć.');
+              }
+            }}
+            title={g.is_favorite ? 'Usuń z ulubionych' : 'Oznacz jako ulubioną'}
+            className={cn(
+              'rounded-full p-1.5 transition-colors',
+              g.is_favorite ? 'text-amber-500' : 'text-studio-muted hover:text-amber-500'
+            )}
+          >
+            <Star className={cn('h-5 w-5', g.is_favorite && 'fill-current')} />
+          </button>
+          {g.batch_id && (
+            <Link
+              href={`/studio/batch/${g.batch_id}`}
+              className="text-sm text-studio-accent-dark underline-offset-2 hover:underline"
+            >
+              zobacz całą serię
+            </Link>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {g.status === 'done' && g.image_url && (

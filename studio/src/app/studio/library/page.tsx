@@ -2,11 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { Library as LibraryIcon, Search, X } from 'lucide-react';
+import { Library as LibraryIcon, Search, Star, X } from 'lucide-react';
 import { useToast } from '@/components/studio/toast';
 import { Badge, Card, EmptyState, PageTitle, Spinner, StatusBadge } from '@/components/studio/ui';
-import { apiGet, formatDate } from '@/lib/studio/client';
+import { apiGet, apiJson, formatDate } from '@/lib/studio/client';
 import { STUDIO_MODELS } from '@/lib/studio/models';
+import { cn } from '@/lib/utils';
 import type { GenerationView, RoomRow } from '@/lib/studio/types';
 
 interface SetOption {
@@ -31,6 +32,7 @@ export default function LibraryPage() {
   const [author, setAuthor] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const [favOnly, setFavOnly] = useState(false);
   const [search, setSearch] = useState('');
   const searchDebounce = useRef<number | null>(null);
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -51,6 +53,7 @@ export default function LibraryPage() {
       if (model) params.set('model', model);
       if (setFilter) params.set('set', setFilter);
       if (author) params.set('author', author);
+      if (favOnly) params.set('fav', '1');
       if (debouncedSearch) params.set('q', debouncedSearch);
       if (dateFrom) params.set('from', `${dateFrom}T00:00:00`);
       if (dateTo) params.set('to', `${dateTo}T23:59:59`);
@@ -63,7 +66,7 @@ export default function LibraryPage() {
     } finally {
       setLoading(false);
     }
-  }, [room, model, setFilter, author, debouncedSearch, dateFrom, dateTo, toast]);
+  }, [room, model, setFilter, author, favOnly, debouncedSearch, dateFrom, dateTo, toast]);
 
   useEffect(() => {
     void load();
@@ -94,7 +97,20 @@ export default function LibraryPage() {
     return [...map.entries()].map(([id, display_name]) => ({ id, display_name }));
   }, [generations]);
 
-  const hasFilters = Boolean(room || model || setFilter || author || search || dateFrom || dateTo);
+  async function toggleFavorite(g: GenerationView) {
+    try {
+      await apiJson(`/api/studio/generations/${g.id}`, 'PATCH', {
+        action: g.is_favorite ? 'unfavorite' : 'favorite',
+      });
+      setGenerations((prev) =>
+        prev.map((x) => (x.id === g.id ? { ...x, is_favorite: !g.is_favorite } : x))
+      );
+    } catch (err) {
+      toast('error', err instanceof Error ? err.message : 'Nie udało się oznaczyć.');
+    }
+  }
+
+  const hasFilters = Boolean(room || model || setFilter || author || search || dateFrom || dateTo || favOnly);
 
   const selectCls =
     'rounded-xl border border-studio-border bg-white px-3 py-2 text-sm outline-none transition-colors focus:border-studio-accent';
@@ -163,6 +179,17 @@ export default function LibraryPage() {
           className={selectCls}
           title="Data do"
         />
+        <button
+          onClick={() => setFavOnly((v) => !v)}
+          className={cn(
+            'inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-sm transition-colors',
+            favOnly
+              ? 'border-amber-400 bg-amber-50 font-medium text-amber-700'
+              : 'border-studio-border bg-white text-studio-muted hover:text-studio-ink'
+          )}
+        >
+          <Star className={cn('h-4 w-4', favOnly && 'fill-current')} /> Ulubione
+        </button>
         {hasFilters && (
           <button
             onClick={() => {
@@ -173,6 +200,7 @@ export default function LibraryPage() {
               setSearch('');
               setDateFrom('');
               setDateTo('');
+              setFavOnly(false);
             }}
             className="inline-flex items-center gap-1 rounded-xl px-3 py-2 text-sm text-studio-muted transition-colors hover:bg-studio-accent-soft hover:text-studio-ink"
           >
@@ -198,8 +226,8 @@ export default function LibraryPage() {
       ) : (
         <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-4">
           {generations.map((g) => (
-            <Link key={g.id} href={`/studio/generations/${g.id}`}>
-              <Card className="group overflow-hidden transition-shadow hover:shadow-md">
+            <Card key={g.id} className="group relative overflow-hidden transition-shadow hover:shadow-md">
+              <Link href={`/studio/generations/${g.id}`} className="block">
                 <div className="relative aspect-[4/3] bg-studio-bg">
                   {g.status === 'done' && g.image_url ? (
                     /* eslint-disable-next-line @next/next/no-img-element */
@@ -238,8 +266,20 @@ export default function LibraryPage() {
                     {formatDate(g.created_at)} · {g.author_name ?? '—'}
                   </p>
                 </div>
-              </Card>
-            </Link>
+              </Link>
+              <button
+                onClick={() => toggleFavorite(g)}
+                title={g.is_favorite ? 'Usuń z ulubionych' : 'Oznacz jako ulubioną'}
+                className={cn(
+                  'absolute right-2 top-2 rounded-full p-1.5 shadow transition-colors',
+                  g.is_favorite
+                    ? 'bg-amber-400 text-white'
+                    : 'bg-white/90 text-studio-muted opacity-0 group-hover:opacity-100 hover:text-amber-500'
+                )}
+              >
+                <Star className={cn('h-4 w-4', g.is_favorite && 'fill-current')} />
+              </button>
+            </Card>
           ))}
         </div>
       )}

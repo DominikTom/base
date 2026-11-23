@@ -121,7 +121,7 @@ export async function GET(request: NextRequest, ctx: Ctx) {
 }
 
 const patchSchema = z.object({
-  action: z.enum(['trash', 'restore']),
+  action: z.enum(['trash', 'restore', 'favorite', 'unfavorite']),
 });
 
 export async function PATCH(request: NextRequest, ctx: Ctx) {
@@ -134,10 +134,12 @@ export async function PATCH(request: NextRequest, ctx: Ctx) {
     return NextResponse.json({ error: 'Nieprawidłowe dane żądania.' }, { status: 400 });
   }
 
-  const { error } = await auth.supabase
-    .from('generations')
-    .update({ deleted_at: parsed.data.action === 'trash' ? new Date().toISOString() : null })
-    .eq('id', id);
+  const update =
+    parsed.data.action === 'favorite' || parsed.data.action === 'unfavorite'
+      ? { is_favorite: parsed.data.action === 'favorite' }
+      : { deleted_at: parsed.data.action === 'trash' ? new Date().toISOString() : null };
+
+  const { error } = await auth.supabase.from('generations').update(update).eq('id', id);
   if (error) {
     return NextResponse.json({ error: `Operacja nie powiodła się: ${error.message}` }, { status: 500 });
   }

@@ -20,10 +20,16 @@ import {
   CAMERA_SHOTS,
   DEFAULT_ASPECT_RATIO,
   LIGHTING_PRESETS,
+  MAX_BATCH_MODELS,
+  MAX_BATCH_ROOMS,
+  MAX_BATCH_TOTAL,
   MAX_PACKSHOTS_PER_GENERATION,
+  MAX_VARIANTS,
   type AspectRatio,
   type CameraAngle,
   type CameraShot,
+  type CreatorTemplatePayload,
+  type CreatorTemplateRow,
   type GenerationRow,
   type InspirationSetRow,
   type LightingPreset,
@@ -54,7 +60,8 @@ export default function NewVisualizationPage() {
   const [selectedPackshots, setSelectedPackshots] = useState<
     { id: string; role: PackshotRole; note: string }[]
   >([]);
-  const [roomId, setRoomId] = useState<string | null>(null);
+  /** Pokoje serii (1–4) — każdy pokój to osobna generacja. */
+  const [roomIds, setRoomIds] = useState<string[]>([]);
   const [styleText, setStyleText] = useState('');
   const [setId, setSetId] = useState<string | null>(null);
   const [strength, setStrength] = useState(3);
@@ -63,7 +70,14 @@ export default function NewVisualizationPage() {
   const [cameraShot, setCameraShot] = useState<CameraShot>('auto');
   const [cameraAngle, setCameraAngle] = useState<CameraAngle>('auto');
   const [lighting, setLighting] = useState<LightingPreset>('auto');
-  const [model, setModel] = useState<StudioModelId>(DEFAULT_GENERATION_MODEL);
+  /** Modele serii (1–3) — porównanie tej samej sceny na różnych modelach. */
+  const [models, setModels] = useState<StudioModelId[]>([DEFAULT_GENERATION_MODEL]);
+  /** Warianty na kombinację pokój × model. */
+  const [variants, setVariants] = useState(1);
+  const [imageSize, setImageSize] = useState<'2K' | '4K'>('2K');
+  const [templates, setTemplates] = useState<CreatorTemplateRow[]>([]);
+  const [templateName, setTemplateName] = useState('');
+  const [showTemplateSave, setShowTemplateSave] = useState(false);
 
   const [uploading, setUploading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -81,6 +95,9 @@ export default function NewVisualizationPage() {
         setRooms(r.rooms);
         setPackshots(p.packshots);
         setSets(s.sets);
+        apiGet<{ templates: CreatorTemplateRow[] }>('/api/studio/templates')
+          .then((t) => setTemplates(t.templates))
+          .catch(() => {});
 
         // Duplikacja ustawień: /studio/new?from=<id generacji>
         const from = new URLSearchParams(window.location.search).get('from');
@@ -97,7 +114,7 @@ export default function NewVisualizationPage() {
           } else if (g.packshot_id) {
             setSelectedPackshots([{ id: g.packshot_id, role: 'main', note: '' }]);
           }
-          if (g.room_id) setRoomId(g.room_id);
+          if (g.room_id) setRoomIds([g.room_id]);
           setStyleText(g.style_text ?? '');
           setSetId(g.inspiration_set_id);
           if (g.inspiration_strength) setStrength(g.inspiration_strength);
@@ -108,7 +125,8 @@ export default function NewVisualizationPage() {
           if (g.camera_shot) setCameraShot(g.camera_shot as CameraShot);
           if (g.camera_angle) setCameraAngle(g.camera_angle as CameraAngle);
           if (g.lighting) setLighting(g.lighting as LightingPreset);
-          if (STUDIO_MODELS.some((m) => m.id === g.model)) setModel(g.model as StudioModelId);
+          if (g.image_size === '4K') setImageSize('4K');
+          if (STUDIO_MODELS.some((m) => m.id === g.model)) setModels([g.model as StudioModelId]);
         }
       } catch (err) {
         toast('error', err instanceof Error ? err.message : 'Nie udało się załadować danych.');
@@ -192,14 +210,27 @@ export default function NewVisualizationPage() {
     });
   }
 
+  const totalGenerations = roomIds.length * models.length * variants;
+
   async function handleSubmit() {
     if (selectedPackshots.length === 0) return toast('error', 'Wybierz albo wgraj packshot produktu.');
-    if (!roomId) return toast('error', 'Wybierz pokój.');
+    if (roomIds.length === 0) return toast('error', 'Wybierz przynajmniej jeden pokój.');
+    if (models.length === 0) return toast('error', 'Wybierz przynajmniej jeden model.');
+    if (totalGenerations > MAX_BATCH_TOTAL) {
+      return toast(
+        'error',
+        `Seria ma ${totalGenerations} generacji — maksimum to ${MAX_BATCH_TOTAL}. Zmniejsz liczbę pokoi, modeli lub wariantów.`
+      );
+    }
     setSubmitting(true);
     try {
-      const res = await apiJson<{ generation: GenerationRow }>('/api/studio/generations', 'POST', {
+      const res = await apiJson<{
+        generation: GenerationRow;
+        batchId: string | null;
+        generationIds: string[];
+      }>('/api/studio/generations', 'POST', {
         packshots: selectedPackshots,
-        roomId,
+        roomIds,
         styleText: styleText || undefined,
         inspirationSetId: setId,
         inspirationStrength: setId ? strength : undefined,
@@ -208,19 +239,79 @@ export default function NewVisualizationPage() {
         cameraShot,
         cameraAngle,
         lighting,
-        model,
+        imageSize: models.includes('nano-banana-pro') && imageSize === '4K' ? '4K' : undefined,
+        models,
+        variants,
         async: true,
       });
-      router.push(`/studio/generations/${res.generation.id}`);
+      router.push(
+        res.batchId ? `/studio/batch/${res.batchId}` : `/studio/generations/${res.generation.id}`
+      );
     } catch (err) {
       toast('error', err instanceof Error ? err.message : 'Nie udało się rozpocząć generacji.');
       setSubmitting(false);
     }
   }
 
-  const suggestedSets = roomId ? sets.filter((s) => s.room_id === roomId) : [];
-  const otherSets = roomId ? sets.filter((s) => s.room_id !== roomId) : sets;
-  const selectedModel = STUDIO_MODELS.find((m) => m.id === model);
+  function applyTemplate(t: CreatorTemplateRow) {
+    const p: CreatorTemplatePayload = t.payload ?? {};
+    if (p.roomIds) setRoomIds(p.roomIds.filter((id) => rooms.some((r) => r.id === id)));
+    if (p.styleText !== undefined) setStyleText(p.styleText);
+    if (p.inspirationSetId !== undefined) {
+      setSetId(p.inspirationSetId && sets.some((s) => s.id === p.inspirationSetId) ? p.inspirationSetId : null);
+    }
+    if (p.inspirationStrength) setStrength(p.inspirationStrength);
+    if (p.manualNotes !== undefined) setNotes(p.manualNotes);
+    if (p.aspectRatio && ASPECT_RATIOS.some((a) => a.id === p.aspectRatio)) {
+      setAspectRatio(p.aspectRatio as AspectRatio);
+    }
+    if (p.cameraShot) setCameraShot(p.cameraShot as CameraShot);
+    if (p.cameraAngle) setCameraAngle(p.cameraAngle as CameraAngle);
+    if (p.lighting) setLighting(p.lighting as LightingPreset);
+    if (p.models) {
+      const valid = p.models.filter((m): m is StudioModelId => STUDIO_MODELS.some((sm) => sm.id === m));
+      if (valid.length > 0) setModels(valid);
+    }
+    if (p.variants) setVariants(Math.min(MAX_VARIANTS, p.variants));
+    if (p.imageSize === '4K' || p.imageSize === '2K') setImageSize(p.imageSize);
+    toast('info', `Zastosowano szablon „${t.name}".`);
+  }
+
+  async function handleSaveTemplate() {
+    if (!templateName.trim()) return toast('error', 'Podaj nazwę szablonu.');
+    try {
+      const res = await apiJson<{ template: CreatorTemplateRow }>('/api/studio/templates', 'POST', {
+        name: templateName.trim(),
+        payload: {
+          roomIds,
+          styleText: styleText || undefined,
+          inspirationSetId: setId,
+          inspirationStrength: setId ? strength : undefined,
+          manualNotes: notes || undefined,
+          aspectRatio,
+          cameraShot,
+          cameraAngle,
+          lighting,
+          models,
+          variants,
+          imageSize,
+        } satisfies CreatorTemplatePayload,
+      });
+      setTemplates((prev) => [res.template, ...prev]);
+      setTemplateName('');
+      setShowTemplateSave(false);
+      toast('success', 'Szablon zapisany.');
+    } catch (err) {
+      toast('error', err instanceof Error ? err.message : 'Nie udało się zapisać szablonu.');
+    }
+  }
+
+  const suggestedSets = roomIds.length > 0 ? sets.filter((s) => s.room_id && roomIds.includes(s.room_id)) : [];
+  const otherSets = sets.filter((s) => !suggestedSets.includes(s));
+  const estimatedSeconds = Math.max(
+    0,
+    ...models.map((m) => STUDIO_MODELS.find((sm) => sm.id === m)?.estimatedSeconds ?? 40)
+  );
 
   if (loading) {
     return (
@@ -235,6 +326,50 @@ export default function NewVisualizationPage() {
       <PageTitle
         title="Nowa wizualizacja"
         subtitle="Packshot produktu + pokój + styl — resztą zajmie się model."
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            {templates.length > 0 && (
+              <select
+                value=""
+                onChange={(e) => {
+                  const t = templates.find((x) => x.id === e.target.value);
+                  if (t) applyTemplate(t);
+                }}
+                className="rounded-xl border border-studio-border bg-white px-3 py-2 text-sm outline-none focus:border-studio-accent"
+              >
+                <option value="">Szablon ustawień…</option>
+                {templates.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
+              </select>
+            )}
+            {showTemplateSave ? (
+              <div className="flex items-center gap-1.5">
+                <input
+                  value={templateName}
+                  onChange={(e) => setTemplateName(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleSaveTemplate()}
+                  placeholder="Nazwa szablonu…"
+                  maxLength={120}
+                  autoFocus
+                  className="w-44 rounded-xl border border-studio-border bg-white px-3 py-2 text-sm outline-none focus:border-studio-accent"
+                />
+                <Button variant="secondary" onClick={handleSaveTemplate} className="px-3 py-2">
+                  Zapisz
+                </Button>
+                <Button variant="ghost" onClick={() => setShowTemplateSave(false)} className="px-2 py-2">
+                  ✕
+                </Button>
+              </div>
+            ) : (
+              <Button variant="secondary" onClick={() => setShowTemplateSave(true)} className="px-3 py-2">
+                Zapisz jako szablon
+              </Button>
+            )}
+          </div>
+        }
       />
 
       <div className="space-y-6">
@@ -390,33 +525,45 @@ export default function NewVisualizationPage() {
           )}
         </Card>
 
-        {/* Krok 2: Pokój */}
+        {/* Krok 2: Pokoje */}
         <Card className="p-6">
-          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-studio-muted">
-            2. Pokój
+          <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-studio-muted">
+            2. Pokoje (do {MAX_BATCH_ROOMS})
           </h2>
+          <p className="mb-3 text-xs text-studio-muted">
+            Możesz wybrać kilka — każdy pokój to osobna wizualizacja w serii.
+          </p>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            {rooms.map((room) => (
-              <button
-                key={room.id}
-                onClick={() => setRoomId(room.id === roomId ? null : room.id)}
-                className={cn(
-                  'flex flex-col items-center gap-2 rounded-xl border-2 px-3 py-4 text-center transition-all',
-                  roomId === room.id
-                    ? 'border-studio-accent bg-studio-accent-soft'
-                    : 'border-studio-border hover:border-studio-accent/50'
-                )}
-              >
-                <RoomIcon
-                  icon={room.icon}
+            {rooms.map((room) => {
+              const active = roomIds.includes(room.id);
+              return (
+                <button
+                  key={room.id}
+                  onClick={() =>
+                    setRoomIds((prev) => {
+                      if (prev.includes(room.id)) return prev.filter((id) => id !== room.id);
+                      if (prev.length >= MAX_BATCH_ROOMS) {
+                        toast('error', `Maksymalnie ${MAX_BATCH_ROOMS} pokoje w jednej serii.`);
+                        return prev;
+                      }
+                      return [...prev, room.id];
+                    })
+                  }
                   className={cn(
-                    'h-6 w-6',
-                    roomId === room.id ? 'text-studio-accent-dark' : 'text-studio-muted'
+                    'flex flex-col items-center gap-2 rounded-xl border-2 px-3 py-4 text-center transition-all',
+                    active
+                      ? 'border-studio-accent bg-studio-accent-soft'
+                      : 'border-studio-border hover:border-studio-accent/50'
                   )}
-                />
-                <span className="text-sm font-medium leading-tight">{room.name}</span>
-              </button>
-            ))}
+                >
+                  <RoomIcon
+                    icon={room.icon}
+                    className={cn('h-6 w-6', active ? 'text-studio-accent-dark' : 'text-studio-muted')}
+                  />
+                  <span className="text-sm font-medium leading-tight">{room.name}</span>
+                </button>
+              );
+            })}
           </div>
         </Card>
 
@@ -592,46 +739,85 @@ export default function NewVisualizationPage() {
           </p>
         </Card>
 
-        {/* Krok 7: Model */}
+        {/* Krok 7: Modele i seria */}
         <Card className="p-6">
-          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-studio-muted">
-            7. Model generacji
+          <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-studio-muted">
+            7. Modele i seria
           </h2>
+          <p className="mb-3 text-xs text-studio-muted">
+            Możesz zaznaczyć kilka modeli ({MAX_BATCH_MODELS} maks.) — ta sama scena wygeneruje się
+            na każdym z nich do porównania.
+          </p>
           <div className="grid gap-3 sm:grid-cols-3">
-            {STUDIO_MODELS.map((m) => (
-              <button
-                key={m.id}
-                onClick={() => setModel(m.id)}
-                className={cn(
-                  'flex flex-col gap-1.5 rounded-xl border-2 p-4 text-left transition-all',
-                  model === m.id
-                    ? 'border-studio-accent bg-studio-accent-soft'
-                    : 'border-studio-border hover:border-studio-accent/50'
-                )}
-              >
-                <div className="flex items-center justify-between">
-                  <span className="font-semibold">{m.label}</span>
-                  {m.id === DEFAULT_GENERATION_MODEL && <Badge tone="accent">domyślny</Badge>}
-                </div>
-                <span className="text-xs text-studio-muted">{m.vendor}</span>
-                <span className="text-xs leading-snug text-studio-ink/80">{m.description}</span>
-                <span className="mt-1 text-xs font-medium text-studio-accent-dark">
-                  {m.whenToUse}
-                </span>
-              </button>
-            ))}
+            {STUDIO_MODELS.map((m) => {
+              const active = models.includes(m.id);
+              return (
+                <button
+                  key={m.id}
+                  onClick={() =>
+                    setModels((prev) => {
+                      if (prev.includes(m.id)) {
+                        return prev.length > 1 ? prev.filter((id) => id !== m.id) : prev;
+                      }
+                      if (prev.length >= MAX_BATCH_MODELS) return prev;
+                      return [...prev, m.id];
+                    })
+                  }
+                  className={cn(
+                    'flex flex-col gap-1.5 rounded-xl border-2 p-4 text-left transition-all',
+                    active
+                      ? 'border-studio-accent bg-studio-accent-soft'
+                      : 'border-studio-border hover:border-studio-accent/50'
+                  )}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold">{m.label}</span>
+                    {m.id === DEFAULT_GENERATION_MODEL && <Badge tone="accent">domyślny</Badge>}
+                  </div>
+                  <span className="text-xs text-studio-muted">{m.vendor}</span>
+                  <span className="text-xs leading-snug text-studio-ink/80">{m.description}</span>
+                  <span className="mt-1 text-xs font-medium text-studio-accent-dark">
+                    {m.whenToUse}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="mt-5 grid gap-4 sm:grid-cols-2">
+            <ChipRow
+              label="Warianty na kombinację (pokój × model)"
+              options={Array.from({ length: MAX_VARIANTS }, (_, i) => ({
+                id: String(i + 1),
+                labelPl: String(i + 1),
+              }))}
+              value={String(variants)}
+              onChange={(v) => setVariants(Number(v))}
+            />
+            {models.includes('nano-banana-pro') && (
+              <ChipRow
+                label="Rozdzielczość (Nano Banana Pro)"
+                options={[
+                  { id: '2K', labelPl: 'Standard (2K)' },
+                  { id: '4K', labelPl: 'Maksymalna (4K, wolniejsza)' },
+                ]}
+                value={imageSize}
+                onChange={(v) => setImageSize(v as '2K' | '4K')}
+              />
+            )}
           </div>
         </Card>
 
         <div className="flex items-center justify-end gap-4 pb-8">
-          {selectedModel && (
-            <p className="text-sm text-studio-muted">
-              Szacowany czas: ~{selectedModel.estimatedSeconds} s
-            </p>
-          )}
+          <p className={cn('text-sm', totalGenerations > MAX_BATCH_TOTAL ? 'font-medium text-red-600' : 'text-studio-muted')}>
+            Seria: {roomIds.length || '–'} {roomIds.length === 1 ? 'pokój' : 'pokoje'} ×{' '}
+            {models.length} {models.length === 1 ? 'model' : 'modele'} × {variants}{' '}
+            {variants === 1 ? 'wariant' : 'warianty'} = <strong>{totalGenerations || '–'}</strong>{' '}
+            generacji (maks. {MAX_BATCH_TOTAL}) · ~{estimatedSeconds} s/szt.
+          </p>
           <Button onClick={handleSubmit} disabled={submitting} className="px-8 py-3 text-base">
             {submitting ? <Spinner className="h-5 w-5 text-white" /> : <Sparkles className="h-5 w-5" />}
-            Generuj wizualizację
+            {totalGenerations > 1 ? `Generuj serię (${totalGenerations})` : 'Generuj wizualizację'}
           </Button>
         </div>
       </div>

@@ -104,6 +104,37 @@ export const LIGHTING_PRESETS: { id: LightingPreset; labelPl: string }[] = [
   { id: 'studio', labelPl: 'Studyjne neutralne' },
 ];
 
+/** Limity serii generacji (warianty × modele × pokoje). */
+export const MAX_VARIANTS = 4;
+export const MAX_BATCH_ROOMS = 4;
+export const MAX_BATCH_MODELS = 3;
+export const MAX_BATCH_TOTAL = 8;
+
+/** Szablon ustawień kreatora (bez packshotów — te zmieniają się per produkt). */
+export interface CreatorTemplatePayload {
+  roomIds?: string[];
+  styleText?: string;
+  inspirationSetId?: string | null;
+  inspirationStrength?: number;
+  manualNotes?: string;
+  aspectRatio?: string;
+  cameraShot?: string;
+  cameraAngle?: string;
+  lighting?: string;
+  models?: string[];
+  variants?: number;
+  imageSize?: string;
+}
+
+export interface CreatorTemplateRow {
+  id: string;
+  user_id: string;
+  name: string;
+  payload: CreatorTemplatePayload;
+  shared: boolean;
+  created_at: string;
+}
+
 export type GenerationStatus = 'pending' | 'done' | 'error';
 
 export interface GenerationRow {
@@ -126,6 +157,9 @@ export interface GenerationRow {
   camera_shot: string | null;
   camera_angle: string | null;
   lighting: string | null;
+  batch_id: string | null;
+  is_favorite: boolean;
+  image_size: string | null;
   width: number | null;
   height: number | null;
   status: GenerationStatus;
