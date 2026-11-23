@@ -14,6 +14,7 @@ import {
   ZoomIn,
   ZoomOut,
 } from 'lucide-react';
+import { ModelGuide } from '@/components/studio/model-guide';
 import { useToast } from '@/components/studio/toast';
 import { Badge, Button, Card, Spinner } from '@/components/studio/ui';
 import { DEFAULT_EDIT_MODEL, STUDIO_MODELS, type StudioModelId } from '@/lib/studio/models';
@@ -477,7 +478,24 @@ export function MaskEditor({
     });
   }
 
-  const editModels = useMemo(() => STUDIO_MODELS, []);
+  /** Grupy do listy wyboru: polecane do edycji → pozostałe → starsze. */
+  const modelGroups = useMemo(() => {
+    const current = STUDIO_MODELS.filter((m) => !m.legacy);
+    const recommended = current.filter(
+      (m) => m.recommendedFor?.includes('edit') || m.recommendedFor?.includes('edit-references')
+    );
+    return {
+      recommended,
+      other: current.filter((m) => !recommended.includes(m)),
+      legacy: STUDIO_MODELS.filter((m) => m.legacy),
+    };
+  }, []);
+
+  /** Najlepsze modele do wstawiania produktów z referencji (podpowiedź w UI). */
+  const referenceRecommended = useMemo(
+    () => STUDIO_MODELS.filter((m) => m.recommendedFor?.includes('edit-references')),
+    []
+  );
 
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
@@ -700,30 +718,79 @@ export function MaskEditor({
             aria-label="Model edycji"
             className="w-full rounded-xl border border-studio-border bg-studio-surface px-3 py-2.5 text-sm outline-none focus:border-studio-accent"
           >
-            {editModels.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.label} ({m.vendor}){m.legacy ? ' — starszy' : ''}
-              </option>
-            ))}
+            <optgroup label="★ Polecane do edycji pędzlem">
+              {modelGroups.recommended.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.label} ({m.vendor}){m.supportsNativeMask ? ' — natywna maska' : ' — adnotacja'}
+                </option>
+              ))}
+            </optgroup>
+            {modelGroups.other.length > 0 && (
+              <optgroup label="Pozostałe">
+                {modelGroups.other.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.label} ({m.vendor}){m.supportsNativeMask ? ' — natywna maska' : ' — adnotacja'}
+                  </option>
+                ))}
+              </optgroup>
+            )}
+            {modelGroups.legacy.length > 0 && (
+              <optgroup label="Starsze">
+                {modelGroups.legacy.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.label} ({m.vendor})
+                  </option>
+                ))}
+              </optgroup>
+            )}
           </select>
           {(() => {
-            const m = editModels.find((x) => x.id === model);
+            const m = STUDIO_MODELS.find((x) => x.id === model);
             if (!m) return null;
+            const recommended =
+              m.recommendedFor?.includes('edit') || m.recommendedFor?.includes('edit-references');
             return (
-              <div className="mt-2 space-y-1">
-                <div>
+              <div className="mt-2 space-y-1.5">
+                <div className="flex flex-wrap gap-1">
+                  {recommended && <Badge tone="accent">polecany</Badge>}
                   {m.supportsNativeMask ? (
-                    <Badge tone="accent">natywna maska</Badge>
+                    <Badge tone="success">natywna maska</Badge>
                   ) : (
                     <Badge>technika adnotacji</Badge>
                   )}
+                  <Badge>~{m.estimatedSeconds} s</Badge>
                 </div>
-                <p className="text-xs text-studio-muted">
-                  {m.description} <span className="text-studio-accent-dark">{m.whenToUse}</span>
+                <p className="text-xs leading-relaxed text-studio-muted">
+                  {m.editBestFor ?? m.bestFor}
                 </p>
               </div>
             );
           })()}
+
+          {/* Wstawianie produktów z referencji — podpowiedz najlepsze modele. */}
+          {references.length > 0 &&
+            !referenceRecommended.some((m) => m.id === model) && (
+              <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-2.5 text-xs text-amber-300 light:text-amber-800">
+                <p>
+                  Wstawiasz produkty z referencji — najlepiej sprawdzą się:{' '}
+                  <strong>GPT Image 2.6 Sunburst</strong> (precyzyjnie trzyma zaznaczenie) albo{' '}
+                  <strong>Nano Banana Pro</strong> (najwierniejszy materiał i kolor produktu).
+                </p>
+                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                  {referenceRecommended.map((m) => (
+                    <button
+                      key={m.id}
+                      onClick={() => setModel(m.id)}
+                      className="rounded-full border border-amber-500/40 px-2.5 py-1 font-medium transition-colors hover:bg-amber-500/20"
+                    >
+                      Przełącz na {m.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+          <ModelGuide context="edit" className="mt-3" />
         </Card>
 
         <Button onClick={handleSubmit} disabled={busy} className="w-full py-3">

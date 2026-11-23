@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Check, ImagePlus, Sparkles, Trash2, X } from 'lucide-react';
+import { ModelGuide } from '@/components/studio/model-guide';
 import { RoomIcon } from '@/components/studio/room-icon';
 import { useToast } from '@/components/studio/toast';
 import { Badge, Button, Card, PageTitle, Spinner, labelForStrength } from '@/components/studio/ui';
@@ -830,10 +831,11 @@ export default function NewVisualizationPage() {
           <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-studio-muted">
             7. Modele i seria
           </h2>
-          <p className="mb-3 text-xs text-studio-muted">
+          <p className="mb-2 text-xs text-studio-muted">
             Możesz zaznaczyć kilka modeli ({MAX_BATCH_MODELS} maks.) — ta sama scena wygeneruje się
             na każdym z nich do porównania.
           </p>
+          <ModelGuide context="generation" className="mb-3" />
           <div className="mb-3 flex flex-wrap items-center gap-2">
             {models.map((id) => {
               const m = STUDIO_MODELS.find((x) => x.id === id);
@@ -870,7 +872,9 @@ export default function NewVisualizationPage() {
                 <option value="">+ Dodaj model z listy…</option>
                 {STUDIO_MODELS.filter((m) => !models.includes(m.id)).map((m) => (
                   <option key={m.id} value={m.id}>
-                    {m.label} ({m.vendor}){m.legacy ? ' — starszy' : ''}
+                    {m.label} ({m.vendor})
+                    {m.recommendedFor?.includes('generation') ? ' ★ polecany' : ''}
+                    {m.legacy ? ' — starszy' : ''}
                   </option>
                 ))}
               </select>
@@ -881,8 +885,7 @@ export default function NewVisualizationPage() {
               const m = STUDIO_MODELS.find((x) => x.id === id);
               return m ? (
                 <li key={id}>
-                  <span className="font-medium text-studio-ink">{m.label}:</span> {m.description}{' '}
-                  <span className="text-studio-accent-dark">{m.whenToUse}</span>
+                  <span className="font-medium text-studio-ink">{m.label}:</span> {m.bestFor}
                 </li>
               ) : null;
             })}
