@@ -201,14 +201,28 @@ export default function NewVisualizationPage() {
   }
 
   function togglePackshotRole(id: string) {
+    // Cykl: Główny → Wariant → Dodatek → Główny; zawsze musi zostać ≥1 główny.
+    const nextRole: Record<PackshotRole, PackshotRole> = {
+      main: 'variant',
+      variant: 'addition',
+      addition: 'main',
+    };
     setSelectedPackshots((prev) => {
-      const next = prev.map((p) =>
-        p.id === id ? { ...p, role: (p.role === 'main' ? 'addition' : 'main') as PackshotRole } : p
-      );
-      // Ostatniego głównego nie da się zdegradować — musi zostać co najmniej jeden.
+      const next = prev.map((p) => (p.id === id ? { ...p, role: nextRole[p.role] } : p));
       return next.some((p) => p.role === 'main') ? next : prev;
     });
   }
+
+  const ROLE_LABEL: Record<PackshotRole, string> = {
+    main: 'Główny',
+    variant: 'Wariant',
+    addition: 'Dodatek',
+  };
+  const ROLE_BTN_CLS: Record<PackshotRole, string> = {
+    main: 'bg-studio-accent text-white hover:bg-studio-accent-dark',
+    variant: 'bg-amber-500 text-white hover:bg-amber-600',
+    addition: 'bg-studio-ink/70 text-white hover:bg-studio-ink',
+  };
 
   const totalGenerations = roomIds.length * models.length * variants;
 
@@ -379,8 +393,9 @@ export default function NewVisualizationPage() {
             1. Packshoty produktów (do {MAX_PACKSHOTS_PER_GENERATION})
           </h2>
           <p className="text-xs text-studio-muted">
-            Pierwszy wybrany zostaje <strong>głównym</strong> produktem, kolejne — dodatkami.
-            Kliknij etykietę roli na miniaturze, żeby ją zmienić (może być kilka głównych, np. kolekcja mebli).
+            Pierwszy wybrany zostaje <strong>głównym</strong> produktem. Kliknięcie etykiety roli
+            przełącza: Główny → <strong>Wariant</strong> (ten sam mebel w innej konfiguracji, np.
+            sofa rozłożona do spania — pokaże się w scenie obok wersji głównej) → Dodatek.
           </p>
           <div
             onDragOver={(e) => {
@@ -425,7 +440,7 @@ export default function NewVisualizationPage() {
           </div>
 
           {packshots.length > 0 && (
-            <div className="mt-4 grid grid-cols-4 gap-3 sm:grid-cols-6">
+            <div className="mt-4 grid grid-cols-3 gap-3 sm:grid-cols-6">
               {packshots.slice(0, 18).map((p) => {
                 const selection = selectedPackshots.find((s) => s.id === p.id);
                 return (
@@ -461,12 +476,10 @@ export default function NewVisualizationPage() {
                           title="Kliknij, żeby zmienić rolę"
                           className={cn(
                             'absolute inset-x-1 bottom-1 rounded-md px-1 py-0.5 text-center text-[10px] font-semibold uppercase tracking-wide transition-colors',
-                            selection.role === 'main'
-                              ? 'bg-studio-accent text-white hover:bg-studio-accent-dark'
-                              : 'bg-studio-ink/70 text-white hover:bg-studio-ink'
+                            ROLE_BTN_CLS[selection.role]
                           )}
                         >
-                          {selection.role === 'main' ? 'Główny' : 'Dodatek'}
+                          {ROLE_LABEL[selection.role]}
                         </button>
                       </>
                     )}
@@ -496,21 +509,23 @@ export default function NewVisualizationPage() {
                     )}
                     <button
                       onClick={() => togglePackshotRole(s.id)}
-                      title="Kliknij, żeby zmienić rolę"
+                      title="Kliknij, żeby zmienić rolę (Główny → Wariant → Dodatek)"
                       className={cn(
                         'shrink-0 rounded-full px-3 py-1 text-xs font-semibold transition-colors',
-                        s.role === 'main'
-                          ? 'bg-studio-accent text-white hover:bg-studio-accent-dark'
-                          : 'bg-studio-ink/70 text-white hover:bg-studio-ink'
+                        ROLE_BTN_CLS[s.role]
                       )}
                     >
-                      {s.role === 'main' ? 'Główny' : 'Dodatek'}
+                      {ROLE_LABEL[s.role]}
                     </button>
                     <input
                       value={s.note}
                       onChange={(e) => setPackshotNote(s.id, e.target.value)}
                       maxLength={500}
-                      placeholder="Gdzie ustawić? Co na nim położyć? (np. przy oknie, na nim lniany pled)"
+                      placeholder={
+                        s.role === 'variant'
+                          ? 'np. rozłożona do spania, ustaw po prawej stronie sceny'
+                          : 'Gdzie ustawić? Co na nim położyć? (np. przy oknie, na nim lniany pled)'
+                      }
                       className="w-full min-w-0 flex-1 rounded-lg border border-studio-border bg-white px-3 py-2 text-sm outline-none transition-colors placeholder:text-studio-muted/60 focus:border-studio-accent"
                     />
                   </div>
@@ -808,7 +823,7 @@ export default function NewVisualizationPage() {
           </div>
         </Card>
 
-        <div className="flex items-center justify-end gap-4 pb-8">
+        <div className="flex flex-col items-stretch gap-3 pb-8 sm:flex-row sm:items-center sm:justify-end sm:gap-4">
           <p className={cn('text-sm', totalGenerations > MAX_BATCH_TOTAL ? 'font-medium text-red-600' : 'text-studio-muted')}>
             Seria: {roomIds.length || '–'} {roomIds.length === 1 ? 'pokój' : 'pokoje'} ×{' '}
             {models.length} {models.length === 1 ? 'model' : 'modele'} × {variants}{' '}

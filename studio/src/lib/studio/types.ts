@@ -41,7 +41,7 @@ export interface InspirationImageRow {
   created_at: string;
 }
 
-export type PackshotRole = 'main' | 'addition';
+export type PackshotRole = 'main' | 'variant' | 'addition';
 
 export interface GenerationPackshotRow {
   generation_id: string;

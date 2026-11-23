@@ -477,7 +477,7 @@ export function MaskEditor({
           <div
             ref={viewportRef}
             className={cn(
-              'relative h-[66vh] overflow-hidden rounded-lg bg-studio-bg',
+              'relative h-[55dvh] overflow-hidden rounded-lg bg-studio-bg md:h-[66vh]',
               panActive && 'cursor-grab active:cursor-grabbing'
             )}
             onPointerDown={viewportPointerDown}
@@ -495,7 +495,7 @@ export function MaskEditor({
               <img
                 src={imageUrl}
                 alt="Edytowany obraz"
-                className="pointer-events-none block max-h-[64vh] w-auto max-w-full rounded-lg"
+                className="pointer-events-none block max-h-[53dvh] w-auto max-w-full rounded-lg md:max-h-[64vh]"
                 draggable={false}
               />
               <canvas

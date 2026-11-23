@@ -38,7 +38,7 @@ interface DetailResponse {
   packshot: { id: string; image_url: string; original_filename: string | null } | null;
   packshots?: {
     id: string;
-    role: 'main' | 'addition';
+    role: 'main' | 'variant' | 'addition';
     note: string | null;
     image_url: string;
     original_filename: string | null;
@@ -393,8 +393,12 @@ export function GenerationDetailClient({ id }: { id: string }) {
                       />
                       <div className="min-w-0">
                         <div className="flex items-center gap-1.5">
-                          <Badge tone={pk.role === 'main' ? 'accent' : 'neutral'}>
-                            {pk.role === 'main' ? 'główny' : 'dodatek'}
+                          <Badge
+                            tone={
+                              pk.role === 'main' ? 'accent' : pk.role === 'variant' ? 'pending' : 'neutral'
+                            }
+                          >
+                            {pk.role === 'main' ? 'główny' : pk.role === 'variant' ? 'wariant' : 'dodatek'}
                           </Badge>
                         </div>
                         <p className="truncate text-xs text-studio-muted">

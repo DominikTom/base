@@ -74,6 +74,8 @@ export interface BuildPromptInput {
   manualNotes?: string | null;
   /** Liczba packshotów głównych (bohaterowie sceny). */
   mainCount?: number;
+  /** Liczba wariantów głównego produktu (ten sam mebel, inna konfiguracja). */
+  variantCount?: number;
   /** Liczba packshotów-dodatków (produkty uzupełniające). */
   additionCount?: number;
   /**
@@ -148,8 +150,9 @@ export function buildGenerationPrompt(input: BuildPromptInput): string {
   const parts: string[] = [PRODUCT_LOCK_PROMPT_EN];
 
   const mains = Math.max(1, input.mainCount ?? 1);
+  const variants = Math.max(0, input.variantCount ?? 0);
   const additions = Math.max(0, input.additionCount ?? 0);
-  const packshotCount = mains + additions;
+  const packshotCount = mains + variants + additions;
   const refCount = effectiveReferenceCount(
     input.inspirationStrength,
     input.inspirationImageCount ?? 0,
@@ -159,23 +162,32 @@ export function buildGenerationPrompt(input: BuildPromptInput): string {
 
   // Jawna mapa obrazów wejściowych — model musi wiedzieć, który obraz jest
   // packshotem, a który tylko referencją stylu (inaczej miesza cechy mebli
-  // z inspiracji z produktem).
+  // z inspiracji z produktem). Kolejność: główne → warianty → dodatki.
   const mapLines: string[] = [`INPUT IMAGES (${totalImages} total):`];
   if (packshotCount === 1) {
     mapLines.push('- Image 1: PRODUCT PACKSHOT (the main product).');
-  } else if (additions === 0) {
-    mapLines.push(`- Images 1–${mains}: PRODUCT PACKSHOTS — all MAIN products (a matching furniture collection).`);
   } else {
     mapLines.push(
       mains === 1
         ? '- Image 1: PRODUCT PACKSHOT — the MAIN product (hero of the scene).'
-        : `- Images 1–${mains}: PRODUCT PACKSHOTS — MAIN products (co-heroes of the scene).`
+        : `- Images 1–${mains}: PRODUCT PACKSHOTS — MAIN products (co-heroes of the scene${additions === 0 && variants === 0 ? ', a matching furniture collection' : ''}).`
     );
-    mapLines.push(
-      additions === 1
-        ? `- Image ${mains + 1}: PRODUCT PACKSHOT — a SUPPORTING product (complementary, less prominent).`
-        : `- Images ${mains + 1}–${packshotCount}: PRODUCT PACKSHOTS — SUPPORTING products (complementary, less prominent).`
-    );
+    if (variants > 0) {
+      const from = mains + 1;
+      const to = mains + variants;
+      mapLines.push(
+        `- ${variants === 1 ? `Image ${from}` : `Images ${from}–${to}`}: THE SAME product as the main packshot, shown in a DIFFERENT CONFIGURATION (e.g., the sofa unfolded into its sleeping position). Render it in the scene as an ADDITIONAL, SEPARATE instance of that same product: identical fabric, color, stitching and details — only the mechanical configuration differs. Both instances must appear together in the one scene.`
+      );
+    }
+    if (additions > 0) {
+      const from = mains + variants + 1;
+      const to = packshotCount;
+      mapLines.push(
+        additions === 1
+          ? `- Image ${from}: PRODUCT PACKSHOT — a SUPPORTING product (complementary, less prominent).`
+          : `- Images ${from}–${to}: PRODUCT PACKSHOTS — SUPPORTING products (complementary, less prominent).`
+      );
+    }
   }
   if (refCount > 0) {
     mapLines.push(
@@ -201,7 +213,7 @@ export function buildGenerationPrompt(input: BuildPromptInput): string {
   const arrangeLine =
     packshotCount === 1
       ? 'Place the product from the packshot in a photorealistic interior scene described below.'
-      : `Arrange ALL ${packshotCount} packshot products together in ONE photorealistic interior scene described below, with consistent scale between products.`;
+      : `Arrange ALL ${packshotCount} packshot ${variants > 0 ? 'images (including both configurations of the main product)' : 'products'} together in ONE photorealistic interior scene described below, with consistent scale between products.`;
   parts.push(
     `TASK: ${arrangeLine} Professional interior photography, realistic perspective, natural shadows and reflections consistent with the scene lighting, high-end furniture catalog quality. Render every packshot product tack-sharp, at the same level of detail and texture crispness as its packshot — do not soften, blur, repaint or simplify the product's fabric, pattern or edges.`
   );

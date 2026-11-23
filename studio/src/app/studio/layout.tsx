@@ -9,11 +9,16 @@ export const metadata: Metadata = {
 
 export default function StudioLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex min-h-screen bg-studio-bg text-studio-ink">
+    <div className="min-h-dvh bg-studio-bg text-studio-ink md:flex">
       <ToastProvider>
         <StudioSidebar />
-        <main className="min-w-0 flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-7xl px-8 py-8">{children}</div>
+        <main className="min-w-0 flex-1">
+          <div
+            className="mx-auto max-w-7xl px-4 py-5 md:px-8 md:py-8"
+            style={{ paddingBottom: 'calc(2rem + env(safe-area-inset-bottom, 0px))' }}
+          >
+            {children}
+          </div>
         </main>
       </ToastProvider>
     </div>

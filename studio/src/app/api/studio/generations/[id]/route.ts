@@ -31,10 +31,13 @@ export async function GET(request: NextRequest, ctx: Ctx) {
     .from('generation_packshots')
     .select('packshot_id, role, sort_order, note')
     .eq('generation_id', row.id);
+  const roleRank: Record<string, number> = { main: 0, variant: 1, addition: 2 };
   const orderedLinks =
     links && links.length > 0
       ? [...links].sort((a, b) =>
-          a.role === b.role ? a.sort_order - b.sort_order : a.role === 'main' ? -1 : 1
+          a.role === b.role
+            ? a.sort_order - b.sort_order
+            : (roleRank[a.role] ?? 9) - (roleRank[b.role] ?? 9)
         )
       : row.packshot_id
         ? [{ packshot_id: row.packshot_id, role: 'main', sort_order: 0, note: null }]

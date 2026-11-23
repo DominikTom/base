@@ -162,9 +162,12 @@ async function loadGenerationPackshots(
 
   let orderedIds: string[];
   if (links && links.length > 0) {
+    const rank: Record<string, number> = { main: 0, variant: 1, addition: 2 };
     orderedIds = [...links]
       .sort((a, b) =>
-        a.role === b.role ? a.sort_order - b.sort_order : a.role === 'main' ? -1 : 1
+        a.role === b.role
+          ? a.sort_order - b.sort_order
+          : (rank[a.role] ?? 9) - (rank[b.role] ?? 9)
       )
       .map((l) => l.packshot_id);
   } else if (generation.packshot_id) {

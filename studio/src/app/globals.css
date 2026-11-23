@@ -28,6 +28,33 @@ body {
   font-family: var(--font-sans), system-ui, sans-serif;
 }
 
+/* ---------- Mobile: zachowanie natywne ---------- */
+
+html {
+  /* bez szarego błysku przy tapnięciu i bez pull-to-refresh w narzędziu */
+  -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
+  overscroll-behavior: none;
+}
+
+button,
+a,
+[role='button'] {
+  /* klik bez opóźnienia 300 ms; long-press nie zaznacza etykiet kontrolek */
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+@media (pointer: coarse) {
+  /* iOS zoomuje stronę przy focusu inputa z fontem < 16px — i nie odzoomowuje */
+  input,
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+}
+
 /* Custom scrollbar */
 ::-webkit-scrollbar {
   width: 6px;

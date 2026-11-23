@@ -13,7 +13,7 @@ export const maxDuration = 300;
 
 const packshotEntry = z.object({
   id: z.string().uuid(),
-  role: z.enum(['main', 'addition']).default('main'),
+  role: z.enum(['main', 'variant', 'addition']).default('main'),
   /** "Gdzie ustawić, co na nim położyć" — trafia do promptu przy tym obrazie. */
   note: z.string().max(500).optional(),
 });
@@ -79,7 +79,10 @@ export async function POST(request: NextRequest) {
     packshotList = packshotList.map((p, i) => (i === 0 ? { ...p, role: 'main' as const } : p));
   }
   const mains = packshotList.filter((p) => p.role === 'main');
+  const variantsOfMain = packshotList.filter((p) => p.role === 'variant');
   const additions = packshotList.filter((p) => p.role === 'addition');
+  /** Kolejność obrazów dla modelu i zapisu: główne → warianty → dodatki. */
+  const orderedPackshots = [...mains, ...variantsOfMain, ...additions];
 
   const { count: foundPackshots } = await auth.supabase
     .from('packshots')
@@ -141,8 +144,9 @@ export async function POST(request: NextRequest) {
       inspirationImageCount,
       manualNotes: input.manualNotes,
       mainCount: mains.length,
+      variantCount: variantsOfMain.length,
       additionCount: additions.length,
-      packshotNotes: [...mains, ...additions].map((p) => p.note ?? null),
+      packshotNotes: orderedPackshots.map((p) => p.note ?? null),
       aspectRatio: input.aspectRatio,
       cameraShot: input.cameraShot === 'auto' ? null : input.cameraShot,
       cameraAngle: input.cameraAngle === 'auto' ? null : input.cameraAngle,
@@ -184,8 +188,8 @@ export async function POST(request: NextRequest) {
   }
   const created = createdRows as GenerationRow[];
 
-  // Powiązania packshotów z rolami (główne najpierw) — dla każdego wiersza serii.
-  const orderedForInsert = [...mains, ...additions];
+  // Powiązania packshotów z rolami (główne → warianty → dodatki).
+  const orderedForInsert = orderedPackshots;
   const { error: linkErr } = await auth.supabase.from('generation_packshots').insert(
     created.flatMap((g) =>
       orderedForInsert.map((p, i) => ({
