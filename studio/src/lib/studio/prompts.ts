@@ -296,6 +296,14 @@ function editChangeLine(instruction: string, referenceCount: number): string {
 }
 
 /**
+ * Edycje często dotykają metek/logotypów — modele obrazowe chętnie je
+ * "przerysowują" (łącznie z wymyślaniem cudzych marek). Twarda klauzula
+ * ochrony tekstu i znaków firmowych w obu rodzinach promptów edycji.
+ */
+const EDIT_TEXT_LOCK_EN =
+  'CRITICAL — TEXT & BRAND INTEGRITY: any visible text, logos, labels, tags or brand marks inside or near the edited region must be reproduced EXACTLY as in the original image — same wording, letterforms, logo design, colors and placement. NEVER invent, replace or substitute a different brand name or logo. If the instruction does not explicitly ask to change the text or logo, treat it as untouchable. The user instruction may be written in Polish.';
+
+/**
  * Prompt edycji dla modeli Gemini (technika adnotacji — bez natywnej maski):
  * wysyłamy oryginał + kopię z czerwoną półprzezroczystą maską (+ referencje).
  */
@@ -307,6 +315,7 @@ export function buildGeminiAnnotatedEditPrompt(instruction: string, referenceCou
   return [
     imageList,
     `Edit ONLY the region marked in red on the annotated image. ${editChangeLine(instruction, referenceCount)}`,
+    EDIT_TEXT_LOCK_EN,
     'Keep everything outside the marked region pixel-identical to the ORIGINAL image. Return the full edited image at the same resolution, without any red markings.',
   ].join('\n');
 }
@@ -318,6 +327,7 @@ export function buildGeminiAnnotatedEditPrompt(instruction: string, referenceCou
 export function buildOpenAiMaskEditPrompt(instruction: string, referenceCount = 0): string {
   return [
     `${editChangeLine(instruction, referenceCount)}`,
+    EDIT_TEXT_LOCK_EN,
     'Blend the edit naturally with the surrounding image: match lighting, perspective, grain and color grading. Everything outside the mask must remain unchanged.',
   ].join('\n');
 }

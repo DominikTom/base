@@ -58,7 +58,11 @@ export async function runGeneration(
       for (const refPath of generation.edit_reference_paths ?? []) {
         references.push(await downloadFromBucket(supabase, 'generations', refPath));
       }
-      const isOpenAi = generation.model === 'gpt-image-2';
+      // Rodzina promptu wg PROVIDERA z rejestru (nie po id!) — wcześniejsze
+      // porównanie z literałem 'gpt-image-2' wysyłało nowszym modelom OpenAI
+      // (2.5/2.6) prompt adnotacyjny Gemini o "czerwonym zaznaczeniu",
+      // którego przy natywnej masce w ogóle nie ma → śmieciowe wyniki.
+      const isOpenAi = getModelMeta(generation.model)?.provider === 'openai';
       result = await provider.edit({
         prompt: isOpenAi
           ? buildOpenAiMaskEditPrompt(generation.edit_instruction, references.length)
