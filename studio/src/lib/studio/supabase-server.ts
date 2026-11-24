@@ -48,3 +48,21 @@ export async function requireStudioUser(): Promise<StudioAuth | NextResponse> {
   }
   return { supabase, user };
 }
+
+/**
+ * Jak requireStudioUser, ale dodatkowo wymaga profiles.is_admin = true
+ * (403 w przeciwnym razie). Używać we wszystkich trasach /api/studio/admin/*.
+ */
+export async function requireStudioAdmin(): Promise<StudioAuth | NextResponse> {
+  const auth = await requireStudioUser();
+  if (auth instanceof NextResponse) return auth;
+  const { data } = await auth.supabase
+    .from('profiles')
+    .select('is_admin')
+    .eq('id', auth.user.id)
+    .maybeSingle();
+  if (!data?.is_admin) {
+    return NextResponse.json({ error: 'Brak uprawnień administratora.' }, { status: 403 });
+  }
+  return auth;
+}

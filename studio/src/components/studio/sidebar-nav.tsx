@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { createBrowserClient } from '@supabase/ssr';
-import { Images, Lightbulb, Library, LogOut, Menu, SlidersHorizontal, Sparkles, Trash2, X } from 'lucide-react';
+import { Images, Lightbulb, Library, LogOut, Menu, Shield, SlidersHorizontal, Sparkles, Trash2, X } from 'lucide-react';
 import { ThemeToggle } from '@/components/studio/theme-toggle';
 import { cn } from '@/lib/utils';
 
@@ -21,11 +21,20 @@ export function StudioSidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   // Zamknij szufladę przy zmianie trasy.
   useEffect(() => {
     setDrawerOpen(false);
   }, [pathname]);
+
+  // Link "Administracja" tylko dla adminów (API i tak pilnuje po swojej stronie).
+  useEffect(() => {
+    fetch('/api/studio/me', { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { isAdmin?: boolean } | null) => setIsAdmin(Boolean(d?.isAdmin)))
+      .catch(() => {});
+  }, []);
 
   async function handleLogout() {
     const supabase = createBrowserClient(
@@ -36,9 +45,13 @@ export function StudioSidebar() {
     router.push('/login');
   }
 
+  const navItems = isAdmin
+    ? [...NAV_ITEMS, { href: '/studio/admin', label: 'Administracja', icon: Shield }]
+    : NAV_ITEMS;
+
   const nav = (
     <nav className="flex-1 space-y-1 px-3">
-      {NAV_ITEMS.map((item) => {
+      {navItems.map((item) => {
         const active = pathname.startsWith(item.href);
         return (
           <Link
