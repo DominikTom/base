@@ -219,7 +219,13 @@ export function GenerationDetailClient({ id }: { id: string }) {
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <h1 className="text-2xl font-semibold tracking-tight">
-            {isEdit ? (g.mask_storage_path ? 'Edycja pędzlem' : 'Korekty obrazu') : 'Wizualizacja'}
+            {isEdit
+              ? g.mask_storage_path
+                ? 'Edycja pędzlem'
+                : 'Korekty obrazu'
+              : g.model === 'upload'
+                ? 'Zdjęcie własne'
+                : 'Wizualizacja'}
           </h1>
           <StatusBadge status={g.status} />
           {isEdit && <Badge tone="accent">wersja edytowana</Badge>}
@@ -488,7 +494,10 @@ export function GenerationDetailClient({ id }: { id: string }) {
               </div>
             )}
             <InfoRow label="Pokój" value={g.room_name ?? '—'} />
-            <InfoRow label="Model" value={modelMeta?.label ?? g.model} />
+            <InfoRow
+              label="Model"
+              value={modelMeta?.label ?? (g.model === 'upload' ? 'Zdjęcie własne (wgrane)' : g.model)}
+            />
             {g.aspect_ratio && <InfoRow label="Format" value={g.aspect_ratio} />}
             {g.camera_shot && (
               <InfoRow
@@ -652,7 +661,9 @@ function VersionTree({
               ? node.edit_instruction.startsWith('Korekty:')
                 ? `${node.edit_instruction.slice(0, 48)}${node.edit_instruction.length > 48 ? '…' : ''}`
                 : `Edycja: ${node.edit_instruction.slice(0, 40)}${node.edit_instruction.length > 40 ? '…' : ''}`
-              : 'Generacja bazowa'}
+              : node.model === 'upload'
+                ? 'Zdjęcie własne'
+                : 'Generacja bazowa'}
           </span>
           <span className="text-xs text-studio-muted">{formatDate(node.created_at).slice(0, 10)}</span>
         </Link>

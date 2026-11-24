@@ -7,10 +7,10 @@ import { cn } from '@/lib/utils';
 export const THEME_STORAGE_KEY = 'studio-theme';
 const THEME_COLOR: Record<'dark' | 'light', string> = { dark: '#09090b', light: '#f4f4f5' };
 
-/** Ustawia motyw na <html>, w meta theme-color i w localStorage. */
+/** Ustawia motyw na <html>, w meta theme-color i w localStorage. Domyślny = jasny. */
 export function applyTheme(theme: 'dark' | 'light') {
   const root = document.documentElement;
-  if (theme === 'light') root.setAttribute('data-theme', 'light');
+  if (theme === 'dark') root.setAttribute('data-theme', 'dark');
   else root.removeAttribute('data-theme');
   document
     .querySelector('meta[name="theme-color"]')
@@ -28,10 +28,10 @@ export function applyTheme(theme: 'dark' | 'light') {
  * się z faktycznym motywem.
  */
 export function ThemeToggle({ className, withLabel = false }: { className?: string; withLabel?: boolean }) {
-  const [light, setLight] = useState(false);
+  const [light, setLight] = useState(true);
 
   useEffect(() => {
-    setLight(document.documentElement.getAttribute('data-theme') === 'light');
+    setLight(document.documentElement.getAttribute('data-theme') !== 'dark');
   }, []);
 
   function toggle() {

@@ -1,36 +1,18 @@
 @import "tailwindcss";
 
-/* Wariant `light:` — aktywny, gdy <html> ma data-theme="light" (przełącznik w nawigacji). */
-@custom-variant light (&:where([data-theme='light'], [data-theme='light'] *));
+/*
+ * Wariant `light:` — poprawki kontrastu dla jasnego motywu. Jasny jest teraz
+ * domyślny, więc wariant aktywuje się wszędzie poza data-theme="dark".
+ */
+@custom-variant light (&:where(:root:not([data-theme='dark']), :root:not([data-theme='dark']) *));
 
 /*
  * MyBed Visual Studio — design system spójny z dash/OS.
- * Motyw domyślny: ciemny zinc + niebieski akcent; jasny włącza data-theme="light".
+ * Motyw domyślny: JASNY zinc + niebieski akcent; ciemny włącza data-theme="dark".
  * Wartości siedzą w zmiennych na :root, a @theme inline tylko je mapuje na
  * klasy Tailwinda — dzięki temu zmiana motywu to podmiana zmiennych w runtime.
  */
 :root {
-  color-scheme: dark;
-
-  --studio-bg: #09090b;
-  --studio-surface: #18181b;
-  --studio-border: #27272a;
-  --studio-ink: #fafafa;
-  --studio-muted: #a1a1aa;
-  --studio-accent: #2563eb;
-  --studio-accent-dark: #3b82f6;
-  --studio-accent-soft: rgba(37, 99, 235, 0.16);
-
-  --studio-card-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
-  --studio-scrollbar-track: #18181b;
-  --studio-scrollbar-thumb: #3f3f46;
-  --studio-scrollbar-thumb-hover: #52525b;
-
-  --background: var(--studio-bg);
-  --foreground: var(--studio-ink);
-}
-
-:root[data-theme='light'] {
   color-scheme: light;
 
   --studio-bg: #f4f4f5;
@@ -47,6 +29,27 @@
   --studio-scrollbar-track: #e4e4e7;
   --studio-scrollbar-thumb: #a1a1aa;
   --studio-scrollbar-thumb-hover: #71717a;
+
+  --background: var(--studio-bg);
+  --foreground: var(--studio-ink);
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --studio-bg: #09090b;
+  --studio-surface: #18181b;
+  --studio-border: #27272a;
+  --studio-ink: #fafafa;
+  --studio-muted: #a1a1aa;
+  --studio-accent: #2563eb;
+  --studio-accent-dark: #3b82f6;
+  --studio-accent-soft: rgba(37, 99, 235, 0.16);
+
+  --studio-card-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  --studio-scrollbar-track: #18181b;
+  --studio-scrollbar-thumb: #3f3f46;
+  --studio-scrollbar-thumb-hover: #52525b;
 }
 
 @theme inline {
@@ -131,6 +134,6 @@ a,
 }
 
 /* Ikona kalendarza w input[type=date] — odwracana tylko w ciemnym motywie. */
-:root:not([data-theme='light']) input[type='date']::-webkit-calendar-picker-indicator {
+:root[data-theme='dark'] input[type='date']::-webkit-calendar-picker-indicator {
   filter: invert(0.7);
 }

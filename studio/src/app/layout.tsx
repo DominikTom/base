@@ -7,7 +7,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   viewportFit: "cover",
   interactiveWidget: "resizes-content",
-  themeColor: "#09090b",
+  themeColor: "#f4f4f5",
 };
 
 const geistSans = Geist({
@@ -37,11 +37,11 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <body className="min-h-full flex flex-col">
-        {/* Motyw przed pierwszym malowaniem — bez błysku ciemnego przy jasnym wyborze. */}
+        {/* Motyw przed pierwszym malowaniem — domyślnie jasny; zapisany ciemny bez błysku. */}
         <script
           dangerouslySetInnerHTML={{
             __html:
-              "try{if(localStorage.getItem('studio-theme')==='light'){document.documentElement.setAttribute('data-theme','light');var m=document.querySelector('meta[name=\"theme-color\"]');if(m)m.setAttribute('content','#f4f4f5');}}catch(e){}",
+              "try{if(localStorage.getItem('studio-theme')==='dark'){document.documentElement.setAttribute('data-theme','dark');var m=document.querySelector('meta[name=\"theme-color\"]');if(m)m.setAttribute('content','#09090b');}}catch(e){}",
           }}
         />
         {children}

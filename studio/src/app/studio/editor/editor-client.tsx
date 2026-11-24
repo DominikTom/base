@@ -1,16 +1,22 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Brush, Eraser, Images, SlidersHorizontal } from 'lucide-react';
+import { ArrowLeft, Brush, Eraser, ImagePlus, Images, SlidersHorizontal } from 'lucide-react';
 import { AdjustEditor } from '@/components/studio/adjust-editor';
 import { MaskEditor, type MaskEditorSubmit } from '@/components/studio/mask-editor';
 import { useToast } from '@/components/studio/toast';
 import { Card, EmptyState, PageTitle, Spinner } from '@/components/studio/ui';
 import { apiGet, apiJson } from '@/lib/studio/client';
-import { getBrowserUserId, uploadToStorageFromBrowser } from '@/lib/studio/supabase-browser';
+import {
+  getBrowserUserId,
+  readImageDimensions,
+  uploadToStorageFromBrowser,
+} from '@/lib/studio/supabase-browser';
+import { extForMime, validateImageFile } from '@/lib/studio/upload-limits';
 import { STUDIO_MODELS, type StudioModelId } from '@/lib/studio/models';
+import { cn } from '@/lib/utils';
 import type { GenerationRow, GenerationView, PackshotRow } from '@/lib/studio/types';
 
 export type EditorTab = 'brush' | 'remove' | 'adjust';
@@ -62,7 +68,7 @@ export function EditorClient({
           );
           if (!d.generation.image_url) throw new Error('Ta wizualizacja nie ma jeszcze obrazu.');
           setImageUrl(d.generation.image_url);
-          setTitle('Edycja wizualizacji');
+          setTitle(d.generation.model === 'upload' ? 'Edycja własnego zdjęcia' : 'Edycja wizualizacji');
         } else {
           const d = await apiGet<{ packshots: (PackshotRow & { image_url: string })[] }>(
             '/api/studio/packshots'
@@ -202,12 +208,16 @@ export function EditorClient({
   );
 }
 
-/** Wybór obrazu do edycji: ostatnie wizualizacje + packshoty. */
+/** Wybór obrazu do edycji: własne zdjęcie z dysku, ostatnie wizualizacje, packshoty. */
 function SourcePicker({ tab }: { tab: EditorTab }) {
   const router = useRouter();
+  const { toast } = useToast();
   const [generations, setGenerations] = useState<GenerationView[]>([]);
   const [packshots, setPackshots] = useState<(PackshotRow & { image_url: string })[]>([]);
   const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     Promise.all([
@@ -226,12 +236,81 @@ function SourcePicker({ tab }: { tab: EditorTab }) {
     router.push(`/studio/editor?type=${type}&id=${id}&tab=${tab}`);
   }
 
+  /** Własne zdjęcie spoza narzędzia: upload do Storage → rejestracja → prosto do edytora. */
+  async function handleUpload(file: File) {
+    const invalid = validateImageFile(file);
+    if (invalid) {
+      toast('error', `${file.name}: ${invalid}.`);
+      return;
+    }
+    setUploading(true);
+    try {
+      const dims = await readImageDimensions(file);
+      const userId = await getBrowserUserId();
+      const path = `${userId}/upload-${crypto.randomUUID()}.${extForMime(file.type)}`;
+      await uploadToStorageFromBrowser('generations', path, file, file.type);
+      const res = await apiJson<{ generation: { id: string } }>('/api/studio/uploads', 'POST', {
+        path,
+        width: dims.width,
+        height: dims.height,
+      });
+      router.push(`/studio/editor?type=generation&id=${res.generation.id}&tab=${tab}`);
+    } catch (err) {
+      toast('error', err instanceof Error ? err.message : 'Upload nie powiódł się.');
+      setUploading(false);
+    }
+  }
+
+  const uploadZone = (
+    <div
+      onDragOver={(e) => {
+        e.preventDefault();
+        setDragOver(true);
+      }}
+      onDragLeave={() => setDragOver(false)}
+      onDrop={(e) => {
+        e.preventDefault();
+        setDragOver(false);
+        const file = e.dataTransfer.files[0];
+        if (file) void handleUpload(file);
+      }}
+      onClick={() => !uploading && fileInputRef.current?.click()}
+      className={cn(
+        'mb-6 flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed px-6 py-8 text-center transition-colors',
+        dragOver
+          ? 'border-studio-accent bg-studio-accent-soft'
+          : 'border-studio-border hover:border-studio-accent/50'
+      )}
+    >
+      {uploading ? <Spinner className="h-8 w-8" /> : <ImagePlus className="h-8 w-8 text-studio-muted" />}
+      <p className="text-sm font-medium text-studio-ink">
+        {uploading ? 'Wgrywam zdjęcie…' : 'Wgraj własne zdjęcie spoza narzędzia'}
+      </p>
+      <p className="text-xs text-studio-muted">
+        np. zdjęcie z sesji albo ze sklepu — zaznaczysz pędzlem i opiszesz zmianę. PNG, JPG lub
+        WEBP, do 20 MB.
+      </p>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) void handleUpload(file);
+          e.target.value = '';
+        }}
+      />
+    </div>
+  );
+
   return (
     <div>
       <PageTitle
         title="Edycja"
-        subtitle="Wybierz obraz do pracy — pędzel AI, usuwanie obiektów albo korekty suwakami."
+        subtitle="Wgraj własne zdjęcie albo wybierz obraz z biblioteki — pędzel AI, usuwanie obiektów, korekty suwakami."
       />
+      {uploadZone}
       {loading ? (
         <div className="flex h-64 items-center justify-center">
           <Spinner className="h-8 w-8" />
@@ -239,8 +318,8 @@ function SourcePicker({ tab }: { tab: EditorTab }) {
       ) : generations.length === 0 && packshots.length === 0 ? (
         <EmptyState
           icon={<Images className="h-10 w-10" />}
-          title="Brak obrazów do edycji"
-          hint="Wygeneruj wizualizację albo wgraj packshot — wtedy pojawią się tutaj."
+          title="Brak obrazów w bibliotece"
+          hint="Wgraj zdjęcie powyżej, wygeneruj wizualizację albo dodaj packshot."
         />
       ) : (
         <div className="space-y-8">
@@ -266,7 +345,12 @@ function SourcePicker({ tab }: { tab: EditorTab }) {
                       />
                     </div>
                     <p className="truncate p-2 text-xs text-studio-muted">
-                      {g.room_name ?? (g.edit_instruction ? 'Edycja' : 'Wizualizacja')}
+                      {g.room_name ??
+                        (g.model === 'upload'
+                          ? 'Zdjęcie własne'
+                          : g.edit_instruction
+                            ? 'Edycja'
+                            : 'Wizualizacja')}
                     </p>
                   </Card>
                 ))}
