@@ -47,6 +47,14 @@ export interface MaskEditorSubmit {
 const MAX_EDIT_REFERENCES = 4;
 
 /**
+ * Tryb "gumka do przedmiotów": stała instrukcja usunięcia zamalowanych
+ * obiektów i naturalnego odtworzenia tła (idzie jako instruction do
+ * istniejącego API edycji — bez zmian w architekturze promptów).
+ */
+const REMOVE_INSTRUCTION =
+  'REMOVE the painted/marked objects completely from the image. Reconstruct the background behind them (wall, floor, textiles, furniture surfaces) so the scene looks natural, as if the objects were never there. Match the lighting, shadows, texture and perspective of the surroundings. Do not add any new objects.';
+
+/**
  * Edytor maski: warstwa 1 = obraz (<img>), warstwa 2 = maska rysowana pędzlem.
  *
  * Kluczowe decyzje, dzięki którym pędzel działa niezależnie od DPR/zoomu:
@@ -65,6 +73,7 @@ export function MaskEditor({
   defaultModel = DEFAULT_EDIT_MODEL,
   initialMaskUrl,
   initialInstruction,
+  mode = 'edit',
 }: {
   imageUrl: string;
   onSubmit: (payload: MaskEditorSubmit) => void | Promise<void>;
@@ -73,6 +82,8 @@ export function MaskEditor({
   /** Maska z wcześniejszej edycji (format OpenAI) — wczytywana jako baza do poprawek. */
   initialMaskUrl?: string;
   initialInstruction?: string;
+  /** 'edit' = zmień zaznaczenie wg instrukcji; 'remove' = usuń zamalowane obiekty. */
+  mode?: 'edit' | 'remove';
 }) {
   const { toast } = useToast();
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -458,10 +469,10 @@ export function MaskEditor({
 
   async function handleSubmit() {
     if (!hasMask) {
-      toast('error', 'Zaznacz pędzlem obszar do zmiany.');
+      toast('error', mode === 'remove' ? 'Zamaluj przedmioty do usunięcia.' : 'Zaznacz pędzlem obszar do zmiany.');
       return;
     }
-    if (!instruction.trim() && references.length === 0) {
+    if (mode === 'edit' && !instruction.trim() && references.length === 0) {
       toast('error', 'Opisz, co zmienić w zaznaczonym obszarze, albo dodaj obraz referencyjny.');
       return;
     }
@@ -470,11 +481,15 @@ export function MaskEditor({
       toast('error', 'Eksport maski nie powiódł się.');
       return;
     }
+    const finalInstruction =
+      mode === 'remove'
+        ? `${REMOVE_INSTRUCTION}${instruction.trim() ? ` Additional note from the user: ${instruction.trim()}` : ''}`
+        : instruction.trim();
     await onSubmit({
       ...exported,
-      instruction: instruction.trim(),
+      instruction: finalInstruction,
       model,
-      references: references.map((r) => r.file),
+      references: mode === 'remove' ? [] : references.map((r) => r.file),
     });
   }
 
@@ -649,22 +664,33 @@ export function MaskEditor({
         </Card>
 
         <Card className="p-4">
+          {mode === 'remove' && (
+            <p className="mb-3 rounded-lg bg-studio-bg p-2.5 text-xs leading-relaxed text-studio-muted">
+              <strong className="text-studio-ink">Gumka do przedmiotów:</strong> zamaluj obiekty,
+              które mają zniknąć (np. lampkę, roślinę, obraz) — model usunie je i naturalnie
+              odtworzy tło: ścianę, podłogę, tkaniny.
+            </p>
+          )}
           <label className="mb-1.5 block text-sm font-medium">
-            Co zmienić w zaznaczonym obszarze?
+            {mode === 'remove' ? 'Dodatkowa uwaga (opcjonalnie)' : 'Co zmienić w zaznaczonym obszarze?'}
           </label>
           <textarea
             value={instruction}
             onChange={(e) => setInstruction(e.target.value)}
-            rows={3}
+            rows={mode === 'remove' ? 2 : 3}
             maxLength={2000}
             placeholder={
-              references.length > 0
-                ? 'opcjonalnie — np. ustaw je symetrycznie po obu stronach łóżka'
-                : 'np. zmień poduszki na lniane, beżowe'
+              mode === 'remove'
+                ? 'np. zostaw cień po lewej stronie bez zmian'
+                : references.length > 0
+                  ? 'opcjonalnie — np. ustaw je symetrycznie po obu stronach łóżka'
+                  : 'np. zmień poduszki na lniane, beżowe'
             }
             className="w-full rounded-xl border border-studio-border bg-studio-surface px-3 py-2.5 text-sm outline-none transition-colors placeholder:text-studio-muted/60 focus:border-studio-accent"
           />
 
+          {mode === 'edit' && (
+            <>
           <p className="mb-1.5 mt-3 text-sm font-medium">
             Obrazy referencyjne <span className="font-normal text-studio-muted">(opcjonalnie, do {MAX_EDIT_REFERENCES})</span>
           </p>
@@ -706,6 +732,8 @@ export function MaskEditor({
               }}
             />
           </div>
+            </>
+          )}
         </Card>
 
         <Card className="p-4">
@@ -795,7 +823,7 @@ export function MaskEditor({
 
         <Button onClick={handleSubmit} disabled={busy} className="w-full py-3">
           {busy ? <Spinner className="h-5 w-5 text-white" /> : <Wand2 className="h-5 w-5" />}
-          Zastosuj zmianę
+          {mode === 'remove' ? 'Usuń zaznaczone obiekty' : 'Zastosuj zmianę'}
         </Button>
         <p className="text-center text-xs text-studio-muted">
           Wynik zapisze się jako nowa wersja podpięta do oryginału.

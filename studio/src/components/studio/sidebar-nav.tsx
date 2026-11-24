@@ -4,13 +4,14 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { createBrowserClient } from '@supabase/ssr';
-import { Images, Lightbulb, Library, LogOut, Menu, Sparkles, Trash2, X } from 'lucide-react';
+import { Images, Lightbulb, Library, LogOut, Menu, SlidersHorizontal, Sparkles, Trash2, X } from 'lucide-react';
 import { ThemeToggle } from '@/components/studio/theme-toggle';
 import { cn } from '@/lib/utils';
 
 const NAV_ITEMS = [
   { href: '/studio/new', label: 'Nowa wizualizacja', icon: Sparkles },
   { href: '/studio/library', label: 'Biblioteka', icon: Library },
+  { href: '/studio/editor', label: 'Edycja', icon: SlidersHorizontal },
   { href: '/studio/packshots', label: 'Packshoty', icon: Images },
   { href: '/studio/inspirations', label: 'Inspiracje', icon: Lightbulb },
   { href: '/studio/trash', label: 'Kosz', icon: Trash2 },

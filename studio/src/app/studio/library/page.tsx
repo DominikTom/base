@@ -387,7 +387,12 @@ function GenerationCard({
         <div className="space-y-1 p-3">
           <div className="flex items-center justify-between gap-2">
             <span className="truncate text-sm font-medium">
-              {g.room_name ?? (g.edit_instruction ? 'Edycja pędzlem' : 'Wizualizacja')}
+              {g.room_name ??
+                (g.edit_instruction
+                  ? g.mask_storage_path
+                    ? 'Edycja pędzlem'
+                    : 'Korekty obrazu'
+                  : 'Wizualizacja')}
             </span>
             <span className="flex shrink-0 items-center gap-1">
               {g.shared && <Badge tone="accent">wspólna</Badge>}

@@ -8,11 +8,13 @@ import {
   Brush,
   Copy,
   Download,
+  Eraser,
   Layers,
   Lightbulb,
   MoreHorizontal,
   RefreshCw,
   Share2,
+  SlidersHorizontal,
   Sparkles,
   Star,
   Trash2,
@@ -217,7 +219,7 @@ export function GenerationDetailClient({ id }: { id: string }) {
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <h1 className="text-2xl font-semibold tracking-tight">
-            {isEdit ? 'Edycja pędzlem' : 'Wizualizacja'}
+            {isEdit ? (g.mask_storage_path ? 'Edycja pędzlem' : 'Korekty obrazu') : 'Wizualizacja'}
           </h1>
           <StatusBadge status={g.status} />
           {isEdit && <Badge tone="accent">wersja edytowana</Badge>}
@@ -326,6 +328,20 @@ export function GenerationDetailClient({ id }: { id: string }) {
                 <div className="absolute right-0 z-40 mt-2 w-60 overflow-hidden rounded-xl border border-studio-border bg-studio-surface py-1 shadow-xl">
                   {g.status === 'done' && g.image_url && (
                     <>
+                      <Link
+                        href={`/studio/editor?type=generation&id=${g.id}&tab=remove`}
+                        onClick={() => setMenuOpen(false)}
+                        className="flex items-center gap-2.5 px-4 py-2.5 text-sm transition-colors hover:bg-studio-bg"
+                      >
+                        <Eraser className="h-4 w-4 text-studio-muted" /> Usuń obiekt (gumka)
+                      </Link>
+                      <Link
+                        href={`/studio/editor?type=generation&id=${g.id}&tab=adjust`}
+                        onClick={() => setMenuOpen(false)}
+                        className="flex items-center gap-2.5 px-4 py-2.5 text-sm transition-colors hover:bg-studio-bg"
+                      >
+                        <SlidersHorizontal className="h-4 w-4 text-studio-muted" /> Korekty kolorów
+                      </Link>
                       <a
                         href={`${g.image_url}&download=1`}
                         onClick={() => setMenuOpen(false)}
@@ -633,7 +649,9 @@ function VersionTree({
           )}
           <span className="flex-1 truncate">
             {node.edit_instruction
-              ? `Edycja: ${node.edit_instruction.slice(0, 40)}${node.edit_instruction.length > 40 ? '…' : ''}`
+              ? node.edit_instruction.startsWith('Korekty:')
+                ? `${node.edit_instruction.slice(0, 48)}${node.edit_instruction.length > 48 ? '…' : ''}`
+                : `Edycja: ${node.edit_instruction.slice(0, 40)}${node.edit_instruction.length > 40 ? '…' : ''}`
               : 'Generacja bazowa'}
           </span>
           <span className="text-xs text-studio-muted">{formatDate(node.created_at).slice(0, 10)}</span>
