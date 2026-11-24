@@ -11,6 +11,7 @@ import {
   Eraser,
   Layers,
   Lightbulb,
+  MessageSquareText,
   MoreHorizontal,
   RefreshCw,
   Share2,
@@ -222,7 +223,9 @@ export function GenerationDetailClient({ id }: { id: string }) {
             {isEdit
               ? g.mask_storage_path
                 ? 'Edycja pędzlem'
-                : 'Korekty obrazu'
+                : g.edit_instruction?.startsWith('Korekty:')
+                  ? 'Korekty obrazu'
+                  : 'Edycja opisowa'
               : g.model === 'upload'
                 ? 'Zdjęcie własne'
                 : 'Wizualizacja'}
@@ -340,6 +343,13 @@ export function GenerationDetailClient({ id }: { id: string }) {
                         className="flex items-center gap-2.5 px-4 py-2.5 text-sm transition-colors hover:bg-studio-bg"
                       >
                         <Eraser className="h-4 w-4 text-studio-muted" /> Usuń obiekt (gumka)
+                      </Link>
+                      <Link
+                        href={`/studio/editor?type=generation&id=${g.id}&tab=describe`}
+                        onClick={() => setMenuOpen(false)}
+                        className="flex items-center gap-2.5 px-4 py-2.5 text-sm transition-colors hover:bg-studio-bg"
+                      >
+                        <MessageSquareText className="h-4 w-4 text-studio-muted" /> Popraw opisowo (bez pędzla)
                       </Link>
                       <Link
                         href={`/studio/editor?type=generation&id=${g.id}&tab=adjust`}

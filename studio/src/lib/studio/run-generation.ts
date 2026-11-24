@@ -3,6 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { providerErrorToPolish } from './errors';
 import { getModelMeta, isStudioModelId } from './models';
 import {
+  buildDescriptiveEditPrompt,
   buildGeminiAnnotatedEditPrompt,
   buildOpenAiMaskEditPrompt,
   INSPIRATION_STRENGTH_LEVELS,
@@ -45,15 +46,9 @@ export async function runGeneration(
 
     let result: { data: Buffer; mimeType: string };
 
-    if (generation.edit_instruction && generation.mask_storage_path) {
-      // --- Edycja pędzlem ---
+    if (generation.edit_instruction) {
+      // --- Edycja: pędzlem (z maską) albo opisowa (bez maski) ---
       const source = await loadEditSource(supabase, generation);
-      const mask = await downloadFromBucket(supabase, 'generations', generation.mask_storage_path);
-      const annotated = await downloadFromBucket(
-        supabase,
-        'generations',
-        annotatedPathForMask(generation.mask_storage_path)
-      );
       const references: ImageInput[] = [];
       for (const refPath of generation.edit_reference_paths ?? []) {
         references.push(await downloadFromBucket(supabase, 'generations', refPath));
@@ -63,14 +58,43 @@ export async function runGeneration(
       // (2.5/2.6) prompt adnotacyjny Gemini o "czerwonym zaznaczeniu",
       // którego przy natywnej masce w ogóle nie ma → śmieciowe wyniki.
       const isOpenAi = getModelMeta(generation.model)?.provider === 'openai';
+
+      let prompt: string;
+      let mask: ImageInput | undefined;
+      let annotated: ImageInput | undefined;
+      let editReferences = references;
+
+      if (generation.mask_storage_path) {
+        mask = await downloadFromBucket(supabase, 'generations', generation.mask_storage_path);
+        annotated = await downloadFromBucket(
+          supabase,
+          'generations',
+          annotatedPathForMask(generation.mask_storage_path)
+        );
+        if (isOpenAi) {
+          // Przy natywnej masce model NIE WIDZI pikseli pod wyciętym obszarem —
+          // dokładamy pełną kopię oryginału jako ostatnią referencję, żeby miał
+          // z czego wiernie odtworzyć treść (inaczej: czarne dziury po masce
+          // u zachowawczych modeli albo zmyślona treść u starszych).
+          editReferences = [...references, source];
+          prompt = buildOpenAiMaskEditPrompt(generation.edit_instruction, references.length, true);
+        } else {
+          prompt = buildGeminiAnnotatedEditPrompt(generation.edit_instruction, references.length);
+        }
+      } else {
+        // Edycja opisowa — bez maski; model sam lokalizuje element z instrukcji.
+        prompt = buildDescriptiveEditPrompt(generation.edit_instruction, references.length);
+      }
+
+      // Pełny prompt do rekordu — podgląd w UI i diagnostyka nieudanych edycji.
+      await supabase.from('generations').update({ full_prompt_sent: prompt }).eq('id', generation.id);
+
       result = await provider.edit({
-        prompt: isOpenAi
-          ? buildOpenAiMaskEditPrompt(generation.edit_instruction, references.length)
-          : buildGeminiAnnotatedEditPrompt(generation.edit_instruction, references.length),
+        prompt,
         image: source,
         mask,
         annotated,
-        references,
+        references: editReferences,
       });
     } else {
       // --- Generacja z packshotów (1–5, główne najpierw) ---

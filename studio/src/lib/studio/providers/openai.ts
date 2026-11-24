@@ -85,9 +85,6 @@ export class OpenAiImageProvider implements ImageProvider {
   }
 
   async edit(params: EditParams): Promise<ImageResult> {
-    if (!params.mask) {
-      throw new ImageProviderError('GPT Image edit requires a mask', 'invalid_request');
-    }
     const form = new FormData();
     form.append('model', this.apiModel);
     form.append('prompt', params.prompt);
@@ -96,8 +93,9 @@ export class OpenAiImageProvider implements ImageProvider {
       new Blob([new Uint8Array(params.image.data)], { type: params.image.mimeType }),
       'image.png'
     );
-    // Maska działa na pierwszym obrazie; kolejne obrazy służą jako referencje
-    // produktów do wstawienia w edytowany obszar.
+    // Maska (gdy jest) działa na pierwszym obrazie; kolejne obrazy służą jako
+    // referencje — produkty do wstawienia i/lub niemaskowana kopia oryginału.
+    // Bez maski = edycja opisowa: model lokalizuje element z promptu.
     for (const [i, ref] of (params.references ?? []).entries()) {
       form.append(
         'image[]',
@@ -105,11 +103,13 @@ export class OpenAiImageProvider implements ImageProvider {
         `reference-${i}.png`
       );
     }
-    form.append(
-      'mask',
-      new Blob([new Uint8Array(params.mask.data)], { type: 'image/png' }),
-      'mask.png'
-    );
+    if (params.mask) {
+      form.append(
+        'mask',
+        new Blob([new Uint8Array(params.mask.data)], { type: 'image/png' }),
+        'mask.png'
+      );
+    }
     form.append('size', explicitSizeFor(params.image));
     form.append('quality', 'high');
     return this.call(form);

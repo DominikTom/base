@@ -393,7 +393,9 @@ function GenerationCard({
                   : g.edit_instruction
                     ? g.mask_storage_path
                       ? 'Edycja pędzlem'
-                      : 'Korekty obrazu'
+                      : g.edit_instruction.startsWith('Korekty:')
+                        ? 'Korekty obrazu'
+                        : 'Edycja opisowa'
                     : 'Wizualizacja')}
             </span>
             <span className="flex shrink-0 items-center gap-1">

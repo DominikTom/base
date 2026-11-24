@@ -324,10 +324,43 @@ export function buildGeminiAnnotatedEditPrompt(instruction: string, referenceCou
  * Prompt edycji dla GPT Image (natywna maska — obszar przezroczysty = do edycji;
  * dodatkowe obrazy w image[] służą jako referencje produktów).
  */
-export function buildOpenAiMaskEditPrompt(instruction: string, referenceCount = 0): string {
-  return [
-    `${editChangeLine(instruction, referenceCount)}`,
+export function buildOpenAiMaskEditPrompt(
+  instruction: string,
+  referenceCount = 0,
+  /**
+   * Czy po referencjach dokładamy PEŁNĄ kopię oryginału bez maski.
+   * Krytyczne: przy natywnej masce model NIE WIDZI treści pod wyciętym
+   * obszarem — bez tej kopii nie jest w stanie "poprawić, zachowując logo"
+   * (stare modele zmyślały treść, nowe zostawiały czarne dziury po masce).
+   */
+  hasOriginalCopy = false
+): string {
+  const parts = [editChangeLine(instruction, referenceCount)];
+  if (hasOriginalCopy) {
+    parts.push(
+      'IMPORTANT: the LAST additional input image is an exact, unmasked copy of the original photo. The masked area of the first image is cut out, so use this copy as the source of truth for what that area originally contained (text, logo, pattern, material) — reconstruct it faithfully and apply ONLY the requested change to it. Never leave the masked area empty, black or blank.'
+    );
+  }
+  parts.push(
     EDIT_TEXT_LOCK_EN,
-    'Blend the edit naturally with the surrounding image: match lighting, perspective, grain and color grading. Everything outside the mask must remain unchanged.',
+    'Blend the edit naturally with the surrounding image: match lighting, perspective, grain and color grading. Everything outside the mask must remain unchanged.'
+  );
+  return parts.join('\n');
+}
+
+/**
+ * Edycja OPISOWA (bez pędzla i maski): model sam znajduje element z opisu.
+ * Działa z oboma providerami — wysyłamy tylko oryginał (+ referencje) i tekst.
+ */
+export function buildDescriptiveEditPrompt(instruction: string, referenceCount = 0): string {
+  const imageList =
+    referenceCount > 0
+      ? `You receive (1) the ORIGINAL image to edit and ${referenceCount === 1 ? 'one PRODUCT REFERENCE image' : `${referenceCount} PRODUCT REFERENCE images`}.`
+      : 'You receive the ORIGINAL image to edit.';
+  return [
+    imageList,
+    `${editChangeLine(instruction, referenceCount)} Locate the element(s) described in the instruction yourself.`,
+    EDIT_TEXT_LOCK_EN,
+    'Apply the SMALLEST possible change: everything not covered by the instruction must remain pixel-identical to the original — same framing, people, products, colors and lighting. Return the full edited image at the same resolution.',
   ].join('\n');
 }

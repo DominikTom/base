@@ -45,15 +45,11 @@ export class GeminiImageProvider implements ImageProvider {
   }
 
   async edit(params: EditParams): Promise<ImageResult> {
-    if (!params.annotated) {
-      throw new ImageProviderError(
-        'Gemini edit requires an annotated image (red-mask technique)',
-        'invalid_request'
-      );
-    }
+    // Z adnotacją = technika czerwonej maski; bez niej = edycja opisowa
+    // (model sam lokalizuje element z instrukcji w prompcie).
     const parts: GeminiPart[] = [
       imagePart(params.image),
-      imagePart(params.annotated),
+      ...(params.annotated ? [imagePart(params.annotated)] : []),
       ...(params.references ?? []).map(imagePart),
       { text: params.prompt },
     ];

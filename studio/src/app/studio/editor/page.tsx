@@ -17,6 +17,8 @@ export default async function EditorPage({
   const type = params.type === 'packshot' ? 'packshot' : 'generation';
   const id = params.id ?? '';
   const tab: EditorTab =
-    params.tab === 'remove' || params.tab === 'adjust' ? params.tab : 'brush';
+    params.tab === 'remove' || params.tab === 'adjust' || params.tab === 'describe'
+      ? params.tab
+      : 'brush';
   return <EditorClient sourceType={type} sourceId={id} reuseId={params.reuse ?? null} initialTab={tab} />;
 }

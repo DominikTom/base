@@ -3,8 +3,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Brush, Eraser, ImagePlus, Images, SlidersHorizontal } from 'lucide-react';
+import { ArrowLeft, Brush, Eraser, ImagePlus, Images, MessageSquareText, SlidersHorizontal } from 'lucide-react';
 import { AdjustEditor } from '@/components/studio/adjust-editor';
+import { DescribeEditor, type DescribeEditorSubmit } from '@/components/studio/describe-editor';
 import { MaskEditor, type MaskEditorSubmit } from '@/components/studio/mask-editor';
 import { useToast } from '@/components/studio/toast';
 import { Card, EmptyState, PageTitle, Spinner } from '@/components/studio/ui';
@@ -19,11 +20,12 @@ import { STUDIO_MODELS, type StudioModelId } from '@/lib/studio/models';
 import { cn } from '@/lib/utils';
 import type { GenerationRow, GenerationView, PackshotRow } from '@/lib/studio/types';
 
-export type EditorTab = 'brush' | 'remove' | 'adjust';
+export type EditorTab = 'brush' | 'remove' | 'describe' | 'adjust';
 
 const TABS: { id: EditorTab; label: string; icon: typeof Brush; hint: string }[] = [
   { id: 'brush', label: 'Pędzel AI', icon: Brush, hint: 'Zaznacz obszar i opisz zmianę albo wstaw produkt z referencji.' },
   { id: 'remove', label: 'Usuń obiekt', icon: Eraser, hint: 'Zamaluj przedmioty do usunięcia — model odtworzy tło.' },
+  { id: 'describe', label: 'Opisz zmianę', icon: MessageSquareText, hint: 'Bez pędzla — napisz, co poprawić, model sam znajdzie element.' },
   { id: 'adjust', label: 'Korekty', icon: SlidersHorizontal, hint: 'Suwaki jak w Photoshopie: jasność, kontrast, temperatura, filtry i presety.' },
 ];
 
@@ -143,6 +145,38 @@ export function EditorClient({
     [sourceType, sourceId, router, toast]
   );
 
+  /** Edycja opisowa — bez maski; tylko instrukcja (+ ewentualne referencje). */
+  const handleDescribeSubmit = useCallback(
+    async (payload: DescribeEditorSubmit) => {
+      setBusy(true);
+      try {
+        const userId = await getBrowserUserId();
+        const referencePaths = payload.references.map((f, i) => {
+          const ext = f.type === 'image/jpeg' ? 'jpg' : f.type === 'image/webp' ? 'webp' : 'png';
+          return `edit-refs/${userId}/${crypto.randomUUID()}-${i}.${ext}`;
+        });
+        await Promise.all(
+          payload.references.map((f, i) =>
+            uploadToStorageFromBrowser('generations', referencePaths[i], f, f.type)
+          )
+        );
+        const res = await apiJson<{ generation: GenerationRow }>('/api/studio/edits', 'POST', {
+          sourceType,
+          sourceId,
+          instruction: payload.instruction,
+          model: payload.model,
+          referencePaths: referencePaths.length > 0 ? referencePaths : undefined,
+          async: true,
+        });
+        router.push(`/studio/generations/${res.generation.id}`);
+      } catch (err) {
+        toast('error', err instanceof Error ? err.message : 'Nie udało się rozpocząć edycji.');
+        setBusy(false);
+      }
+    },
+    [sourceType, sourceId, router, toast]
+  );
+
   // Bez wskazanego obrazu (wejście z menu "Edycja") — wybór źródła.
   if (!sourceId) {
     return <SourcePicker tab={tab} />;
@@ -185,6 +219,8 @@ export function EditorClient({
       ) : imageUrl ? (
         tab === 'adjust' ? (
           <AdjustEditor imageUrl={imageUrl} sourceType={sourceType} sourceId={sourceId} />
+        ) : tab === 'describe' ? (
+          <DescribeEditor imageUrl={imageUrl} onSubmit={handleDescribeSubmit} busy={busy} />
         ) : (
           <MaskEditor
             key={`${tab}-${imageUrl}-${initialMaskUrl ?? ''}`}

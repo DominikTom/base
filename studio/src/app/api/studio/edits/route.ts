@@ -16,9 +16,10 @@ const bodySchema = z.object({
   /**
    * Ścieżka maski w buckecie `generations` (wgranej z przeglądarki prosto do
    * Storage — omija limit 4,5 MB body Vercela). Annotowana kopia leży pod
-   * ścieżką pochodną (-annotated.png).
+   * ścieżką pochodną (-annotated.png). BRAK maski = edycja OPISOWA: model
+   * sam lokalizuje element z instrukcji.
    */
-  maskPath: z.string().min(1).max(500),
+  maskPath: z.string().min(1).max(500).optional(),
   /**
    * Obrazy referencyjne produktów do wstawienia w zaznaczony obszar
    * (wgrane client-side do bucketu `generations` pod edit-refs/{userId}/).
@@ -45,23 +46,29 @@ export async function POST(request: NextRequest) {
   const input = parsed.data;
   const referencePaths = input.referencePaths ?? [];
 
+  const hasMask = Boolean(input.maskPath);
   const instruction =
     input.instruction?.trim() ||
-    (referencePaths.length > 0
+    (hasMask && referencePaths.length > 0
       ? 'Wstaw produkt(y) z załączonych obrazów referencyjnych w zaznaczonym obszarze.'
       : null);
   if (!instruction) {
     return NextResponse.json(
-      { error: 'Opisz, co zmienić w zaznaczonym obszarze, albo dodaj obrazy referencyjne.' },
+      {
+        error: hasMask
+          ? 'Opisz, co zmienić w zaznaczonym obszarze, albo dodaj obrazy referencyjne.'
+          : 'Napisz, co poprawić na obrazie.',
+      },
       { status: 400 }
     );
   }
 
-  // Maska musi leżeć w katalogu masek tego użytkownika.
+  // Maska (gdy jest) musi leżeć w katalogu masek tego użytkownika.
   if (
-    !input.maskPath.startsWith(`masks/${auth.user.id}/`) ||
-    !input.maskPath.endsWith('-mask.png') ||
-    input.maskPath.includes('..')
+    input.maskPath &&
+    (!input.maskPath.startsWith(`masks/${auth.user.id}/`) ||
+      !input.maskPath.endsWith('-mask.png') ||
+      input.maskPath.includes('..'))
   ) {
     return NextResponse.json({ error: 'Nieprawidłowa ścieżka maski.' }, { status: 400 });
   }
@@ -77,10 +84,14 @@ export async function POST(request: NextRequest) {
 
   // Szybka weryfikacja, że pliki faktycznie są w Storage.
   const checks = await Promise.all([
-    auth.supabase.storage.from('generations').createSignedUrl(input.maskPath, 60),
-    auth.supabase.storage
-      .from('generations')
-      .createSignedUrl(annotatedPathForMask(input.maskPath), 60),
+    ...(input.maskPath
+      ? [
+          auth.supabase.storage.from('generations').createSignedUrl(input.maskPath, 60),
+          auth.supabase.storage
+            .from('generations')
+            .createSignedUrl(annotatedPathForMask(input.maskPath), 60),
+        ]
+      : []),
     ...referencePaths.map((p) =>
       auth.supabase.storage.from('generations').createSignedUrl(p, 60)
     ),
@@ -137,7 +148,7 @@ export async function POST(request: NextRequest) {
       model: input.model,
       edit_instruction: instruction,
       edit_reference_paths: referencePaths.length > 0 ? referencePaths : null,
-      mask_storage_path: input.maskPath,
+      mask_storage_path: input.maskPath ?? null,
       shared: inheritedShared,
       status: 'pending',
     })
